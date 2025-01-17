@@ -1,0 +1,1996 @@
+// Python Files Concatenated on 01/17/2025 12:08:49
+// ----------------------------------------
+
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\__init__.py
+// ----------------------------------------
+"""
+DLpy: A Deep Learning Library with DAG-based Autograd
+
+This library provides a PyTorch-like interface for building and training neural networks,
+with a focus on clear implementation and educational value.
+"""
+
+from .core import Tensor, Function, Context
+from .ops import Add, Multiply, Reshape
+
+__version__ = "0.1.0"
+
+__all__ = [
+    'Tensor',
+    'Function',
+    'Context',
+    'Add',
+    'Multiply',
+    'Reshape',
+]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\__init__.py
+// ----------------------------------------
+"""
+Core functionality for DLpy.
+
+This module contains the fundamental building blocks of the deep learning library.
+"""
+
+from .tensor import Tensor
+from .function import Function
+from .context import Context
+from .autograd import AutogradEngine, get_autograd_engine
+
+__all__ = ['Tensor', 'Function', 'Context', 'AutogradEngine', 'get_autograd_engine']
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\autograd.py
+// ----------------------------------------
+from typing import Dict, Set, List, Optional, Tuple, Union
+import numpy as np
+from collections import defaultdict
+import warnings
+
+class Edge:
+    """
+    Represents a directed edge in the computational graph.
+    
+    Each edge connects a source node (input tensor) to a destination node
+    (output tensor) and stores gradient information for that connection.
+    """
+    
+    def __init__(self, src: 'Node', dst: 'Node'):
+        self.src = src
+        self.dst = dst
+        self.grad: Optional[np.ndarray] = None
+        
+class Node:
+    """
+    Represents a node in the computational graph.
+    
+    Each node corresponds to an operation in the computation and maintains
+    connections to its inputs and outputs through edges.
+    """
+    
+    def __init__(self, tensor: 'Tensor'):
+        self.tensor = tensor
+        self.in_edges: List[Edge] = []
+        self.out_edges: List[Edge] = []
+        self._backward_fn = tensor._backward_fn
+
+class AutogradEngine:
+    """
+    Engine for managing automatic differentiation computations.
+    
+    This class handles the creation and execution of the computational graph,
+    manages gradient computation and accumulation, and provides utilities for
+    graph manipulation and visualization.
+    """
+    
+    def __init__(self):
+        self._nodes: Dict[int, Node] = {}
+        self._edges: Set[Edge] = set()
+        self._currently_computing_gradients = False
+        
+    def register_tensor(self, tensor: 'Tensor') -> None:
+        """
+        Registers a tensor with the autograd engine.
+        
+        Args:
+            tensor: Tensor to register
+        """
+        if id(tensor) not in self._nodes:
+            self._nodes[id(tensor)] = Node(tensor)
+            
+    def add_edge(self, src: 'Tensor', dst: 'Tensor') -> None:
+        """
+        Adds a directed edge between two tensors in the computational graph.
+        
+        Args:
+            src: Source tensor
+            dst: Destination tensor
+        """
+        src_node = self._nodes[id(src)]
+        dst_node = self._nodes[id(dst)]
+        
+        edge = Edge(src_node, dst_node)
+        src_node.out_edges.append(edge)
+        dst_node.in_edges.append(edge)
+        self._edges.add(edge)
+        
+    def backward(self, tensor: 'Tensor', gradient: Optional[np.ndarray] = None) -> None:
+        """Executes backward pass starting from the given tensor."""
+        if self._currently_computing_gradients:
+            raise RuntimeError("Nested gradient computation detected")
+            
+        self._currently_computing_gradients = True
+        try:
+            grad_dict = {id(tensor): gradient}
+            sorted_nodes = self._topological_sort(tensor)
+            
+            for node in reversed(sorted_nodes):
+                if id(node.tensor) in grad_dict:
+                    current_grad = grad_dict[id(node.tensor)]
+                    
+                    if node.tensor._backward_fn is not None:
+                        # Don't clear existing gradients, let them accumulate naturally
+                        node.tensor._backward_fn(current_grad, grad_dict)
+
+                    # Handle leaf nodes
+                    if len(node.in_edges) == 0 and node.tensor.requires_grad:
+                        grad_tensor = grad_dict[id(node.tensor)]
+                        if grad_tensor is not None:
+                            if node.tensor.grad is None:
+                                node.tensor.grad = grad_tensor
+                            else:
+                                node.tensor.grad = node.tensor.grad + grad_tensor  # Let numpy handle broadcasting
+        finally:
+            self._currently_computing_gradients = False
+
+    def _topological_sort(self, start_tensor: 'Tensor') -> List[Node]:
+        """
+        Performs topological sort on the computation graph.
+        
+        Args:
+            start_tensor: Tensor to start the sort from
+            
+        Returns:
+            List of nodes in topological order
+            
+        Raises:
+            RuntimeError: If graph contains cycles
+        """
+        result: List[Node] = []
+        visited: Set[Node] = set()
+        temp_visited: Set[Node] = set()
+        
+        def visit(node: Node) -> None:
+            if node in temp_visited:
+                raise RuntimeError("Cycle detected in computation graph")
+                
+            if node not in visited:
+                temp_visited.add(node)
+                for edge in node.in_edges:
+                    visit(edge.src)
+                temp_visited.remove(node)
+                visited.add(node)
+                result.append(node)
+                
+        visit(self._nodes[id(start_tensor)])
+        return result
+        
+    def clear(self) -> None:
+        """Clears the computational graph."""
+        self._nodes.clear()
+        self._edges.clear()
+
+    def validate_graph(self) -> List[str]:
+        """
+        Validates the computational graph structure.
+        """
+        warnings: List[str] = []
+        
+        # If no nodes in graph
+        if not self._nodes:
+            return warnings
+
+        # Step 1: Find all nodes that are part of computations
+        active_nodes = set()
+        output_nodes = []
+        for node in self._nodes.values():
+            if not node.out_edges:  # Output node
+                output_nodes.append(node)
+            if node.in_edges or node.out_edges:  # Node is part of a computation
+                active_nodes.add(node)
+
+        # Step 2: Find all connected nodes starting from outputs
+        connected_nodes = set()
+        for output_node in output_nodes:
+            stack = [output_node]
+            while stack:
+                curr = stack.pop()
+                connected_nodes.add(curr)
+                for edge in curr.in_edges:
+                    if edge.src not in connected_nodes:
+                        stack.append(edge.src)
+                        
+        # Step 3: Find nodes not connected to outputs
+        all_nodes = set(self._nodes.values())
+        unconnected_nodes = all_nodes - connected_nodes
+        
+        # Step 4: Find completely isolated nodes
+        isolated_nodes = all_nodes - active_nodes
+        
+        # Add appropriate warnings
+        if unconnected_nodes:
+            warnings.append(f"Found {len(unconnected_nodes)} nodes not connected to any output")
+            
+        if isolated_nodes:
+            warnings.append(f"Found {len(isolated_nodes)} isolated nodes")
+            
+        # Check gradient shapes
+        for edge in self._edges:
+            if edge.grad is not None:
+                src_shape = edge.src.tensor.shape
+                grad_shape = edge.grad.shape
+                if src_shape != grad_shape:
+                    warnings.append(
+                        f"Gradient shape mismatch: grad shape {grad_shape} vs tensor shape {src_shape}"
+                    )
+                    
+        return warnings
+
+# Global autograd engine instance
+_autograd_engine = AutogradEngine()
+
+def get_autograd_engine() -> AutogradEngine:
+    """Returns the global autograd engine instance."""
+    return _autograd_engine
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\context.py
+// ----------------------------------------
+from typing import Any, Dict, List, Tuple
+from dataclasses import dataclass, field
+
+@dataclass
+class Context:
+    """
+    Context class for storing information needed during the backward pass.
+    
+    The Context class serves as a storage mechanism for tensors and metadata that are 
+    needed during backpropagation. It's passed to both forward and backward functions
+    to maintain state between the two passes.
+    
+    Attributes:
+        _saved_tensors: List of tensors saved during forward pass for use in backward pass
+        _non_tensor_args: Dictionary of additional arguments needed for backward pass
+        _intermediate_values: Dictionary storing intermediate computations
+    """
+    
+    _saved_tensors: List[Any] = field(default_factory=list)
+    _non_tensor_args: Dict[str, Any] = field(default_factory=dict)
+    _intermediate_values: Dict[str, Any] = field(default_factory=dict)
+
+    def save_for_backward(self, *args: Any) -> None:
+        """
+        Saves tensors that will be needed for the backward pass.
+        
+        Args:
+            *args: Variable number of tensors to save
+        """
+        self._saved_tensors = list(args)
+
+    def save_arguments(self, **kwargs: Any) -> None:
+        """
+        Saves additional arguments that will be needed for the backward pass.
+        
+        Args:
+            **kwargs: Keyword arguments to save
+        """
+        self._non_tensor_args.update(kwargs)
+        
+    def store_intermediate(self, name: str, value: Any) -> None:
+        """
+        Stores intermediate values computed during forward pass that may be
+        useful during backward pass or for debugging.
+        
+        Args:
+            name: Identifier for the intermediate value
+            value: The value to store
+        """
+        self._intermediate_values[name] = value
+
+    @property
+    def saved_tensors(self) -> Tuple[Any, ...]:
+        """Returns the saved tensors as a tuple."""
+        return tuple(self._saved_tensors)
+
+    @property
+    def saved_arguments(self) -> Dict[str, Any]:
+        """Returns the saved non-tensor arguments."""
+        return self._non_tensor_args.copy()
+        
+    def get_intermediate(self, name: str) -> Any:
+        """
+        Retrieves a stored intermediate value.
+        
+        Args:
+            name: Identifier for the intermediate value
+            
+        Returns:
+            The stored value
+            
+        Raises:
+            KeyError: If no value exists for the given name
+        """
+        return self._intermediate_values[name]
+
+    def clear(self) -> None:
+        """Clears all saved data from the context."""
+        self._saved_tensors.clear()
+        self._non_tensor_args.clear()
+        self._intermediate_values.clear()
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\function.py
+// ----------------------------------------
+from abc import ABC, abstractmethod
+from typing import Any, Tuple, Optional, Dict
+import numpy as np
+
+from .context import Context
+from .tensor import Tensor  # This will be implemented next
+
+class Function(ABC):
+    """
+    Base class for all autograd operations.
+    
+    This class defines the interface for creating differentiable operations.
+    Each operation should implement both a forward pass (computing the result)
+    and a backward pass (computing gradients).
+    
+    The Function class follows a similar design pattern to PyTorch's autograd.Function,
+    but with some simplifications and additional features for clarity and debugging.
+    """
+    
+    requires_grad: bool = True
+    
+    @staticmethod
+    @abstractmethod
+    def forward(ctx: Context, *args: Any, **kwargs: Any) -> Tensor:
+        """
+        Performs the forward computation.
+        
+        Args:
+            ctx: Context object for saving information needed in backward pass
+            *args: Input tensors and other arguments
+            **kwargs: Additional keyword arguments for the operation
+            
+        Returns:
+            Result of the computation as a Tensor
+        """
+        raise NotImplementedError
+        
+    @staticmethod
+    @abstractmethod
+    def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        """
+        Computes gradients of the operation with respect to its inputs.
+        
+        Args:
+            ctx: Context object containing saved tensors from forward pass
+            grad_output: Gradient of the loss with respect to the output
+            grad_dict: Dictionary mapping tensor IDs to their gradients
+        """
+        raise NotImplementedError
+        
+    @classmethod
+    def apply(cls, *args: Any, **kwargs: Any) -> Tensor:
+        """
+        Applies the function to the given inputs.
+        
+        This method:
+        1. Creates a Context object for storing intermediate values
+        2. Runs the forward pass
+        3. Sets up the computational graph for gradient computation
+        4. Returns the result
+        """
+        ctx = Context()
+        result = cls.forward(ctx, *args, **kwargs)
+        
+        # Check if we need to compute gradients
+        needs_grad = cls.requires_grad and any(
+            isinstance(arg, Tensor) and arg.requires_grad 
+            for arg in args
+        )
+        
+        if needs_grad:
+            def backward_fn(grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+                cls.backward(ctx, grad_output, grad_dict)
+            
+            result._backward_fn = backward_fn
+            result.requires_grad_(True)
+            
+            # Get autograd engine and register edges
+            from .autograd import get_autograd_engine
+            engine = get_autograd_engine()
+            for arg in args:
+                if isinstance(arg, Tensor):
+                    engine.add_edge(arg, result)
+        
+        return result  # Return result in all cases
+        
+        
+    @staticmethod
+    def verify_backward(
+        forward_fn: Any,
+        backward_fn: Any,
+        inputs: Tuple[np.ndarray, ...],
+        epsilon: float = 1e-6
+    ) -> bool:
+        """
+        Verifies backward pass implementation using numerical gradients.
+        
+        This helper method compares analytically computed gradients with
+        numerically computed gradients to check for correctness.
+        
+        Args:
+            forward_fn: The forward pass function
+            backward_fn: The backward pass function
+            inputs: Tuple of input arrays
+            epsilon: Small value for numerical gradient computation
+            
+        Returns:
+            True if gradients match within tolerance, False otherwise
+        """
+        def compute_numerical_gradient(idx: int, inp: np.ndarray) -> np.ndarray:
+            grad = np.zeros_like(inp)
+            it = np.nditer(inp, flags=['multi_index'])
+            
+            while not it.finished:
+                ix = it.multi_index
+                old_value = inp[ix]
+                
+                # Compute f(x + epsilon)
+                inp[ix] = old_value + epsilon
+                pos_inputs = list(inputs)
+                pos_inputs[idx] = inp.copy()
+                pos_output = forward_fn(*pos_inputs)
+                
+                # Compute f(x - epsilon)
+                inp[ix] = old_value - epsilon
+                neg_inputs = list(inputs)
+                neg_inputs[idx] = inp.copy()
+                neg_output = forward_fn(*neg_inputs)
+                
+                # Restore original value
+                inp[ix] = old_value
+                
+                # Compute numerical gradient
+                grad[ix] = np.sum(pos_output - neg_output) / (2 * epsilon)
+                it.iternext()
+                
+            return grad
+            
+        # Compute analytical gradients
+        ctx = Context()
+        output = forward_fn(*inputs)
+        grad_output = np.ones_like(output)
+        analytical_grads = backward_fn(ctx, grad_output)
+        
+        # Compute numerical gradients
+        numerical_grads = tuple(
+            compute_numerical_gradient(i, inp.copy()) 
+            for i, inp in enumerate(inputs)
+        )
+        
+        # Compare gradients
+        for analytical, numerical in zip(analytical_grads, numerical_grads):
+            if analytical is not None:
+                rel_error = np.max(
+                    np.abs(analytical - numerical) /
+                    (np.maximum(np.abs(analytical), np.abs(numerical)) + epsilon)
+                )
+                if rel_error > 1e-5:
+                    return False
+                    
+        return True
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\tensor.py
+// ----------------------------------------
+import numpy as np
+from typing import Optional, Union, List, Tuple, Callable, Dict, Set
+from numbers import Number
+
+class Tensor:
+    """
+    A multidimensional array with autograd capabilities.
+    
+    The Tensor class wraps numpy arrays and adds automatic differentiation
+    capabilities. It tracks the computational graph and enables gradient
+    computation through backpropagation.
+    
+    Attributes:
+        data: The underlying numpy array holding the tensor's values
+        grad: Gradient of the loss with respect to this tensor
+        requires_grad: Whether to compute gradients for this tensor
+        _prev: Set of immediate predecessor nodes in computational graph
+        _backward_fn: Function to compute gradients during backpropagation
+        _is_leaf: Whether this tensor is a leaf node (created by user)
+    """
+    
+    def __init__(
+        self,
+        data: Union[np.ndarray, List, Number],
+        requires_grad: bool = False,
+        dtype: Optional[np.dtype] = None
+    ):
+        # Convert scalars to scalar arrays with shape ()
+        if isinstance(data, (int, float)):
+            self.data = np.array(data, dtype=dtype or np.float64)  # Will have shape ()
+        elif isinstance(data, Tensor):
+            self.data = data.data
+        elif isinstance(data, list):
+            self.data = np.array(data, dtype=dtype)
+        else:
+            self.data = data.astype(dtype) if dtype else data
+            
+        self.grad: Optional[np.ndarray] = None
+        self._requires_grad = requires_grad
+        self._backward_fn: Optional[Callable] = None
+        self._prev: Set['Tensor'] = set()
+        self._is_leaf = True
+
+        # Register with autograd engine
+        from .autograd import get_autograd_engine
+        engine = get_autograd_engine()
+        engine.register_tensor(self)
+        
+        if requires_grad:
+            self.zero_grad()
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        """Returns the shape of the tensor."""
+        return self.data.shape
+        
+    @property
+    def dtype(self) -> np.dtype:
+        """Returns the data type of the tensor."""
+        return self.data.dtype
+        
+    @property
+    def requires_grad(self) -> bool:
+        """Returns whether the tensor requires gradient computation."""
+        return self._requires_grad
+        
+    def requires_grad_(self, requires_grad: bool = True) -> 'Tensor':
+        """Sets gradient computation requirement and returns self."""
+        self._requires_grad = requires_grad
+        if requires_grad and self.grad is None:
+            self.zero_grad()
+        return self
+
+    def zero_grad(self) -> None:
+        """Zeros out the gradient."""
+        if self.data.shape == ():  # For scalar tensors
+            self.grad = np.zeros(1, dtype=np.float64)  # Force 1D array
+        else:
+            self.grad = np.zeros_like(self.data, dtype=np.float64)
+        
+    def backward(self, gradient: Optional[np.ndarray] = None) -> None:
+        """
+        Computes gradients of the loss with respect to this tensor.
+        """
+        if not self.requires_grad:
+            return
+
+        # Handle default gradient for scalar tensors
+        if gradient is None:
+            if np.prod(self.shape) == 1:
+                if self.shape == ():  # scalar tensor
+                    gradient = np.array(1.0)
+                else:
+                    gradient = np.ones(self.shape)
+            else:
+                raise RuntimeError("grad can be implicitly created only for scalar outputs")
+
+        # Ensure gradient is numpy array
+        if isinstance(gradient, (int, float)):
+            gradient = np.array(gradient)
+            
+        # Ensure matching shapes for scalar case
+        if self.shape == () and gradient.shape != ():
+            gradient = gradient.sum()
+        elif self.shape != () and gradient.shape == ():
+            gradient = np.full(self.shape, gradient)
+
+        # Get autograd engine and execute backward pass
+        from .autograd import get_autograd_engine
+        engine = get_autograd_engine()
+        engine.backward(self, gradient)
+
+
+    def __repr__(self) -> str:
+        return f"Tensor({self.data}, requires_grad={self.requires_grad})"
+
+    # Basic arithmetic operations that will be connected to Function implementations
+    def __add__(self, other: Union['Tensor', Number]) -> 'Tensor':
+        from ..ops.basic import Add
+        return Add.apply(self, other)
+        
+    def __mul__(self, other: Union['Tensor', Number]) -> 'Tensor':
+        from ..ops.basic import Multiply
+        return Multiply.apply(self, other)
+        
+    def __matmul__(self, other: 'Tensor') -> 'Tensor':
+        from ..ops.basic import MatMul
+        return MatMul.apply(self, other)
+        
+    def __neg__(self) -> 'Tensor':
+        return self * (-1)
+        
+    def __sub__(self, other: Union['Tensor', Number]) -> 'Tensor':
+        return self + (-other)
+
+    def reshape(self, *shape: int) -> 'Tensor':
+        from ..ops.reshape import Reshape
+        return Reshape.apply(self, shape)
+
+    # Helper methods for numpy compatibility
+    def numpy(self) -> np.ndarray:
+        """Returns the underlying numpy array."""
+        return self.data
+        
+    @classmethod
+    def from_numpy(cls, array: np.ndarray, requires_grad: bool = False) -> 'Tensor':
+        """Creates a Tensor from a numpy array."""
+        return cls(array.copy(), requires_grad=requires_grad)
+
+    # Shape manipulation methods
+    def reshape(self, *shape: int) -> 'Tensor':
+        """Returns a tensor with the same data and new shape."""
+        from ..ops import Reshape
+        return Reshape.apply(self, shape)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\__init__.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\conv.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\linear.py
+// ----------------------------------------
+from typing import Optional, Dict
+import numpy as np
+from ..core import Tensor, Function
+from .modules import Module
+
+class LinearFunction(Function):
+    @staticmethod
+    def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
+        # Save tensors needed for backward pass
+        ctx.save_for_backward(input, weight, bias)
+        
+        # Compute output: y = xW^T + b
+        output = input.data @ weight.data
+        if bias is not None:
+            output += bias.data
+            
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        # Retrieve saved tensors
+        input, weight, bias = ctx.saved_tensors
+        
+        # Compute gradient with respect to input: dx = dout @ W
+        if input.requires_grad:
+            grad_dict[id(input)] = grad_output @ weight.data.T
+            
+        # Compute gradient with respect to weight: dW = x^T @ dout
+        if weight.requires_grad:
+            grad_dict[id(weight)] = input.data.T @ grad_output
+            
+        # Compute gradient with respect to bias: db = sum(dout, dim=0)
+        if bias is not None and bias.requires_grad:
+            grad_dict[id(bias)] = grad_output.sum(axis=0)
+
+class Linear(Module):
+    """
+    Applies a linear transformation to the incoming data: y = xW^T + b
+    
+    Args:
+        in_features: size of each input sample
+        out_features: size of each output sample
+        bias: If set to False, the layer will not learn an additive bias
+        
+    Shape:
+        - Input: (batch_size, in_features)
+        - Output: (batch_size, out_features)
+        
+    Attributes:
+        weight: the learnable weights of shape (in_features, out_features)
+        bias: the learnable bias of shape (out_features,)
+    """
+    
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        super().__init__()
+        
+        self.in_features = in_features
+        self.out_features = out_features
+        
+        # Initialize weights using He initialization
+        bound = np.sqrt(2.0 / in_features)
+        weight = Tensor(
+            np.random.uniform(-bound, bound, (in_features, out_features)),
+            requires_grad=True
+        )
+        self.register_parameter('weight', weight)
+        
+        if bias:
+            bias = Tensor(np.zeros(out_features), requires_grad=True)
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+            
+    def forward(self, input: Tensor) -> Tensor:
+        """Forward pass of the linear layer."""
+        return LinearFunction.apply(input, self.weight, self.bias)
+            
+    def extra_repr(self) -> str:
+        """Extra information to add to the string representation."""
+        return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\modules.py
+// ----------------------------------------
+from typing import Iterator, Dict, Any, Optional, Union
+from collections import OrderedDict
+from ..core import Tensor
+
+class Module:
+    """
+    Base class for all neural network modules.
+    
+    Your models should also subclass this class.
+    Modules can also contain other Modules, allowing to nest them in
+    a tree structure.
+    """
+    
+    def __init__(self):
+        """Initialize the module."""
+        # First set these directly to avoid triggering __setattr__
+        object.__setattr__(self, 'training', True)
+        object.__setattr__(self, '_parameters', OrderedDict())
+        object.__setattr__(self, '_buffers', OrderedDict())
+        object.__setattr__(self, '_modules', OrderedDict())
+        
+    def register_parameter(self, name: str, param: Optional[Tensor]) -> None:
+        """Add a parameter to the module.
+        
+        Args:
+            name: Name of the parameter
+            param: The parameter tensor to register
+        """
+        if '_parameters' not in self.__dict__:
+            raise TypeError(
+                "cannot assign parameter before Module.__init__() call"
+            )
+            
+        if param is not None and not isinstance(param, Tensor):
+            raise TypeError(f"Parameter {name} must be a Tensor, not {type(param)}")
+            
+        self._parameters[name] = param
+        
+    def register_buffer(self, name: str, tensor: Optional[Tensor]) -> None:
+        """Add a persistent buffer to the module.
+        
+        Buffers are typically used for running statistics in modules like BatchNorm.
+        
+        Args:
+            name: Name of the buffer
+            tensor: The tensor to register as a buffer
+        """
+        if '_buffers' not in self.__dict__:
+            raise TypeError(
+                "cannot assign buffer before Module.__init__() call"
+            )
+            
+        if tensor is not None and not isinstance(tensor, Tensor):
+            raise TypeError(f"Buffer {name} must be a Tensor, not {type(tensor)}")
+            
+        self._buffers[name] = tensor
+        
+    def add_module(self, name: str, module: Optional['Module']) -> None:
+        """Add a child module to the current module.
+        
+        Args:
+            name: Name of the child module
+            module: The module to add
+        """
+        if not isinstance(module, (Module, type(None))):
+            raise TypeError(f"{name} is not a Module subclass")
+            
+        if '_modules' not in self.__dict__:
+            raise TypeError(
+                "cannot assign module before Module.__init__() call"
+            )
+            
+        self._modules[name] = module
+        
+    def __getattr__(self, name: str) -> Any:
+        """Custom getattr that looks through parameters, buffers, and modules."""
+        if '_parameters' in self.__dict__:
+            _parameters = self.__dict__['_parameters']
+            if name in _parameters:
+                return _parameters[name]
+                
+        if '_buffers' in self.__dict__:
+            _buffers = self.__dict__['_buffers']
+            if name in _buffers:
+                return _buffers[name]
+                
+        if '_modules' in self.__dict__:
+            modules = self.__dict__['_modules']
+            if name in modules:
+                return modules[name]
+                
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Custom setattr that handles parameter registration."""
+        # Handle special module attributes first
+        if name in ['training']:
+            object.__setattr__(self, name, value)
+            return
+            
+        if isinstance(value, Tensor):
+            if not hasattr(self, '_parameters'):
+                raise TypeError(
+                    "cannot assign parameters before Module.__init__() call"
+                )
+            self.register_parameter(name, value)
+        elif isinstance(value, Module):
+            if not hasattr(self, '_modules'):
+                raise TypeError(
+                    "cannot assign module before Module.__init__() call"
+                )
+            self.add_module(name, value)
+        else:
+            object.__setattr__(self, name, value)
+            
+    def parameters(self) -> Iterator[Tensor]:
+        """Returns an iterator over module parameters."""
+        for param in self._parameters.values():
+            if param is not None:
+                yield param
+        for module in self._modules.values():
+            if module is not None:
+                yield from module.parameters()
+                
+    def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
+        """Returns an iterator over module parameters, yielding both the
+        name of the parameter as well as the parameter itself."""
+        for name, param in self._parameters.items():
+            if param is not None:
+                yield name, param
+        for mname, module in self._modules.items():
+            if module is not None:
+                for name, param in module.named_parameters():
+                    yield f"{mname}.{name}", param
+                    
+    def train(self, mode: bool = True) -> 'Module':
+        """Sets the module in training mode."""
+        self.training = mode
+        for module in self._modules.values():
+            if module is not None:
+                module.train(mode)
+        return self
+        
+    def eval(self) -> 'Module':
+        """Sets the module in evaluation mode."""
+        return self.train(False)
+        
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+        
+    def forward(self, *args, **kwargs):
+        """Define the computation performed at every call."""
+        raise NotImplementedError
+        
+    def __repr__(self):
+        """Returns a string representation of the module."""
+        extra_lines = []
+        extra_repr = self.extra_repr()
+        if extra_repr:
+            extra_lines = extra_repr.split('\n')
+            
+        child_lines = []
+        for key, module in self._modules.items():
+            mod_str = repr(module)
+            mod_str = _addindent(mod_str, 2)
+            child_lines.append('(' + key + '): ' + mod_str)
+            
+        lines = extra_lines + child_lines
+        
+        main_str = self.__class__.__name__ + '('
+        if lines:
+            main_str += '\n  ' + '\n  '.join(lines) + '\n'
+        main_str += ')'
+        return main_str
+        
+    def extra_repr(self) -> str:
+        """Set the extra representation of the module."""
+        return ''
+
+def _addindent(s_: str, numSpaces: int) -> str:
+    """Helper for indenting multiline strings."""
+    s = s_.split('\n')
+    if len(s) == 1:
+        return s_
+    first = s.pop(0)
+    s = [(numSpaces * ' ') + line for line in s]
+    return '\n'.join([first] + s)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\sequential.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\__init__.py
+// ----------------------------------------
+"""
+Operations module for DLpy.
+
+This module contains all the mathematical operations that can be performed on tensors.
+"""
+
+from .basic import Add, Multiply
+from .reshape import Reshape
+
+__all__ = ['Add', 'Multiply', 'Reshape']
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\activation.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\basic.py
+// ----------------------------------------
+from typing import Dict  # Add this import at the top
+from ..core.function import Function
+from ..core.tensor import Tensor
+import numpy as np
+
+class Add(Function):
+    @staticmethod
+    def forward(ctx, a, b):
+        if not isinstance(a, Tensor):
+            a = Tensor(a)
+        if not isinstance(b, Tensor):
+            b = Tensor(b)
+            
+        shape_a = a.data.shape
+        shape_b = b.data.shape
+
+        # Check valid broadcasting manually
+        if len(shape_a) == 2 and shape_a[0] == 1 and len(shape_b) == 1:
+            # Special case: (1,N) matrix with (M,) vector requires N==M
+            if shape_a[1] != shape_b[0]:
+                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+        elif len(shape_a) == 1 and len(shape_b) == 2 and shape_b[0] == 1:
+            # Special case: (N,) vector with (1,M) matrix requires N==M
+            if shape_a[0] != shape_b[1]:
+                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+                
+        # Save tensors for backward pass
+        ctx.save_for_backward(a, b)
+        
+        # If we get here, try the operation
+        try:
+            result = a.data + b.data
+            return Tensor(result)
+        except ValueError:
+            raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+            
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        a, b = ctx.saved_tensors
+        
+        if a.requires_grad:
+            grad_dict[id(a)] = grad_output  # Let numpy handle broadcasting
+            
+        if b.requires_grad:
+            grad_dict[id(b)] = grad_output  # Let numpy handle broadcasting
+
+
+class Multiply(Function):
+    @staticmethod
+    def forward(ctx, a, b):
+        if not isinstance(a, Tensor):
+            a = Tensor(a)
+        if not isinstance(b, Tensor):
+            b = Tensor(b)
+            
+        shape_a = a.data.shape
+        shape_b = b.data.shape
+
+        # Check valid broadcasting manually
+        if len(shape_a) == 2 and shape_a[0] == 1 and len(shape_b) == 1:
+            # Special case: (1,N) matrix with (M,) vector requires N==M
+            if shape_a[1] != shape_b[0]:
+                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+        elif len(shape_a) == 1 and len(shape_b) == 2 and shape_b[0] == 1:
+            # Special case: (N,) vector with (1,M) matrix requires N==M
+            if shape_a[0] != shape_b[1]:
+                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+                
+        # Save tensors for backward pass
+        ctx.save_for_backward(a, b)
+        
+        # If we get here, try the operation
+        try:
+            result = a.data * b.data
+            return Tensor(result)
+        except ValueError:
+            raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        a, b = ctx.saved_tensors
+        
+        if a.requires_grad:
+            grad_dict[id(a)] = grad_output * b.data  # Let numpy handle broadcasting
+            
+        if b.requires_grad:
+            grad_dict[id(b)] = grad_output * a.data  # Let numpy handle broadcasting
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\loss.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\nn.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\reshape.py
+// ----------------------------------------
+# DLpy/ops/reshape.py
+from ..core.function import Function
+from ..core.tensor import Tensor
+import numpy as np
+from typing import Dict
+
+class Reshape(Function):
+    @staticmethod
+    def forward(ctx, tensor, shape):
+        # Save both the input tensor and the target shape
+        ctx.save_for_backward(tensor)
+        ctx.save_arguments(target_shape=shape)
+        # Create and return a new tensor with the reshaped data
+        return Tensor(tensor.data.reshape(shape))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        # Get the original tensor and reshape the gradient back to its shape
+        original_tensor, = ctx.saved_tensors
+        if original_tensor.requires_grad:
+            # Reshape gradient back to the original tensor's shape
+            grad_dict[id(original_tensor)] = grad_output.reshape(original_tensor.shape)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\__init__.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adam.py
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\optimizer.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\sgd.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\examples\basic_autograd.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\examples\neural_network.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\setup.py
+// ----------------------------------------
+from setuptools import setup, find_packages
+
+setup(
+    name="DLpy",  # Changed from DLpy to DLpy
+    version="0.1.0",
+    packages=find_packages(include=["DLpy", "DLpy.*"]),  # Changed from DLpy to DLpy
+    install_requires=[
+        "numpy>=1.20.0",
+    ],
+    extras_require={
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "pytest-xdist>=3.0.0",
+            "black>=22.0.0",
+            "isort>=5.0.0",
+            "mypy>=1.0.0",
+        ],
+    },
+    python_requires=">=3.8",
+)
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\__init__.py
+// ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_autograd.py
+// ----------------------------------------
+import pytest
+import numpy as np
+from DLpy.core import (
+    Tensor,
+    get_autograd_engine
+)
+from DLpy.ops import Add, Multiply
+from DLpy.core.autograd import Edge
+
+class TestAutogradEngine:
+    """Tests for the autograd engine's core functionality."""
+    
+    def setup_method(self):
+        """Setup method run before each test."""
+        self.engine = get_autograd_engine()
+        self.engine.clear()
+
+    def test_register_tensor(self):
+        """Test registering a tensor with the autograd engine."""
+        tensor = Tensor([1.0], requires_grad=True)
+        self.engine.register_tensor(tensor)
+        assert id(tensor) in self.engine._nodes
+
+    def test_add_edge(self):
+        """Test adding edges between tensors in the computational graph."""
+        t1 = Tensor([1.0], requires_grad=True)
+        t2 = Tensor([2.0], requires_grad=True)
+        
+        self.engine.register_tensor(t1)
+        self.engine.register_tensor(t2)
+        self.engine.add_edge(t1, t2)
+        
+        node1 = self.engine._nodes[id(t1)]
+        node2 = self.engine._nodes[id(t2)]
+        
+        assert len(node1.out_edges) == 1
+        assert len(node2.in_edges) == 1
+        assert node1.out_edges[0].dst == node2
+
+class TestGradientComputation:
+    """Tests for gradient computation in different graph structures."""
+    
+    def setup_method(self):
+        self.engine = get_autograd_engine()
+        self.engine.clear()
+
+    def test_linear_graph(self):
+        """Test gradient computation in a linear graph."""
+        # Create a simple linear computation: z = 2x + y
+        x = Tensor([2.0], requires_grad=True)
+        y = Tensor([3.0], requires_grad=True)
+        z = Add.apply(x, y)
+        self.engine.backward(z, np.array([1.0]))
+        
+        # Check gradients
+        assert np.allclose(x.grad, [1.0])
+        assert np.allclose(y.grad, [1.0])
+
+    def test_branching_graph(self):
+        """Test gradient computation in a graph with multiple paths."""
+
+        # The test creates a computation graph shaped like:
+        #     x
+        #   /   \  
+        #  y1   y2
+        #   \   /
+        #     z
+
+        # This tests whether gradients properly flow and accumulate through 
+        # multiple paths back to the same input.
+        x = Tensor([2.0], requires_grad=True)
+        y1 = Multiply.apply(x, Tensor([2.0]))  # y1 = 2x
+        y2 = Multiply.apply(x, Tensor([3.0]))  # y2 = 3x
+        z = Add.apply(y1, y2)  # z = y1 + y2 = 5x
+
+        self.engine.backward(z, np.array([1.0]))
+        # Gradient should be 5.0 (sum of both paths: 2 + 3)
+        assert np.allclose(x.grad, [5.0])
+
+    def test_diamond_graph(self):
+        """Test gradient computation in a diamond-shaped graph."""
+        # Create a diamond computation:
+        #     x
+        #    / \
+        #   h1  h2
+        #    \ /
+        #     y
+        x = Tensor([1.0], requires_grad=True)
+        w1 = Tensor([2.0], requires_grad=True)
+        w2 = Tensor([3.0], requires_grad=True)
+        
+        h1 = Multiply.apply(x, w1)
+        h2 = Multiply.apply(x, w2)
+        y = Add.apply(h1, h2)
+        
+        self.engine.backward(y, np.array([1.0]))
+        
+        # x's gradient should include effects from both paths
+        assert np.allclose(x.grad, [5.0])  # 2 + 3
+        assert np.allclose(w1.grad, [1.0])
+        assert np.allclose(w2.grad, [1.0])
+
+class TestGradientAccumulation:
+    """Tests for correct gradient accumulation behavior."""
+
+    def setup_method(self):
+        self.engine = get_autograd_engine()
+        self.engine.clear()
+
+    def test_reused_variable(self):
+        """Test gradient accumulation when a variable is used multiple times."""
+        x = Tensor([2.0], requires_grad=True)
+        
+        # Use x in three separate computations
+        y1 = Multiply.apply(x, Tensor([2.0]))
+        y2 = Multiply.apply(x, Tensor([3.0]))
+        y3 = Multiply.apply(x, Tensor([4.0]))
+        
+        # Backward on all three outputs
+        self.engine.backward(y1, np.array([1.0]))
+        self.engine.backward(y2, np.array([1.0]))
+        self.engine.backward(y3, np.array([1.0]))
+        
+        # Gradient should accumulate: 2 + 3 + 4 = 9
+        assert np.allclose(x.grad, [9.0])
+
+    def test_shared_structure(self):
+        """Test gradient computation with shared subgraphs."""
+        # Create a computation where the same subgraph is used multiple times
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor([2.0], requires_grad=True)
+        
+        # Shared computation
+        shared = Multiply.apply(x, y)
+        
+        # Use shared result multiple times
+        out1 = Multiply.apply(shared, Tensor([2.0]))
+        out2 = Multiply.apply(shared, Tensor([3.0]))
+        
+        # Final sum
+        final = Add.apply(out1, out2)
+        
+        self.engine.backward(final, np.array([1.0]))
+        
+        # Verify gradients include effects from all paths
+        assert x.grad is not None
+        assert y.grad is not None
+
+class TestAdvancedAutogradFeatures:
+    """Tests for advanced AutogradEngine features and edge cases"""
+    
+    def setup_method(self):
+        self.engine = get_autograd_engine()
+        self.engine.clear()
+
+    def test_validate_graph(self):
+        """Test graph validation functionality"""
+        # Create a disconnected subgraph
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor([2.0], requires_grad=True)
+        _ = Add.apply(x, y)
+        
+        # Add an isolated node
+        z = Tensor([3.0], requires_grad=True)
+        self.engine.register_tensor(z)
+        
+        warnings = self.engine.validate_graph()
+        assert len(warnings) > 0
+        assert "isolated nodes" in warnings[0]  
+
+    def test_nested_gradient_computation(self):
+        """Test detection of nested gradient computations"""
+        x = Tensor([1.0], requires_grad=True)
+        y = Add.apply(x, Tensor([2.0]))
+        
+        # Simulate nested gradient computation
+        self.engine._currently_computing_gradients = True
+        with pytest.raises(RuntimeError, match="Nested gradient computation detected"):
+            self.engine.backward(y)
+        self.engine._currently_computing_gradients = False
+
+    def test_cyclic_graph_detection(self):
+        """Test detection of cycles in computational graph"""
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor([2.0], requires_grad=True)
+        
+        # Manually create a cycle in the graph
+        node_x = self.engine._nodes[id(x)]
+        node_y = self.engine._nodes[id(y)]
+        
+        edge1 = Edge(node_x, node_y)
+        edge2 = Edge(node_y, node_x)
+        
+        node_x.out_edges.append(edge1)
+        node_y.in_edges.append(edge1)
+        node_y.out_edges.append(edge2)
+        node_x.in_edges.append(edge2)
+        
+        with pytest.raises(RuntimeError, match="Cycle detected in computation graph"):
+            self.engine.backward(x)
+
+    def test_gradient_shape_mismatch(self):
+        """Test detection of gradient shape mismatches"""
+        x = Tensor([[1.0]], requires_grad=True)  # Shape (1, 1)
+        y = Tensor([2.0], requires_grad=True)    # Shape (1,)
+        
+        # Create edge with obviously wrong shape
+        node_x = self.engine._nodes[id(x)]
+        node_y = self.engine._nodes[id(y)]
+        
+        edge = Edge(node_x, node_y)
+        edge.grad = np.array([[1.0, 2.0]])  # Wrong shape (1, 2)
+        
+        # Add the edge to both nodes and the engine
+        node_x.out_edges.append(edge)
+        node_y.in_edges.append(edge)
+        self.engine._edges.add(edge)
+        
+        warnings = self.engine.validate_graph()
+        assert any("shape mismatch" in w for w in warnings), "Should detect shape mismatch"
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_context.py
+// ----------------------------------------
+import pytest
+from DLpy.core import Context, Tensor
+import numpy as np
+
+class TestContext:
+    """Tests for Context class functionality"""
+    
+    def test_save_and_retrieve_tensors(self):
+        """Test saving and retrieving tensors"""
+        ctx = Context()
+        tensor1 = Tensor([1.0])
+        tensor2 = Tensor([2.0])
+        
+        ctx.save_for_backward(tensor1, tensor2)
+        saved = ctx.saved_tensors
+        
+        assert len(saved) == 2
+        assert np.array_equal(saved[0].data, tensor1.data)
+        assert np.array_equal(saved[1].data, tensor2.data)
+
+    def test_save_and_retrieve_arguments(self):
+        """Test saving and retrieving non-tensor arguments"""
+        ctx = Context()
+        ctx.save_arguments(arg1="test", arg2=42)
+        
+        args = ctx.saved_arguments
+        assert args["arg1"] == "test"
+        assert args["arg2"] == 42
+        assert isinstance(args, dict)
+
+    def test_intermediate_values(self):
+        """Test storing and retrieving intermediate values"""
+        ctx = Context()
+        
+        # Store various types of values
+        ctx.store_intermediate("scalar", 42)
+        ctx.store_intermediate("list", [1, 2, 3])
+        ctx.store_intermediate("tensor", Tensor([1.0]))
+        
+        # Retrieve and verify values
+        assert ctx.get_intermediate("scalar") == 42
+        assert ctx.get_intermediate("list") == [1, 2, 3]
+        assert isinstance(ctx.get_intermediate("tensor"), Tensor)
+        
+        # Test retrieving non-existent key
+        with pytest.raises(KeyError):
+            ctx.get_intermediate("nonexistent")
+
+    def test_clear_functionality(self):
+        """Test clearing all stored data"""
+        ctx = Context()
+        
+        # Store various types of data
+        ctx.save_for_backward(Tensor([1.0]))
+        ctx.save_arguments(arg1="test")
+        ctx.store_intermediate("key", "value")
+        
+        # Clear all data
+        ctx.clear()
+        
+        # Verify everything is cleared
+        assert len(ctx._saved_tensors) == 0
+        assert len(ctx._non_tensor_args) == 0
+        assert len(ctx._intermediate_values) == 0
+
+import pytest
+from DLpy.core import Function, Context, Tensor
+import numpy as np
+
+class TestFunction:
+    """Tests for Function base class and utilities"""
+    
+    class TestFunction(Function):
+        """Simple test function implementation"""
+        
+        @staticmethod
+        def forward(ctx, x, y=None):
+            ctx.save_for_backward(x)
+            ctx.save_arguments(y=y)
+            return Tensor(x.data * 2)
+            
+        @staticmethod
+        def backward(ctx, grad_output, grad_dict):
+            x, = ctx.saved_tensors
+            y = ctx.saved_arguments["y"]
+            
+            if x.requires_grad:
+                grad_dict[id(x)] = grad_output * 2
+
+    def test_function_application(self):
+        """Test applying a function to inputs"""
+        x = Tensor([1.0], requires_grad=True)
+        result = self.TestFunction.apply(x, y=2.0)
+        
+        assert isinstance(result, Tensor)
+        assert np.array_equal(result.data, [2.0])
+        assert result.requires_grad
+        assert result._backward_fn is not None
+
+    def test_verify_backward(self):
+        """Test gradient verification utility"""
+        def forward_fn(x):
+            return x * 2
+            
+        def correct_backward_fn(ctx, grad_output):
+            return grad_output * 2
+            
+        def incorrect_backward_fn(ctx, grad_output):
+            return grad_output * 3
+        
+        # Test with correct gradients
+        x = np.array([1.0])
+        assert Function.verify_backward(forward_fn, correct_backward_fn, (x,))
+        
+        # Test with incorrect gradients
+        assert not Function.verify_backward(forward_fn, incorrect_backward_fn, (x,))
+
+    def test_abstract_methods(self):
+        """Test that abstract methods raise NotImplementedError"""
+        
+        class IncompleteFunction(Function):
+            pass
+            
+        with pytest.raises(TypeError):
+            IncompleteFunction()
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_modules.py
+// ----------------------------------------
+import pytest
+from DLpy.nn.modules import Module
+from DLpy.core import Tensor
+import numpy as np
+from DLpy.nn.linear import Linear  
+
+class TestModuleEdgeCases:
+    """Tests for edge cases in Module functionality"""
+    
+    def test_premature_parameter_registration(self):
+        """Test parameter registration before initialization"""
+        with pytest.raises(TypeError):
+            class BadModule(Module):
+                def __init__(self):
+                    self.param = Tensor([1.0])  # Before super().__init__()
+            BadModule()
+
+    def test_invalid_module_addition(self):
+        """Test adding invalid modules"""
+        module = Module()
+        
+        # Test adding None module
+        module.add_module('none_module', None)
+        assert module._modules['none_module'] is None
+        
+        # Test adding invalid type
+        with pytest.raises(TypeError):
+            module.add_module('invalid', "not a module")
+            
+        # Test adding before initialization
+        with pytest.raises(TypeError):
+            class BadModule(Module):
+                def __init__(self):
+                    self.add_module('test', Module())  # Before super().__init__()
+            BadModule()
+
+    def test_attribute_access(self):
+        """Test attribute access edge cases"""
+        # Test accessing non-existent attribute
+        module = Module()
+        with pytest.raises(AttributeError):
+            _ = module.nonexistent_attr
+        
+        # Test accessing training attribute before initialization
+        class BadModule(Module):
+            def __init__(self):
+                # Access training before super().__init__()
+                try:
+                    _ = self._parameters
+                except AttributeError:
+                    pass  # Expected
+                    
+                # Now try to get the training attribute which should fail
+                _ = self.training
+                super().__init__()
+                
+        with pytest.raises(AttributeError):
+            BadModule()
+
+    def test_module_buffer_operations(self):
+        """Test buffer operations in detail"""
+        class TestModule(Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer('running_mean', Tensor([0.0]))
+                self.register_buffer('running_var', None)
+                
+        module = TestModule()
+        assert 'running_mean' in module._buffers
+        assert module._buffers['running_var'] is None
+        
+        # Test buffer replacement
+        module.register_buffer('running_mean', Tensor([1.0]))
+        assert np.array_equal(module._buffers['running_mean'].data, [1.0])
+
+    def test_module_state_dict(self):
+        """Test state dict functionality"""
+        class ComplexModule(Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = Linear(2, 2)
+                self.register_buffer('running_stats', Tensor([0.0]))
+                
+        module = ComplexModule()
+        # Test parameter access
+        params = dict(module.named_parameters())
+        assert 'linear.weight' in params
+        assert 'linear.bias' in params
+
+    def test_nested_module_training(self):
+        """Test training mode propagation in nested modules"""
+        class NestedModule(Module):
+            def __init__(self):
+                super().__init__()
+                self.sub1 = Linear(2, 2)
+                self.sub2 = Linear(2, 2)
+                
+        module = NestedModule()
+        module.train(False)
+        assert not module.training
+        assert not module.sub1.training
+        assert not module.sub2.training
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_nn.py
+// ----------------------------------------
+import pytest
+import numpy as np
+from DLpy.core import Tensor
+from DLpy.nn.linear import Linear
+from DLpy.nn.modules import Module
+
+
+class TestLinearLayer:
+    """Test suite for the Linear layer implementation."""
+    
+    def test_linear_layer_creation(self):
+        """Test that linear layers are created with correct shapes and initialization."""
+        in_features, out_features = 5, 3
+        layer = Linear(in_features, out_features)
+        
+        # Test weight dimensions
+        assert layer.weight.shape == (in_features, out_features)
+        assert layer.weight.requires_grad
+        
+        # Test bias dimensions
+        assert layer.bias is not None
+        assert layer.bias.shape == (out_features,)
+        assert layer.bias.requires_grad
+        
+        # Test layer without bias
+        layer_no_bias = Linear(in_features, out_features, bias=False)
+        assert layer_no_bias.bias is None
+        
+    def test_linear_forward(self):
+        """Test the forward pass of the linear layer."""
+        # Create a simple linear layer with known weights for testing
+        layer = Linear(2, 3)
+        layer.weight.data = np.array([[1., 2., 3.], [4., 5., 6.]])
+        layer.bias.data = np.array([0.1, 0.2, 0.3])
+        
+        # Create input tensor
+        x = Tensor([[1., 2.]])  # Batch size 1, 2 features
+        
+        # Compute expected output manually
+        expected_output = np.array([[9.1, 12.2, 15.3]])  # (1×2) @ (2×3) + bias
+        
+        # Get actual output
+        output = layer(x)
+        
+        # Compare results
+        assert isinstance(output, Tensor)
+        assert output.shape == (1, 3)
+        assert np.allclose(output.data, expected_output)
+        
+    def test_linear_backward(self):
+        """Test the backward pass and gradient computation of the linear layer."""
+        # Create a layer with specific weights for testing
+        layer = Linear(2, 1)
+        layer.weight.data = np.array([[1.], [2.]])
+        layer.bias.data = np.array([0.])
+        
+        # Forward pass
+        x = Tensor([[1., 2.]], requires_grad=True)
+        output = layer(x)
+        
+        # Backward pass
+        output.backward(np.array([[1.]]))
+        
+        # Check input gradients
+        expected_input_grad = np.array([[1., 2.]])  # Gradient w.r.t input
+        assert np.allclose(x.grad, expected_input_grad)
+        
+        # Check weight gradients
+        expected_weight_grad = np.array([[1.], [2.]])  # Gradient w.r.t weights
+        assert np.allclose(layer.weight.grad, expected_weight_grad)
+        
+        # Check bias gradients
+        expected_bias_grad = np.array([1.])  # Gradient w.r.t bias
+        assert np.allclose(layer.bias.grad, expected_bias_grad)
+        
+    def test_linear_batch_processing(self):
+        """Test that the linear layer correctly handles batched inputs."""
+        layer = Linear(3, 2)
+        batch_size = 4
+        x = Tensor(np.random.randn(batch_size, 3))
+        
+        output = layer(x)
+        assert output.shape == (batch_size, 2)
+        
+    def test_weight_initialization(self):
+        """Test that weights are properly initialized using He initialization."""
+        in_features, out_features = 100, 100
+        layer = Linear(in_features, out_features)
+        
+        # Check if weights follow He initialization statistics
+        weights = layer.weight.data
+        mean = np.mean(weights)
+        std = np.std(weights)
+        
+        # He initialization should have mean ≈ 0 and std ≈ sqrt(2/in_features)
+        expected_std = np.sqrt(2.0 / in_features)
+        assert abs(mean) < 0.1  # Mean should be close to 0
+        assert abs(std - expected_std) < 0.1  # Std should be close to expected
+
+
+class TestModule:
+    """Test suite for the base Module class."""
+    
+    class SimpleModule(Module):
+        """A simple module for testing purposes."""
+        def __init__(self):
+            super().__init__()
+            self.linear1 = Linear(2, 3)
+            self.linear2 = Linear(3, 1)
+            self.register_buffer('running_mean', Tensor(np.zeros(3)))
+            
+        def forward(self, x):
+            x = self.linear1(x)
+            return self.linear2(x)
+    
+    def test_module_parameter_registration(self):
+        """Test that parameters are correctly registered and tracked."""
+        model = self.SimpleModule()
+        
+        # Count parameters
+        params = list(model.parameters())
+        assert len(params) == 4  # 2 weights + 2 biases
+        
+        # Check named parameters
+        named_params = dict(model.named_parameters())
+        assert 'linear1.weight' in named_params
+        assert 'linear1.bias' in named_params
+        assert 'linear2.weight' in named_params
+        assert 'linear2.bias' in named_params
+        
+    def test_module_buffer_registration(self):
+        """Test that buffers are correctly registered."""
+        model = self.SimpleModule()
+        assert 'running_mean' in model._buffers
+        assert isinstance(model._buffers['running_mean'], Tensor)
+        
+    def test_module_train_eval_modes(self):
+        """Test switching between training and evaluation modes."""
+        model = self.SimpleModule()
+        
+        # Test train mode
+        model.train()
+        assert model.training
+        assert model.linear1.training
+        assert model.linear2.training
+        
+        # Test eval mode
+        model.eval()
+        assert not model.training
+        assert not model.linear1.training
+        assert not model.linear2.training
+        
+    def test_module_repr(self):
+        """Test the string representation of modules."""
+        model = self.SimpleModule()
+        repr_str = repr(model)
+        
+        # Check that repr includes important information
+        assert 'SimpleModule' in repr_str
+        assert 'linear1' in repr_str
+        assert 'linear2' in repr_str
+
+
+class TestEndToEnd:
+    """End-to-end tests for neural network components."""
+    
+    def test_simple_network(self):
+        """Test a simple network with multiple layers."""
+        # Create a simple network
+        class SimpleNet(Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = Linear(2, 3)
+                self.linear2 = Linear(3, 1)
+                
+            def forward(self, x):
+                x = self.linear1(x)
+                return self.linear2(x)
+        
+        # Create model and input
+        model = SimpleNet()
+        x = Tensor([[1., 2.]], requires_grad=True)
+        
+        # Forward pass
+        output = model(x)
+        assert output.shape == (1, 1)
+        
+        # Backward pass
+        output.backward(np.array([[1.]]))
+        
+        # Check that all parameters have gradients
+        for param in model.parameters():
+            assert param.grad is not None
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_ops.py
+// ----------------------------------------
+import pytest
+from DLpy.ops import Add, Multiply, Reshape
+from DLpy.core import Tensor
+import numpy as np
+
+class TestBasicOps:
+    """Tests for basic arithmetic operations"""
+    
+    def test_add_edge_cases(self):
+        """Test edge cases for Add operation"""
+        # Test broadcasting
+        x = Tensor([[1.0]], requires_grad=True)
+        y = Tensor([1.0, 2.0], requires_grad=True)
+        
+        with pytest.raises(ValueError):
+            _ = Add.apply(x, y)
+        
+        # Test gradient accumulation
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor([2.0], requires_grad=True)
+        z = Add.apply(x, y)
+        z.backward()
+        
+        assert np.array_equal(x.grad, [1.0])
+        assert np.array_equal(y.grad, [1.0])
+
+    def test_multiply_edge_cases(self):
+        """Test edge cases for Multiply operation"""
+        # Test scalar multiplication
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor(2.0, requires_grad=True)
+        z = Multiply.apply(x, y)
+        z.backward()
+        
+        assert np.array_equal(x.grad, [2.0])
+        assert np.array_equal(y.grad, [1.0])
+    
+    def test_add_broadcasting_complex(self):
+        """Test complex broadcasting scenarios in Add operation"""
+        # Test broadcasting with different dimensions
+        x = Tensor([[1.0]], requires_grad=True)
+        y = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+        with pytest.raises(ValueError):
+            _ = x + y  # Incompatible shapes
+            
+        # Test broadcasting with scalar
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        y = Tensor(2.0, requires_grad=True)
+        z = x + y
+        z.backward(np.ones_like(x.data))
+        assert np.sum(y.grad) == np.prod(x.shape)  # Sum of gradients equals number of elements
+
+    def test_multiply_broadcasting_complex(self):
+        """Test complex broadcasting scenarios in Multiply operation"""
+        # Test scalar multiplication with matrix
+        x = Tensor(2.0, requires_grad=True)
+        y = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        z = x * y
+        z.backward(np.ones_like(y.data))
+
+        # Check scalar gradient - should be sum of all elements in y
+        assert x.grad.shape == (1,)
+        assert np.allclose(x.grad, [10.0])  # sum([1,2,3,4])
+
+        # Check matrix gradient - should be uniformly scaled by x
+        assert y.grad.shape == y.data.shape
+        assert np.allclose(y.grad, np.full_like(y.data, 2.0))
+
+        # Test broadcasting matrix with different shapes
+        a = Tensor([[1.0], [2.0]], requires_grad=True)  # Shape: (2,1)
+        b = Tensor([[1.0, 2.0]], requires_grad=True)    # Shape: (1,2)
+        c = a * b  # Should broadcast to shape (2,2)
+
+        assert c.data.shape == (2, 2)
+        expected = np.array([[1.0, 2.0], [2.0, 4.0]])
+        assert np.allclose(c.data, expected)
+
+        # Test gradient propagation with broadcasting
+        c.backward(np.ones_like(c.data))
+        assert a.grad.shape == (2, 1)
+        assert b.grad.shape == (1, 2)
+        # Fix expected gradients
+        assert np.allclose(a.grad, np.array([[2.0], [2.0]]))  # Sum of gradients for each row
+        assert np.allclose(b.grad, np.array([[3.0, 3.0]]))    # Sum of gradients for each column
+
+class TestReshapeOp:
+    """Tests for Reshape operation"""
+    
+    def test_reshape_edge_cases(self):
+        """Test edge cases for Reshape operation"""
+        x = Tensor([1.0, 2.0], requires_grad=True)
+        
+        # Test invalid shape
+        with pytest.raises(ValueError):
+            _ = x.reshape(3)  # Invalid shape
+        
+        # Test gradients with different shapes
+        y = x.reshape(2, 1)
+        y.backward(np.array([[1.0], [1.0]]))
+        assert np.array_equal(x.grad, [1.0, 1.0])
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
+// ----------------------------------------
+import pytest
+from DLpy.ops import Add, Multiply, Reshape
+from DLpy.core import Tensor
+import numpy as np
+
+class TestBasicOps:
+    """Tests for basic arithmetic operations"""
+    
+    def test_add_edge_cases(self):
+        """Test edge cases for Add operation"""
+        # Test broadcasting
+        x = Tensor([[1.0]], requires_grad=True)
+        y = Tensor([1.0, 2.0], requires_grad=True)
+        
+        with pytest.raises(ValueError):
+            _ = Add.apply(x, y)
+        
+        # Test gradient accumulation
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor([2.0], requires_grad=True)
+        z = Add.apply(x, y)
+        z.backward()
+        
+        assert np.array_equal(x.grad, [1.0])
+        assert np.array_equal(y.grad, [1.0])
+
+    def test_multiply_edge_cases(self):
+        """Test edge cases for Multiply operation"""
+        # Test scalar multiplication
+        x = Tensor([1.0], requires_grad=True)
+        y = Tensor(2.0, requires_grad=True)
+        z = Multiply.apply(x, y)
+        z.backward()
+        
+        assert np.array_equal(x.grad, [2.0])
+        assert np.array_equal(y.grad, [1.0])
+
+class TestReshapeOp:
+    """Tests for Reshape operation"""
+    
+    def test_reshape_edge_cases(self):
+        """Test edge cases for Reshape operation"""
+        x = Tensor([1.0, 2.0], requires_grad=True)
+        
+        # Test invalid shape
+        with pytest.raises(ValueError):
+            _ = x.reshape(3)  # Invalid shape
+        
+        # Test gradients with different shapes
+        y = x.reshape(2, 1)
+        y.backward(np.array([[1.0], [1.0]]))
+        assert np.array_equal(x.grad, [1.0, 1.0])
+
+class TestAdvancedOperations:
+    """Additional tests for basic operations"""
+    
+    def test_broadcasting_edge_cases(self):
+        """Test broadcasting with different dimensions"""
+        # Test broadcasting scalar to matrix
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        y = Tensor(2.0, requires_grad=True)
+        z = x * y
+        z.backward(np.ones_like(x.data))
+        assert y.grad.shape == (1,)
+        assert np.array_equal(x.grad, [[2.0, 2.0], [2.0, 2.0]])
+        
+        # Test broadcasting vector to matrix
+        x = Tensor([[1.0], [2.0]], requires_grad=True)
+        y = Tensor([1.0, 2.0], requires_grad=True)
+        z = x + y  # Should broadcast to [[1,2], [2,3]]
+        z.backward(np.ones((2, 2)))
+        assert x.grad.shape == (2, 1)
+        assert y.grad.shape == (2,)
+        
+    def test_zero_gradient_handling(self):
+        """Test operations with zero gradients"""
+        x = Tensor([1.0, 2.0], requires_grad=True)
+        y = Tensor([3.0, 4.0], requires_grad=True)
+        z = x * y
+        z.backward(np.zeros_like(z.data))
+        assert np.all(x.grad == 0)
+        assert np.all(y.grad == 0)
+        
+    def test_non_differentiable_inputs(self):
+        """Test operations with non-differentiable inputs"""
+        x = Tensor([1.0, 2.0], requires_grad=False)
+        y = Tensor([3.0, 4.0], requires_grad=True)
+        z = x * y
+        z.backward(np.ones_like(z.data))
+        assert x.grad is None  # Non-differentiable input should have no gradient
+        assert np.array_equal(y.grad, [1.0, 2.0])
+
+    def test_tensor_creation_edge_cases(self):
+        """Test edge cases in tensor creation"""
+        # Test with different dtypes
+        t1 = Tensor([1, 2, 3], dtype=np.int32)
+        assert t1.dtype == np.int32
+        
+        # Test with nested lists
+        t2 = Tensor([[1, 2], [3, 4]])
+        assert t2.shape == (2, 2)
+        
+        # Test with another tensor
+        t3 = Tensor(t2)
+        assert np.array_equal(t3.data, t2.data)
+
+    def test_backward_edge_cases(self):
+        """Test edge cases in backward pass"""
+        # Test backward with scalar tensor
+        x = Tensor(2.0, requires_grad=True)
+        y = x * 2
+        y.backward(np.array(3.0))
+        assert x.grad is not None
+        
+        # Test backward with non-scalar tensor without gradient
+        x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+        y = x * 2
+        with pytest.raises(RuntimeError):
+            y.backward()  # Should raise error for non-scalar
+
+    def test_repr_and_str(self):
+        """Test string representations"""
+        t = Tensor([1.0, 2.0], requires_grad=True)
+        assert 'Tensor' in repr(t)
+        assert 'requires_grad=True' in repr(t)
+
+// ----------------------------------------
