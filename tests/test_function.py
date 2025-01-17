@@ -1,5 +1,5 @@
 import pytest
-from DLpy.core import Function, Context, Tensor
+from DLpy.core import Function, Tensor
 import numpy as np
 
 class TestFunction:

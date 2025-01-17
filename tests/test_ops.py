@@ -1,5 +1,5 @@
 import pytest
-from DLpy.ops import Add, Multiply, Reshape
+from DLpy.ops import Add, Multiply
 from DLpy.core import Tensor
 import numpy as np
 
@@ -83,6 +83,17 @@ class TestBasicOps:
         assert np.allclose(a.grad, np.array([[3.0], [3.0]]))  # Correct sum of gradients for each row
         assert np.allclose(b.grad, np.array([[3.0, 3.0]]))    # Correct sum of gradients for each column
 
+    def test_add_empty_tensors(self):
+        x = Tensor([], requires_grad=True)
+        y = Tensor([], requires_grad=True)
+        z = Add.apply(x, y)
+        assert z.shape == (0,)
+    
+    def test_multiply_empty_tensors(self):
+        x = Tensor([], requires_grad=True)
+        y = Tensor([], requires_grad=True)
+        z = Multiply.apply(x, y)
+        assert z.shape == (0,)
 
 class TestReshapeOp:
     """Tests for Reshape operation"""

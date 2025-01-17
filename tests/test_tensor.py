@@ -1,5 +1,4 @@
 import pytest
-from DLpy.ops import Add, Multiply, Reshape
 from DLpy.core import Tensor
 import numpy as np
 
