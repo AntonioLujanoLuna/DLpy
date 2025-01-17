@@ -1,4 +1,4 @@
-// Python Files Concatenated on 01/17/2025 12:08:49
+// Python Files Concatenated on 01/17/2025 23:49:22
 // ----------------------------------------
 
 
@@ -121,25 +121,42 @@ class AutogradEngine:
             
         self._currently_computing_gradients = True
         try:
-            grad_dict = {id(tensor): gradient}
+            # Initialize grad_dict as a regular dictionary
+            grad_dict: Dict[int, np.ndarray] = {}
+            
+            # If no gradient is provided, assume it's 1 (for scalar outputs)
+            if gradient is None:
+                if tensor.data.shape == ():
+                    grad_dict[id(tensor)] = np.array(1.0)
+                else:
+                    grad_dict[id(tensor)] = np.ones_like(tensor.data)
+            else:
+                grad_dict[id(tensor)] = gradient
+            
+            # Perform topological sort
             sorted_nodes = self._topological_sort(tensor)
             
+            # Traverse nodes in reverse topological order
             for node in reversed(sorted_nodes):
-                if id(node.tensor) in grad_dict:
-                    current_grad = grad_dict[id(node.tensor)]
-                    
-                    if node.tensor._backward_fn is not None:
-                        # Don't clear existing gradients, let them accumulate naturally
-                        node.tensor._backward_fn(current_grad, grad_dict)
-
-                    # Handle leaf nodes
-                    if len(node.in_edges) == 0 and node.tensor.requires_grad:
-                        grad_tensor = grad_dict[id(node.tensor)]
-                        if grad_tensor is not None:
-                            if node.tensor.grad is None:
-                                node.tensor.grad = grad_tensor
-                            else:
-                                node.tensor.grad = node.tensor.grad + grad_tensor  # Let numpy handle broadcasting
+                node_id = id(node.tensor)
+                if node_id not in grad_dict or not node.tensor.requires_grad:
+                    continue  # No gradient to propagate
+                
+                current_grad = grad_dict[node_id]
+                
+                if node.tensor._backward_fn is not None:
+                    node.tensor._backward_fn(current_grad, grad_dict)
+                
+                # Accumulate gradients for leaf nodes
+                if len(node.in_edges) == 0 and node.tensor.requires_grad:
+                    if node.tensor.grad is None:
+                        node.tensor.grad = current_grad
+                    else:
+                        try:
+                            node.tensor.grad += current_grad
+                        except ValueError:
+                            # If shapes don't match, reshape current_grad
+                            node.tensor.grad += current_grad.reshape(node.tensor.grad.shape)
         finally:
             self._currently_computing_gradients = False
 
@@ -174,12 +191,12 @@ class AutogradEngine:
                 
         visit(self._nodes[id(start_tensor)])
         return result
-        
+            
     def clear(self) -> None:
         """Clears the computational graph."""
         self._nodes.clear()
         self._edges.clear()
-
+    
     def validate_graph(self) -> List[str]:
         """
         Validates the computational graph structure.
@@ -213,10 +230,10 @@ class AutogradEngine:
         # Step 3: Find nodes not connected to outputs
         all_nodes = set(self._nodes.values())
         unconnected_nodes = all_nodes - connected_nodes
-        
+
         # Step 4: Find completely isolated nodes
         isolated_nodes = all_nodes - active_nodes
-        
+
         # Add appropriate warnings
         if unconnected_nodes:
             warnings.append(f"Found {len(unconnected_nodes)} nodes not connected to any output")
@@ -235,6 +252,7 @@ class AutogradEngine:
                     )
                     
         return warnings
+
 
 # Global autograd engine instance
 _autograd_engine = AutogradEngine()
@@ -648,8 +666,366 @@ class Tensor:
         from ..ops import Reshape
         return Reshape.apply(self, shape)
 
+    def pow(self, exponent: Union['Tensor', float]) -> 'Tensor':
+        """Returns tensor raised to the power of exponent."""
+        from ..ops import Power
+        return Power.apply(self, exponent)
+
+    def div(self, other: Union['Tensor', float]) -> 'Tensor':
+        """Returns self divided by other."""
+        from ..ops import Divide
+        return Divide.apply(self, other)
+
+    def log(self) -> 'Tensor':
+        """Returns the natural logarithm of the tensor."""
+        from ..ops import Log
+        return Log.apply(self)
+
+    def exp(self) -> 'Tensor':
+        """Returns e raised to the power of each element in the tensor."""
+        from ..ops import Exp
+        return Exp.apply(self)
+
+    def sigmoid(self) -> 'Tensor':
+        """Returns the sigmoid of the tensor."""
+        from ..ops import Sigmoid
+        return Sigmoid.apply(self)
+
+    def tanh(self) -> 'Tensor':
+        """Returns the hyperbolic tangent of the tensor."""
+        from ..ops import Tanh
+        return Tanh.apply(self)
+
+    def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the sum of all elements in the tensor."""
+        from ..ops import Sum
+        return Sum.apply(self, axis, keepdims)
+
+    def mean(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the mean of all elements in the tensor."""
+        from ..ops import Mean
+        return Mean.apply(self, axis, keepdims)
+
+    def max(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the maximum value of all elements in the tensor."""
+        from ..ops import Max
+        return Max.apply(self, axis, keepdims)
+
+    def t(self) -> 'Tensor':
+        """Returns the transpose of the tensor."""
+        from ..ops import Transpose
+        return Transpose.apply(self)
+
+    def transpose(self, *axes: int) -> 'Tensor':
+        """Returns the transposed tensor."""
+        from ..ops import Transpose
+        return Transpose.apply(self, axes if axes else None)
+
+    # Comparison operations
+    def __gt__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Greater
+        return Greater.apply(self, other)
+
+    def __ge__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import GreaterEqual
+        return GreaterEqual.apply(self, other)
+
+    def __lt__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Less
+        return Less.apply(self, other)
+
+    def __le__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import LessEqual
+        return LessEqual.apply(self, other)
+
+    def __eq__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Equal
+        return Equal.apply(self, other)
+
+    def __ne__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import NotEqual
+        return NotEqual.apply(self, other)
+
+    def __truediv__(self, other: Union['Tensor', float]) -> 'Tensor':
+        """Implements division using the / operator."""
+        from ..ops import Divide
+        return Divide.apply(self, other)
+
+    def __pow__(self, exponent: Union['Tensor', float]) -> 'Tensor':
+        """Implements power using the ** operator."""
+        from ..ops import Power
+        return Power.apply(self, exponent)
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\__init__.py
 // ----------------------------------------
+"""
+Neural network module for DLpy.
+
+This module contains all components needed for building neural networks.
+"""
+
+from .modules import Module
+from .linear import Linear
+from .activations import (
+    relu, leaky_relu, elu, gelu, sigmoid, tanh,
+    ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
+)
+
+__all__ = [
+    # Base module
+    'Module',
+    
+    # Layers
+    'Linear',
+    
+    # Activation functions
+    'relu',
+    'leaky_relu',
+    'elu',
+    'gelu',
+    'sigmoid',
+    'tanh',
+    'ReLU',
+    'LeakyReLU',
+    'ELU',
+    'GELU',
+    'Sigmoid',
+    'Tanh',
+]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\activations.py
+// ----------------------------------------
+"""
+Activation functions module for DLpy.
+
+This module contains all standard activation functions used in neural networks.
+Each activation function is implemented as a Function subclass for autograd support.
+"""
+
+from typing import Dict, Optional
+import numpy as np
+from ..core import Function, Tensor
+
+class ReLU(Function):
+    """
+    Rectified Linear Unit activation function.
+    
+    Forward: f(x) = max(0, x)
+    Backward: f'(x) = 1 if x > 0 else 0
+    """
+    
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        return Tensor(np.maximum(0, x.data))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        if x.requires_grad:
+            grad = grad_output * (x.data > 0)
+            grad_dict[id(x)] = grad
+
+class LeakyReLU(Function):
+    """
+    Leaky Rectified Linear Unit activation function.
+    
+    Forward: f(x) = x if x > 0 else negative_slope * x
+    Backward: f'(x) = 1 if x > 0 else negative_slope
+    
+    Args:
+        negative_slope: Controls slope for negative values. Default: 0.01
+    """
+    
+    @staticmethod
+    def forward(ctx, x, negative_slope: float = 0.01):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        ctx.save_arguments(negative_slope=negative_slope)
+        
+        return Tensor(np.where(x.data > 0, x.data, negative_slope * x.data))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        negative_slope = ctx.saved_arguments['negative_slope']
+        
+        if x.requires_grad:
+            grad = grad_output * np.where(x.data > 0, 1.0, negative_slope)
+            grad_dict[id(x)] = grad
+
+class ELU(Function):
+    """
+    Exponential Linear Unit activation function.
+    
+    Forward: f(x) = x if x > 0 else alpha * (exp(x) - 1)
+    Backward: f'(x) = 1 if x > 0 else alpha * exp(x)
+    
+    Args:
+        alpha: Controls the value to which an ELU saturates for negative inputs. Default: 1.0
+    """
+    
+    @staticmethod
+    def forward(ctx, x, alpha: float = 1.0):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        ctx.save_arguments(alpha=alpha)
+        
+        return Tensor(np.where(x.data > 0, x.data, alpha * (np.exp(x.data) - 1)))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        alpha = ctx.saved_arguments['alpha']
+        
+        if x.requires_grad:
+            grad = grad_output * np.where(x.data > 0, 1.0, alpha * np.exp(x.data))
+            grad_dict[id(x)] = grad
+
+class GELU(Function):
+    """
+    Gaussian Error Linear Unit activation function.
+    
+    Forward: f(x) = x * Φ(x)
+    where Φ(x) is the Gaussian cumulative distribution function.
+    
+    This implementation uses the approximation:
+    f(x) ≈ 0.5x * (1 + tanh(√(2/π) * (x + 0.044715x³)))
+    """
+    
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        # Constants for the approximation
+        sqrt_2_over_pi = np.sqrt(2 / np.pi)
+        coeff = 0.044715
+        
+        # Compute intermediate values
+        x_cubed = x.data ** 3
+        inner = sqrt_2_over_pi * (x.data + coeff * x_cubed)
+        tanh_inner = np.tanh(inner)
+        
+        # Compute output
+        result = 0.5 * x.data * (1 + tanh_inner)
+        
+        # Save for backward pass
+        ctx.save_for_backward(x)
+        ctx.save_arguments(tanh_inner=tanh_inner)
+        
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        tanh_inner = ctx.saved_arguments['tanh_inner']
+        
+        if x.requires_grad:
+            sqrt_2_over_pi = np.sqrt(2 / np.pi)
+            coeff = 0.044715
+            
+            # Compute derivative
+            x_cubed = x.data ** 3
+            inner = sqrt_2_over_pi * (x.data + coeff * x_cubed)
+            
+            # d/dx[GELU(x)] = 0.5 * (1 + tanh(inner)) + 
+            #                 0.5x * (1 - tanh²(inner)) * sqrt(2/π) * (1 + 3 * 0.044715x²)
+            grad = 0.5 * (1 + tanh_inner)
+            grad += 0.5 * x.data * (1 - tanh_inner ** 2) * sqrt_2_over_pi * (1 + 3 * coeff * x.data ** 2)
+            
+            grad_dict[id(x)] = grad_output * grad
+
+class Sigmoid(Function):
+    """
+    Sigmoid activation function.
+    
+    Forward: f(x) = 1 / (1 + exp(-x))
+    Backward: f'(x) = f(x) * (1 - f(x))
+    """
+    
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        # Compute sigmoid with numerical stability
+        x_data = x.data
+        exp_neg_x = np.exp(-np.abs(x_data))
+        sigmoid_x = np.where(x_data >= 0, 
+                           1 / (1 + exp_neg_x),
+                           exp_neg_x / (1 + exp_neg_x))
+        
+        ctx.save_for_backward(x)
+        ctx.save_arguments(sigmoid_x=sigmoid_x)
+        return Tensor(sigmoid_x)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        sigmoid_x = ctx.saved_arguments['sigmoid_x']
+        
+        if x.requires_grad:
+            grad = grad_output * sigmoid_x * (1 - sigmoid_x)
+            grad_dict[id(x)] = grad
+
+class Tanh(Function):
+    """
+    Hyperbolic tangent activation function.
+    
+    Forward: f(x) = tanh(x)
+    Backward: f'(x) = 1 - tanh²(x)
+    """
+    
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        tanh_x = np.tanh(x.data)
+        ctx.save_for_backward(x)
+        ctx.save_arguments(tanh_x=tanh_x)
+        return Tensor(tanh_x)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        tanh_x = ctx.saved_arguments['tanh_x']
+        
+        if x.requires_grad:
+            grad = grad_output * (1 - tanh_x ** 2)
+            grad_dict[id(x)] = grad
+
+# Add convenience functions for each activation
+def relu(x: Tensor) -> Tensor:
+    """Applies ReLU activation function."""
+    return ReLU.apply(x)
+
+def leaky_relu(x: Tensor, negative_slope: float = 0.01) -> Tensor:
+    """Applies Leaky ReLU activation function."""
+    return LeakyReLU.apply(x, negative_slope)
+
+def elu(x: Tensor, alpha: float = 1.0) -> Tensor:
+    """Applies ELU activation function."""
+    return ELU.apply(x, alpha)
+
+def gelu(x: Tensor) -> Tensor:
+    """Applies GELU activation function."""
+    return GELU.apply(x)
+
+def sigmoid(x: Tensor) -> Tensor:
+    """Applies Sigmoid activation function."""
+    return Sigmoid.apply(x)
+
+def tanh(x: Tensor) -> Tensor:
+    """Applies Tanh activation function."""
+    return Tanh.apply(x)
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\conv.py
 // ----------------------------------------
@@ -940,11 +1316,71 @@ This module contains all the mathematical operations that can be performed on te
 
 from .basic import Add, Multiply
 from .reshape import Reshape
+from .power import Power, Divide
+from .elementwise import Log, Exp
+from .reduction import Sum, Mean, Max
+from .matrix import (
+    Transpose,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+    Equal,
+    NotEqual
+)
+from .loss import (
+    MSELoss,
+    CrossEntropyLoss,
+    BinaryCrossEntropyLoss,
+    L1Loss,
+    HuberLoss,
+    KLDivLoss,
+    CosineSimilarityLoss,
+    HingeLoss,
+    FocalLoss
+)
 
-__all__ = ['Add', 'Multiply', 'Reshape']
+__all__ = [
+    # Basic operations
+    'Add',
+    'Multiply',
+    'Reshape',
+    
+    # Power operations
+    'Power',
+    'Divide',
+    
+    # Element-wise operations
+    'Log',
+    'Exp',
+    
+    # Reduction operations
+    'Sum',
+    'Mean',
+    'Max',
+    
+    # Matrix operations
+    'Transpose',
+    
+    # Comparison operations
+    'Greater',
+    'GreaterEqual',
+    'Less',
+    'LessEqual',
+    'Equal',
+    'NotEqual',
 
-// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\activation.py
-// ----------------------------------------
+    # Loss functions
+    'MSELoss',
+    'CrossEntropyLoss',
+    'BinaryCrossEntropyLoss',
+    'L1Loss',
+    'HuberLoss',
+    'KLDivLoss',
+    'CosineSimilarityLoss',
+    'HingeLoss',
+    'FocalLoss'
+]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\basic.py
 // ----------------------------------------
@@ -983,17 +1419,43 @@ class Add(Function):
             return Tensor(result)
         except ValueError:
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
-            
+        
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         a, b = ctx.saved_tensors
-        
-        if a.requires_grad:
-            grad_dict[id(a)] = grad_output  # Let numpy handle broadcasting
-            
-        if b.requires_grad:
-            grad_dict[id(b)] = grad_output  # Let numpy handle broadcasting
 
+        if a.requires_grad:
+            grad_a = grad_output
+            grad_a = Add._reduce_grad(grad_a, a.data.shape)
+            if id(a) not in grad_dict or grad_dict[id(a)] is None:
+                grad_dict[id(a)] = grad_a
+            else:
+                grad_dict[id(a)] += grad_a  # Accumulate gradients
+
+        if b.requires_grad:
+            grad_b = grad_output
+            grad_b = Add._reduce_grad(grad_b, b.data.shape)
+            if id(b) not in grad_dict or grad_dict[id(b)] is None:
+                grad_dict[id(b)] = grad_b
+            else:
+                grad_dict[id(b)] += grad_b  # Accumulate gradients
+
+    @staticmethod
+    def _reduce_grad(grad, target_shape):
+        """
+        Reduces the gradient to match the target shape by summing over broadcasted dimensions.
+        """
+        # Convert target_shape to a tuple if it's not
+        if not isinstance(target_shape, tuple):
+            target_shape = tuple(target_shape)
+        
+        # Align the dimensions by prepending 1s if necessary
+        grad_shape = grad.shape
+        target_shape = (1,) * (len(grad_shape) - len(target_shape)) + target_shape
+        for axis, (grad_dim, target_dim) in enumerate(zip(grad_shape, target_shape)):
+            if target_dim == 1 and grad_dim != 1:
+                grad = grad.sum(axis=axis, keepdims=True)
+        return grad
 
 class Multiply(Function):
     @staticmethod
@@ -1005,23 +1467,14 @@ class Multiply(Function):
             
         shape_a = a.data.shape
         shape_b = b.data.shape
-
-        # Check valid broadcasting manually
-        if len(shape_a) == 2 and shape_a[0] == 1 and len(shape_b) == 1:
-            # Special case: (1,N) matrix with (M,) vector requires N==M
-            if shape_a[1] != shape_b[0]:
-                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
-        elif len(shape_a) == 1 and len(shape_b) == 2 and shape_b[0] == 1:
-            # Special case: (N,) vector with (1,M) matrix requires N==M
-            if shape_a[0] != shape_b[1]:
-                raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
-                
-        # Save tensors for backward pass
-        ctx.save_for_backward(a, b)
         
-        # If we get here, try the operation
+        # Check if shapes can be broadcast according to NumPy rules
         try:
+            # Test broadcast compatibility without actually performing the operation
+            np.broadcast_shapes(shape_a, shape_b)
+            # If we get here, shapes are compatible
             result = a.data * b.data
+            ctx.save_for_backward(a, b)
             return Tensor(result)
         except ValueError:
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
@@ -1029,18 +1482,880 @@ class Multiply(Function):
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         a, b = ctx.saved_tensors
-        
+
         if a.requires_grad:
-            grad_dict[id(a)] = grad_output * b.data  # Let numpy handle broadcasting
-            
+            grad_a = grad_output * b.data
+            grad_a = Multiply._reduce_grad(grad_a, a.data.shape)
+            if id(a) not in grad_dict or grad_dict[id(a)] is None:
+                grad_dict[id(a)] = grad_a
+            else:
+                grad_dict[id(a)] += grad_a  # Accumulate gradients
+
         if b.requires_grad:
-            grad_dict[id(b)] = grad_output * a.data  # Let numpy handle broadcasting
+            grad_b = grad_output * a.data
+            grad_b = Multiply._reduce_grad(grad_b, b.data.shape)
+            if id(b) not in grad_dict or grad_dict[id(b)] is None:
+                grad_dict[id(b)] = grad_b
+            else:
+                grad_dict[id(b)] += grad_b  # Accumulate gradients
+
+    @staticmethod
+    def _reduce_grad(grad, target_shape):
+        """
+        Reduces the gradient to match the target shape by summing over broadcasted dimensions.
+        """
+        # Convert target_shape to a tuple if it's not
+        if not isinstance(target_shape, tuple):
+            target_shape = tuple(target_shape)
+        
+        # Align the dimensions by prepending 1s if necessary
+        grad_shape = grad.shape
+        target_shape = (1,) * (len(grad_shape) - len(target_shape)) + target_shape
+        for axis, (grad_dim, target_dim) in enumerate(zip(grad_shape, target_shape)):
+            if target_dim == 1 and grad_dim != 1:
+                grad = grad.sum(axis=axis, keepdims=True)
+        return grad
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\elementwise.py
+// ----------------------------------------
+from typing import Dict
+import numpy as np
+from ..core import Function, Tensor
+
+class Log(Function):
+    """
+    Natural logarithm operation.
+    
+    Forward: f(x) = ln(x)
+    Backward: f'(x) = 1/x
+    """
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        # Check for negative values
+        if np.any(x.data <= 0):
+            raise ValueError("Log of negative numbers or zero is undefined")
+            
+        ctx.save_for_backward(x)
+        return Tensor(np.log(x.data))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        if x.requires_grad:
+            # d/dx(log(x)) = 1/x
+            grad_dict[id(x)] = grad_output / x.data
+
+class Exp(Function):
+    """
+    Exponential operation.
+    
+    Forward: f(x) = exp(x)
+    Backward: f'(x) = exp(x)
+    """
+    @staticmethod
+    def forward(ctx, x):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        result = np.exp(x.data)
+        ctx.save_for_backward(x)  # Save x for backward pass
+        ctx.save_arguments(exp_x=result)  # Save exp(x) as argument
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        exp_x = ctx.saved_arguments['exp_x']
+        
+        if x.requires_grad:
+            # d/dx(exp(x)) = exp(x)
+            grad_dict[id(x)] = grad_output * exp_x
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\loss.py
 // ----------------------------------------
+from typing import Dict, Optional
+import numpy as np
+from ..core import Function, Tensor
+
+class MSELoss(Function):
+    """
+    Mean Squared Error Loss: L = 1/N * Σ(y - ŷ)²
+    
+    Args:
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        if predictions.shape != targets.shape:
+            raise ValueError(f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}")
+            
+        diff = predictions.data - targets.data
+        squared_diff = diff * diff
+        
+        if reduction == 'none':
+            result = squared_diff
+        elif reduction == 'sum':
+            result = np.sum(squared_diff)
+        elif reduction == 'mean':
+            result = np.mean(squared_diff)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(reduction=reduction)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        reduction = ctx.saved_arguments['reduction']
+        
+        diff = predictions.data - targets.data
+        
+        if reduction == 'mean':
+            grad = grad_output * 2 * diff / np.prod(diff.shape)
+        elif reduction == 'sum':
+            grad = grad_output * 2 * diff
+        else:  # 'none'
+            grad = grad_output * 2 * diff
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class CrossEntropyLoss(Function):
+    """
+    Cross Entropy Loss with built-in LogSoftmax: L = -Σ y_true * log(softmax(y_pred))
+    
+    Args:
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+    """
+    
+    @staticmethod
+    def _log_softmax(x):
+        # Compute log(softmax(x)) in a numerically stable way
+        max_x = np.max(x, axis=1, keepdims=True)
+        exp_x = np.exp(x - max_x)
+        sum_exp_x = np.sum(exp_x, axis=1, keepdims=True)
+        return (x - max_x) - np.log(sum_exp_x)
+        
+    @staticmethod
+    def forward(ctx, predictions, targets, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        log_softmax = CrossEntropyLoss._log_softmax(predictions.data)
+        nll_loss = -np.sum(targets.data * log_softmax, axis=1)
+        
+        if reduction == 'none':
+            result = nll_loss
+        elif reduction == 'sum':
+            result = np.sum(nll_loss)
+        elif reduction == 'mean':
+            result = np.mean(nll_loss)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(reduction=reduction, log_softmax=log_softmax)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        reduction = ctx.saved_arguments['reduction']
+        log_softmax = ctx.saved_arguments['log_softmax']
+        
+        grad_output = np.array(grad_output)
+        if reduction == 'mean':
+            grad_output = grad_output / len(targets.data)
+        
+        softmax = np.exp(log_softmax)
+        grad = grad_output.reshape(-1, 1) * (softmax - targets.data)
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class BinaryCrossEntropyLoss(Function):
+    """
+    Binary Cross Entropy Loss: L = -Σ (y * log(p) + (1-y) * log(1-p))
+    
+    Args:
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+        eps (float): Small value for numerical stability
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, reduction='mean', eps=1e-7):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+
+        # Check valid probability values
+        if np.any(predictions.data < 0) or np.any(predictions.data > 1):
+            raise ValueError("Predictions must be in range [0, 1]")
+            
+        # Clip predictions to prevent log(0)
+        predictions_clipped = np.clip(predictions.data, eps, 1 - eps)
+        
+        loss = -(targets.data * np.log(predictions_clipped) + 
+                (1 - targets.data) * np.log(1 - predictions_clipped))
+                
+        if reduction == 'none':
+            result = loss
+        elif reduction == 'sum':
+            result = float(np.sum(loss))  # Convert to scalar
+        elif reduction == 'mean':
+            result = float(np.mean(loss))  # Convert to scalar
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(reduction=reduction, eps=eps)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        reduction = ctx.saved_arguments['reduction']
+        eps = ctx.saved_arguments['eps']
+        
+        predictions_clipped = np.clip(predictions.data, eps, 1 - eps)
+        
+        grad = grad_output * (predictions_clipped - targets.data) / (
+            predictions_clipped * (1 - predictions_clipped))
+            
+        if reduction == 'mean':
+            grad = grad / np.prod(targets.shape)
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class L1Loss(Function):
+    """
+    L1 Loss (Mean Absolute Error): L = |y - ŷ|
+    
+    Args:
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        if predictions.shape != targets.shape:
+            raise ValueError(f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}")
+            
+        diff = predictions.data - targets.data
+        abs_diff = np.abs(diff)
+        
+        if reduction == 'none':
+            result = abs_diff
+        elif reduction == 'sum':
+            result = np.sum(abs_diff)
+        elif reduction == 'mean':
+            result = np.mean(abs_diff)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(reduction=reduction)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        reduction = ctx.saved_arguments['reduction']
+        
+        diff = predictions.data - targets.data
+        grad = np.sign(diff)
+        
+        if reduction == 'mean':
+            grad = grad * grad_output / np.prod(diff.shape)
+        else:  # 'sum' or 'none'
+            grad = grad * grad_output
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class KLDivLoss(Function):
+    """
+    Kullback-Leibler Divergence Loss.
+    KL divergence measures the relative entropy between two probability distributions.
+    
+    Args:
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+        log_target (bool): If True, target is expected to be log-probabilities
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, reduction='mean', log_target=False):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        if not log_target:
+            targets_log = np.log(np.clip(targets.data, 1e-7, 1.0))
+        else:
+            targets_log = targets.data
+            
+        # KL divergence formula: KL(P||Q) = P * (log(P) - log(Q))
+        loss = np.exp(targets_log) * (targets_log - predictions.data)
+        loss = -loss  # Correct the sign to make it positive
+        
+        if reduction == 'none':
+            result = loss
+        elif reduction == 'sum':
+            result = np.sum(loss)
+        elif reduction == 'mean':
+            result = np.mean(loss)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(reduction=reduction, log_target=log_target)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        reduction = ctx.saved_arguments['reduction']
+        log_target = ctx.saved_arguments['log_target']
+        
+        if not log_target:
+            targets_log = np.log(np.clip(targets.data, 1e-7, 1.0))
+        else:
+            targets_log = targets.data
+            
+        grad = -np.exp(targets_log) * grad_output
+        
+        if reduction == 'mean':
+            grad = grad / np.prod(predictions.shape)
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class CosineSimilarityLoss(Function):
+    """
+    Cosine Similarity Loss.
+    Measures the cosine similarity between two vectors.
+    
+    Args:
+        dim (int): Dimension along which cosine similarity is computed
+        eps (float): Small value to avoid division by zero
+        reduction (str): Specifies the reduction to apply to the output
+    """
+    
+    @staticmethod
+    def forward(ctx, x1, x2, dim=1, eps=1e-8, reduction='mean'):
+        if not isinstance(x1, Tensor):
+            x1 = Tensor(x1)
+        if not isinstance(x2, Tensor):
+            x2 = Tensor(x2)
+            
+        # Compute norms
+        norm1 = np.sqrt(np.sum(x1.data * x1.data, axis=dim, keepdims=True))
+        norm2 = np.sqrt(np.sum(x2.data * x2.data, axis=dim, keepdims=True))
+        
+        # Normalize vectors
+        x1_normalized = x1.data / np.maximum(norm1, eps)
+        x2_normalized = x2.data / np.maximum(norm2, eps)
+        
+        # Compute cosine similarity
+        cos_sim = np.sum(x1_normalized * x2_normalized, axis=dim)
+        
+        # For orthogonal vectors, cos_sim = 0, we want loss = 1
+        # For identical vectors, cos_sim = 1, we want loss = 0
+        # Therefore, loss = 1 - cos_sim
+        if reduction == 'none':
+            result = 1 - cos_sim
+        elif reduction == 'sum':
+            result = float(np.sum(1 - cos_sim))
+        elif reduction == 'mean':
+            result = float(np.mean(1 - cos_sim))
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(x1, x2)
+        ctx.save_arguments(dim=dim, eps=eps, reduction=reduction,
+                         x1_normalized=x1_normalized,
+                         x2_normalized=x2_normalized)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x1, x2 = ctx.saved_tensors
+        dim = ctx.saved_arguments['dim']
+        eps = ctx.saved_arguments['eps']
+        reduction = ctx.saved_arguments['reduction']
+        x1_normalized = ctx.saved_arguments['x1_normalized']
+        x2_normalized = ctx.saved_arguments['x2_normalized']
+        
+        if reduction == 'mean':
+            grad_output = grad_output / x1.shape[0]
+        
+        # Gradient with respect to x1
+        if x1.requires_grad:
+            grad_x1 = -grad_output[..., None] * x2_normalized
+            grad_dict[id(x1)] = grad_x1
+            
+        # Gradient with respect to x2
+        if x2.requires_grad:
+            grad_x2 = -grad_output[..., None] * x1_normalized
+            grad_dict[id(x2)] = grad_x2
+
+class HingeLoss(Function):
+    """
+    Hinge Loss (max-margin loss).
+    Commonly used for SVM training.
+    L = max(0, margin - y * f(x))
+    
+    Args:
+        margin (float): Margin in the hinge loss
+        reduction (str): Specifies the reduction to apply to the output
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, margin=1.0, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        # Convert targets to ±1
+        signed_targets = 2.0 * targets.data - 1.0
+        
+        # Compute raw hinge loss
+        loss = np.maximum(0, margin - signed_targets * predictions.data)
+        
+        if reduction == 'none':
+            result = loss
+        elif reduction == 'sum':
+            result = np.sum(loss)
+        elif reduction == 'mean':
+            result = np.mean(loss)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(margin=margin, reduction=reduction,
+                         signed_targets=signed_targets)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        margin = ctx.saved_arguments['margin']
+        reduction = ctx.saved_arguments['reduction']
+        signed_targets = ctx.saved_arguments['signed_targets']
+        
+        # Gradient is -y when margin - y*f(x) > 0, 0 otherwise
+        mask = (margin - signed_targets * predictions.data) > 0
+        grad = -signed_targets * mask * grad_output
+        
+        if reduction == 'mean':
+            grad = grad / np.prod(predictions.shape)
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class FocalLoss(Function):
+    """
+    Focal Loss.
+    Addresses class imbalance by down-weighting easily classified examples.
+    FL(p) = -alpha * (1-p)^gamma * log(p)
+    
+    Args:
+        alpha (float): Weighting factor for rare classes
+        gamma (float): Focusing parameter
+        reduction (str): Specifies the reduction to apply to the output
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, alpha=0.25, gamma=2.0, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        # Clip predictions for numerical stability
+        eps = 1e-7
+        predictions_clipped = np.clip(predictions.data, eps, 1 - eps)
+        
+        # Compute pt (probability of target class)
+        pt = predictions_clipped * targets.data + (1 - predictions_clipped) * (1 - targets.data)
+        
+        # Compute focal weight
+        focal_weight = alpha * ((1 - pt) ** gamma)
+        
+        # Compute binary cross entropy
+        bce = -(targets.data * np.log(predictions_clipped) + 
+                (1 - targets.data) * np.log(1 - predictions_clipped))
+        
+        # Apply focal weight
+        loss = focal_weight * bce
+        
+        if reduction == 'none':
+            result = loss
+        elif reduction == 'sum':
+            result = np.sum(loss)
+        elif reduction == 'mean':
+            result = np.mean(loss)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(alpha=alpha, gamma=gamma, reduction=reduction,
+                         pt=pt, focal_weight=focal_weight)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        alpha = ctx.saved_arguments['alpha']
+        gamma = ctx.saved_arguments['gamma']
+        reduction = ctx.saved_arguments['reduction']
+        pt = ctx.saved_arguments['pt']
+        focal_weight = ctx.saved_arguments['focal_weight']
+        
+        # Compute gradient
+        grad = grad_output * focal_weight * (
+            gamma * pt * np.log(pt) + pt - targets.data
+        )
+        
+        if reduction == 'mean':
+            grad = grad / np.prod(predictions.shape)
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+class HuberLoss(Function):
+    """
+    Huber Loss: L = 0.5 * (y - ŷ)² if |y - ŷ| <= delta else delta * |y - ŷ| - 0.5 * delta²
+    
+    This loss combines the best properties of MSE and L1 loss.
+    For small errors it behaves like MSE, for large errors it behaves like L1.
+    
+    Args:
+        delta (float): Threshold where loss transitions from squared to linear
+        reduction (str): Specifies the reduction to apply to the output:
+            'mean' (default) | 'sum' | 'none'
+    """
+    
+    @staticmethod
+    def forward(ctx, predictions, targets, delta=1.0, reduction='mean'):
+        if not isinstance(predictions, Tensor):
+            predictions = Tensor(predictions)
+        if not isinstance(targets, Tensor):
+            targets = Tensor(targets)
+            
+        if predictions.shape != targets.shape:
+            raise ValueError(f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}")
+            
+        diff = predictions.data - targets.data
+        abs_diff = np.abs(diff)
+        quadratic = np.minimum(abs_diff, delta)
+        linear = abs_diff - quadratic
+        loss = 0.5 * quadratic ** 2 + delta * linear
+        
+        if reduction == 'none':
+            result = loss
+        elif reduction == 'sum':
+            result = np.sum(loss)
+        elif reduction == 'mean':
+            result = np.mean(loss)
+        else:
+            raise ValueError(f"Invalid reduction method: {reduction}")
+            
+        ctx.save_for_backward(predictions, targets)
+        ctx.save_arguments(delta=delta, reduction=reduction)
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        predictions, targets = ctx.saved_tensors
+        delta = ctx.saved_arguments['delta']
+        reduction = ctx.saved_arguments['reduction']
+        
+        diff = predictions.data - targets.data
+        abs_diff = np.abs(diff)
+        
+        # Gradient is diff/|diff| * min(|diff|, delta)
+        grad = np.sign(diff) * np.minimum(abs_diff, delta)
+        
+        if reduction == 'mean':
+            grad = grad * grad_output / np.prod(diff.shape)
+        else:  # 'sum' or 'none'
+            grad = grad * grad_output
+            
+        if predictions.requires_grad:
+            grad_dict[id(predictions)] = grad
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\matrix.py
+// ----------------------------------------
+from typing import Dict, Optional, Union, Tuple
+import numpy as np
+from ..core import Function, Tensor
+
+class Transpose(Function):
+    @staticmethod
+    def forward(ctx, x, axes: Optional[Tuple[int, ...]] = None):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        ctx.save_arguments(axes=axes)
+        
+        if axes is None:
+            return Tensor(np.transpose(x.data))
+        return Tensor(np.transpose(x.data, axes))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        axes = ctx.saved_arguments['axes']
+        
+        if x.requires_grad:
+            if axes is None:
+                # For standard transpose, just transpose the gradient
+                grad_dict[id(x)] = np.transpose(grad_output)
+            else:
+                # For specific axes, need to invert the permutation
+                inverse_axes = np.argsort(axes)
+                grad_dict[id(x)] = np.transpose(grad_output, inverse_axes)
+
+class Compare(Function):
+    """Base class for comparison operations"""
+    @staticmethod
+    def _compare(op, x1, x2):
+        if not isinstance(x1, Tensor):
+            x1 = Tensor(x1)
+        if not isinstance(x2, Tensor):
+            x2 = Tensor(x2)
+            
+        return Tensor(op(x1.data, x2.data))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        # Comparison operations have no gradient
+        pass
+
+class Greater(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.greater, x1, x2)
+
+class GreaterEqual(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.greater_equal, x1, x2)
+
+class Less(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.less, x1, x2)
+
+class LessEqual(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.less_equal, x1, x2)
+
+class Equal(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.equal, x1, x2)
+
+class NotEqual(Compare):
+    @staticmethod
+    def forward(ctx, x1, x2):
+        return Compare._compare(np.not_equal, x1, x2)
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\nn.py
 // ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\power.py
+// ----------------------------------------
+from typing import Dict
+import numpy as np
+from ..core import Function, Tensor
+
+class Power(Function):
+    @staticmethod
+    def forward(ctx, base, exponent):
+        if not isinstance(base, Tensor):
+            base = Tensor(base)
+        if not isinstance(exponent, (Tensor, int, float)):
+            raise TypeError("Exponent must be a Tensor, int, or float")
+            
+        # Convert Tensor exponent to scalar if possible
+        if isinstance(exponent, Tensor):
+            if exponent.data.size == 1:
+                exponent = float(exponent.data)
+            else:
+                raise ValueError("Only scalar exponents are supported")
+                
+        ctx.save_for_backward(base)
+        ctx.save_arguments(exponent=exponent)
+        
+        return Tensor(np.power(base.data, exponent))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        base, = ctx.saved_tensors
+        exponent = ctx.saved_arguments['exponent']
+        
+        if base.requires_grad:
+            # d/dx(x^n) = nx^(n-1)
+            grad = grad_output * exponent * np.power(base.data, exponent - 1)
+            grad_dict[id(base)] = grad
+
+class Divide(Function):
+    @staticmethod
+    def forward(ctx, numerator, denominator):
+        if not isinstance(numerator, Tensor):
+            numerator = Tensor(numerator)
+        if not isinstance(denominator, Tensor):
+            denominator = Tensor(denominator)
+            
+        # Check for division by zero
+        if np.any(denominator.data == 0):
+            raise ValueError("Division by zero encountered")
+            
+        ctx.save_for_backward(numerator, denominator)
+        return Tensor(numerator.data / denominator.data)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        numerator, denominator = ctx.saved_tensors
+        
+        if numerator.requires_grad:
+            # d/dx(x/y) = 1/y
+            grad_dict[id(numerator)] = grad_output / denominator.data
+            
+        if denominator.requires_grad:
+            # d/dy(x/y) = -x/y^2
+            grad_dict[id(denominator)] = -grad_output * numerator.data / (denominator.data ** 2)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\reduction.py
+// ----------------------------------------
+from typing import Dict, Optional, Union, Tuple
+import numpy as np
+from ..core import Function, Tensor
+
+class Sum(Function):
+    @staticmethod
+    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        ctx.save_arguments(axis=axis, keepdims=keepdims, input_shape=x.shape)
+        
+        return Tensor(np.sum(x.data, axis=axis, keepdims=keepdims))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        axis = ctx.saved_arguments['axis']
+        keepdims = ctx.saved_arguments['keepdims']
+        input_shape = ctx.saved_arguments['input_shape']
+        
+        if x.requires_grad:
+            # If not keeping dims, need to reshape grad_output to match broadcast
+            if not keepdims and axis is not None:
+                grad_output = np.expand_dims(grad_output, axis=axis)
+                
+            # Broadcast gradient to match input shape
+            grad = np.broadcast_to(grad_output, input_shape)
+            grad_dict[id(x)] = grad
+
+class Mean(Function):
+    @staticmethod
+    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        ctx.save_for_backward(x)
+        ctx.save_arguments(axis=axis, keepdims=keepdims, input_shape=x.shape)
+        
+        return Tensor(np.mean(x.data, axis=axis, keepdims=keepdims))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        axis = ctx.saved_arguments['axis']
+        keepdims = ctx.saved_arguments['keepdims']
+        input_shape = ctx.saved_arguments['input_shape']
+        
+        if x.requires_grad:
+            # If not keeping dims, need to reshape grad_output to match broadcast
+            if not keepdims and axis is not None:
+                grad_output = np.expand_dims(grad_output, axis=axis)
+                
+            # Calculate number of elements we're taking mean over
+            if axis is None:
+                n = np.prod(input_shape)
+            else:
+                n = np.prod([input_shape[i] for i in (axis,) if i < len(input_shape)])
+                
+            # Broadcast gradient to match input shape and divide by n
+            grad = np.broadcast_to(grad_output, input_shape) / n
+            grad_dict[id(x)] = grad
+
+class Max(Function):
+    @staticmethod
+    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
+            
+        result = np.amax(x.data, axis=axis, keepdims=True)
+        ctx.save_for_backward(x)
+        ctx.save_arguments(axis=axis, keepdims=keepdims, max_vals=result)
+        
+        if not keepdims:
+            result = np.squeeze(result, axis=axis)
+            
+        return Tensor(result)
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        x, = ctx.saved_tensors
+        axis = ctx.saved_arguments['axis']
+        keepdims = ctx.saved_arguments['keepdims']
+        max_vals = ctx.saved_arguments['max_vals']
+        
+        if x.requires_grad:
+            # If not keeping dims, need to reshape grad_output
+            if not keepdims and axis is not None:
+                grad_output = np.expand_dims(grad_output, axis=axis)
+                
+            # Create gradient mask (1 where x equals max, 0 elsewhere)
+            mask = (x.data == max_vals)
+            
+            # In case of multiple maxima, distribute gradient equally
+            mask = mask / np.sum(mask, axis=axis, keepdims=True)
+            
+            grad_dict[id(x)] = grad_output * mask
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\reshape.py
 // ----------------------------------------
@@ -1069,13 +2384,355 @@ class Reshape(Function):
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\__init__.py
 // ----------------------------------------
+"""
+Optimization algorithms for DLpy.
+
+This module implements various optimization algorithms used in deep learning.
+"""
+
+from .optimizer import Optimizer
+from .sgd import SGD
+from .adam import Adam
+from .rmsprop import RMSprop
+from .adagrad import AdaGrad
+
+__all__ = [
+    'Optimizer',
+    'SGD',
+    'Adam',
+    'RMSprop',
+    'AdaGrad'
+]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adagrad.py
+// ----------------------------------------
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adam.py
+// ----------------------------------------
+import numpy as np
+from typing import Dict, Iterator, Optional
+from .optimizer import Optimizer
+from ..core import Tensor
+
+class Adam(Optimizer):
+    """
+    Implements Adam algorithm.
+    
+    Args:
+        params: Iterable of parameters to optimize
+        lr (float): Learning rate (default: 0.001)
+        betas (tuple): Coefficients for computing running averages of gradient and its square
+            (default: (0.9, 0.999))
+        eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
+        weight_decay (float): Weight decay (L2 penalty) (default: 0)
+        amsgrad (bool): Whether to use the AMSGrad variant (default: False)
+    """
+    
+    def __init__(self, params, lr: float = 0.001, betas: tuple = (0.9, 0.999),
+                 eps: float = 1e-8, weight_decay: float = 0, amsgrad: bool = False):
+        if not 0.0 <= lr:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        if not 0.0 <= eps:
+            raise ValueError(f"Invalid epsilon value: {eps}")
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError(f"Invalid beta parameter at index 0: {betas[0]}")
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError(f"Invalid beta parameter at index 1: {betas[1]}")
+        if not 0.0 <= weight_decay:
+            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+            
+        defaults = dict(lr=lr, betas=betas, eps=eps,
+                       weight_decay=weight_decay, amsgrad=amsgrad)
+        super().__init__(params, defaults)
+        
+    def step(self) -> None:
+        """Performs a single optimization step."""
+        for p in self._params:
+            if p.grad is None:
+                continue
+                
+            grad = p.grad
+            
+            # Get optimizer state
+            state = self.state[id(p)]
+            
+            # State initialization
+            if len(state) == 0:
+                state['step'] = 0
+                # Exponential moving average of gradient values
+                state['exp_avg'] = np.zeros_like(p.data)
+                # Exponential moving average of squared gradient values
+                state['exp_avg_sq'] = np.zeros_like(p.data)
+                if self.defaults['amsgrad']:
+                    # Maintains max of all exp. moving avg. of sq. grad. values
+                    state['max_exp_avg_sq'] = np.zeros_like(p.data)
+                    
+            exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+            if self.defaults['amsgrad']:
+                max_exp_avg_sq = state['max_exp_avg_sq']
+            beta1, beta2 = self.defaults['betas']
+            
+            state['step'] += 1
+            bias_correction1 = 1 - beta1 ** state['step']
+            bias_correction2 = 1 - beta2 ** state['step']
+            
+            if self.defaults['weight_decay'] != 0:
+                grad = grad + self.defaults['weight_decay'] * p.data
+                
+            # Decay the first and second moment running average coefficient
+            exp_avg = beta1 * exp_avg + (1 - beta1) * grad
+            exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad * grad
+            
+            if self.defaults['amsgrad']:
+                # Maintains the maximum of all 2nd moment running avg. till now
+                max_exp_avg_sq = np.maximum(max_exp_avg_sq, exp_avg_sq)
+                # Use the max. for normalizing running avg. of gradient
+                denom = (np.sqrt(max_exp_avg_sq) / np.sqrt(bias_correction2)) + self.defaults['eps']
+            else:
+                denom = (np.sqrt(exp_avg_sq) / np.sqrt(bias_correction2)) + self.defaults['eps']
+                
+            step_size = self.defaults['lr'] / bias_correction1
+            
+            p.data -= step_size * exp_avg / denom
+            
+            # Save state
+            state['exp_avg'] = exp_avg
+            state['exp_avg_sq'] = exp_avg_sq
+            if self.defaults['amsgrad']:
+                state['max_exp_avg_sq'] = max_exp_avg_sq
+
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\optimizer.py
 // ----------------------------------------
+from typing import Dict, Iterator, Optional
+from ..core import Tensor
+
+class Optimizer:
+    """
+    Base class for all optimizers.
+    
+    Args:
+        params: An iterable of parameters to optimize or a dict of parameter groups
+        defaults: Dictionary of default hyperparameter values
+    """
+    
+    def __init__(self, params, defaults: Dict):
+        self.defaults = defaults
+        self._params = list(params)  # Convert iterator to list
+        self.state: Dict = {}  # State dict for optimizer states
+        
+        # Initialize state for each parameter
+        for p in self._params:
+            self.state[id(p)] = {}
+            
+    def zero_grad(self) -> None:
+        """Clears the gradients of all optimized parameters."""
+        for p in self._params:
+            if p.grad is not None:
+                p.grad.fill(0)
+                
+    def step(self) -> None:
+        """Performs a single optimization step.
+        
+        This method should be overridden by all optimizers.
+        """
+        raise NotImplementedError
+        
+    def add_param_group(self, param_group: Dict) -> None:
+        """Add a param group to the optimizer's param groups.
+        
+        Args:
+            param_group (dict): Specifies parameters and parameter-specific options
+        """
+        params = param_group['params']
+        if isinstance(params, Tensor):
+            param_group['params'] = [params]
+        elif isinstance(params, set):
+            param_group['params'] = list(params)
+            
+        for param in param_group['params']:
+            if id(param) not in self.state:
+                self.state[id(param)] = {}
+            self._params.append(param)
+            
+    def load_state_dict(self, state_dict: Dict) -> None:
+        """Loads the optimizer state.
+        
+        Args:
+            state_dict (dict): Optimizer state dict
+        """
+        self.state = state_dict['state']
+        
+    def state_dict(self) -> Dict:
+        """Returns the state of the optimizer as a dict.
+        
+        Returns:
+            dict: The state of the optimizer
+        """
+        return {
+            'state': self.state,
+        }
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\rmsprop.py
+// ----------------------------------------
+import numpy as np 
+from typing import Dict, Iterator, Optional
+from .optimizer import Optimizer
+from ..core import Tensor
+
+class RMSprop(Optimizer):
+    """
+    Implements RMSprop algorithm.
+    
+    Args:
+        params: Iterable of parameters to optimize
+        lr (float): Learning rate (default: 0.01)
+        alpha (float): Smoothing constant (default: 0.99)
+        eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
+        weight_decay (float): Weight decay (L2 penalty) (default: 0)
+        momentum (float): Momentum factor (default: 0)
+        centered (bool): If True, compute centered RMSprop, gradients normalized by their variance
+    """
+    
+    def __init__(self, params, lr: float = 0.01, alpha: float = 0.99,
+                 eps: float = 1e-8, weight_decay: float = 0,
+                 momentum: float = 0, centered: bool = False):
+        if not 0.0 <= lr:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        if not 0.0 <= eps:
+            raise ValueError(f"Invalid epsilon value: {eps}")
+        if not 0.0 <= momentum:
+            raise ValueError(f"Invalid momentum value: {momentum}")
+        if not 0.0 <= alpha:
+            raise ValueError(f"Invalid alpha value: {alpha}")
+        if not 0.0 <= weight_decay:
+            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+            
+        defaults = dict(lr=lr, alpha=alpha, eps=eps, weight_decay=weight_decay,
+                       momentum=momentum, centered=centered)
+        super().__init__(params, defaults)
+        
+    def step(self) -> None:
+        """Performs a single optimization step."""
+        for p in self._params:
+            if p.grad is None:
+                continue
+                
+            grad = p.grad
+            state = self.state[id(p)]
+            
+            # State initialization
+            if len(state) == 0:
+                state['step'] = 0
+                state['square_avg'] = np.zeros_like(p.data)
+                if self.defaults['momentum'] > 0:
+                    state['momentum_buffer'] = np.zeros_like(p.data)
+                if self.defaults['centered']:
+                    state['grad_avg'] = np.zeros_like(p.data)
+                    
+            square_avg = state['square_avg']
+            alpha = self.defaults['alpha']
+            
+            state['step'] += 1
+            
+            if self.defaults['weight_decay'] != 0:
+                grad = grad + self.defaults['weight_decay'] * p.data
+                
+            # Update squared average
+            square_avg = alpha * square_avg + (1 - alpha) * grad * grad
+            
+            if self.defaults['centered']:
+                grad_avg = state['grad_avg']
+                grad_avg = alpha * grad_avg + (1 - alpha) * grad
+                avg = square_avg - grad_avg * grad_avg
+                state['grad_avg'] = grad_avg
+            else:
+                avg = square_avg
+                
+            # Apply momentum if enabled
+            if self.defaults['momentum'] > 0:
+                buf = state.get('momentum_buffer', np.zeros_like(grad))
+                buf = self.defaults['momentum'] * buf + grad / (np.sqrt(avg) + self.defaults['eps'])
+                state['momentum_buffer'] = buf
+                p.data -= self.defaults['lr'] * buf
+            else:
+                p.data -= self.defaults['lr'] * grad / (np.sqrt(avg) + self.defaults['eps'])
+                
+            # Save state
+            state['square_avg'] = square_avg
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\sgd.py
 // ----------------------------------------
+from typing import Dict, Iterator, Optional
+import numpy as np
+from .optimizer import Optimizer
+from ..core import Tensor
+
+class SGD(Optimizer):
+    """
+    Implements stochastic gradient descent with momentum.
+    
+    Args:
+        params: Iterable of parameters to optimize
+        lr (float): Learning rate (default: 0.1)
+        momentum (float): Momentum factor (default: 0)
+        weight_decay (float): Weight decay (L2 penalty) (default: 0)
+        dampening (float): Dampening for momentum (default: 0)
+        nesterov (bool): Enables Nesterov momentum (default: False)
+    """
+    
+    def __init__(self, params, lr: float = 0.1, momentum: float = 0.0,
+                 weight_decay: float = 0.0, dampening: float = 0.0,
+                 nesterov: bool = False):
+        if lr < 0.0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        if momentum < 0.0:
+            raise ValueError(f"Invalid momentum value: {momentum}")
+        if weight_decay < 0.0:
+            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+            
+        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay,
+                       dampening=dampening, nesterov=nesterov)
+        super().__init__(params, defaults)
+        
+    def step(self) -> None:
+        """Performs a single optimization step."""
+        
+        for p in self._params:
+            if p.grad is None:
+                continue
+                
+            grad = p.grad
+            
+            # Apply weight decay
+            if self.defaults['weight_decay'] != 0:
+                grad = grad + self.defaults['weight_decay'] * p.data
+                
+            # Get or initialize momentum buffer
+            if 'momentum_buffer' not in self.state[id(p)]:
+                buf = self.state[id(p)]['momentum_buffer'] = np.zeros_like(p.data)
+            else:
+                buf = self.state[id(p)]['momentum_buffer']
+                
+            # Update momentum buffer
+            if self.defaults['momentum'] != 0:
+                buf *= self.defaults['momentum']
+                if self.defaults['dampening'] != 0:
+                    grad *= 1 - self.defaults['dampening']
+                buf += grad
+            else:
+                buf = grad
+                
+            # Nesterov momentum
+            if self.defaults['nesterov']:
+                grad += self.defaults['momentum'] * buf
+            else:
+                grad = buf
+                
+            # Update parameters
+            p.data -= self.defaults['lr'] * grad
+            
+            # Store updated momentum buffer
+            self.state[id(p)]['momentum_buffer'] = buf
 
 // File: C:\Users\aluja\Desktop\DLpy\examples\basic_autograd.py
 // ----------------------------------------
@@ -1109,6 +2766,236 @@ setup(
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\__init__.py
 // ----------------------------------------
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_activations.py
+// ----------------------------------------
+import pytest
+import numpy as np
+from DLpy.core import Tensor
+from DLpy.nn.activations import (
+    relu, leaky_relu, elu, gelu, sigmoid, tanh,
+    ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
+)
+
+class TestActivations:
+    """Tests for activation functions"""
+    
+    def test_relu(self):
+        """Test ReLU activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        y = relu(x)
+        y.backward(np.ones_like(x.data))
+        
+        assert np.array_equal(y.data, [0.0, 0.0, 0.0, 1.0, 2.0])
+        assert np.array_equal(x.grad, [0.0, 0.0, 0.0, 1.0, 1.0])
+        
+    def test_leaky_relu(self):
+        """Test Leaky ReLU activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        slope = 0.1
+        y = leaky_relu(x, negative_slope=slope)
+        y.backward(np.ones_like(x.data))
+        
+        expected_forward = [-0.2, -0.1, 0.0, 1.0, 2.0]
+        expected_backward = [slope, slope, slope, 1.0, 1.0]
+        
+        assert np.allclose(y.data, expected_forward)
+        assert np.allclose(x.grad, expected_backward)
+        
+    def test_elu(self):
+        """Test ELU activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        alpha = 1.0
+        y = elu(x, alpha=alpha)
+        y.backward(np.ones_like(x.data))
+        
+        expected_forward = [alpha * (np.exp(-2.0) - 1), alpha * (np.exp(-1.0) - 1), 0.0, 1.0, 2.0]
+        expected_backward = [alpha * np.exp(-2.0), alpha * np.exp(-1.0), alpha * 1.0, 1.0, 1.0]
+        
+        assert np.allclose(y.data, expected_forward)
+        assert np.allclose(x.grad, expected_backward)
+        
+    def test_gelu(self):
+        """Test GELU activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        y = gelu(x)
+        y.backward(np.ones_like(x.data))
+        
+        # Values should be finite and have correct shape
+        assert not np.any(np.isnan(y.data))
+        assert not np.any(np.isinf(y.data))
+        assert y.data.shape == x.data.shape
+        assert not np.any(np.isnan(x.grad))
+        assert not np.any(np.isinf(x.grad))
+        
+        # Test specific known values
+        assert np.allclose(y.data[2], 0.0)  # GELU(0) = 0
+        assert y.data[3] > 0.8  # GELU(1) ≈ 0.841
+        assert y.data[1] < 0  # GELU(-1) is negative
+        
+    def test_sigmoid(self):
+        """Test Sigmoid activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        y = sigmoid(x)
+        y.backward(np.ones_like(x.data))
+        
+        sigmoid_x = 1 / (1 + np.exp(-x.data))
+        expected_backward = sigmoid_x * (1 - sigmoid_x)
+        
+        assert np.allclose(y.data, sigmoid_x)
+        assert np.allclose(x.grad, expected_backward)
+        
+        # Test special values
+        assert np.allclose(y.data[2], 0.5)  # sigmoid(0) = 0.5
+        assert y.data[0] < 0.5  # sigmoid(-2) < 0.5
+        assert y.data[4] > 0.5  # sigmoid(2) > 0.5
+        
+    def test_tanh(self):
+        """Test Tanh activation"""
+        x = Tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)
+        y = tanh(x)
+        y.backward(np.ones_like(x.data))
+        
+        expected_forward = np.tanh(x.data)
+        expected_backward = 1 - np.tanh(x.data) ** 2
+        
+        assert np.allclose(y.data, expected_forward)
+        assert np.allclose(x.grad, expected_backward)
+        
+        # Test special values
+        assert np.allclose(y.data[2], 0.0)  # tanh(0) = 0
+        assert y.data[0] < -0.9  # tanh(-2) ≈ -0.964
+        assert y.data[4] > 0.9   # tanh(2) ≈ 0.964
+
+class TestNumericalStability:
+    """Tests for numerical stability of activation functions"""
+    
+    def test_sigmoid_stability(self):
+        """Test Sigmoid with large inputs"""
+        x = Tensor([1000.0, -1000.0], requires_grad=True)
+        y = sigmoid(x)
+        y.backward(np.ones_like(x.data))
+        
+        # Check that values are properly clamped
+        assert np.allclose(y.data[0], 1.0)
+        assert np.allclose(y.data[1], 0.0)
+        assert not np.any(np.isnan(y.data))
+        assert not np.any(np.isnan(x.grad))
+        
+    def test_elu_stability(self):
+        """Test ELU with large negative inputs"""
+        x = Tensor([-1000.0], requires_grad=True)
+        y = elu(x)
+        y.backward(np.ones_like(x.data))
+        
+        # Should be close to -1.0 for large negative values
+        assert np.allclose(y.data[0], -1.0, rtol=1e-3)
+        assert not np.any(np.isnan(y.data))
+        assert not np.any(np.isnan(x.grad))
+        
+    def test_gelu_stability(self):
+        """Test GELU with large inputs"""
+        x = Tensor([1000.0, -1000.0], requires_grad=True)
+        y = gelu(x)
+        y.backward(np.ones_like(x.data))
+        
+        # Check that outputs are finite
+        assert not np.any(np.isnan(y.data))
+        assert not np.any(np.isinf(y.data))
+        assert not np.any(np.isnan(x.grad))
+        assert not np.any(np.isinf(x.grad))
+
+class TestGradientFlow:
+    """Tests for gradient flow through activation functions"""
+    
+    def test_relu_dead_neurons(self):
+        """Test ReLU gradient flow for negative inputs"""
+        x = Tensor([-1.0], requires_grad=True)
+        y = relu(x)
+        y.backward(np.array([1.0]))
+        
+        assert x.grad[0] == 0.0  # Gradient should be zero for negative input
+        
+    def test_leaky_relu_gradient_flow(self):
+        """Test Leaky ReLU gradient flow"""
+        x = Tensor([-1.0], requires_grad=True)
+        slope = 0.01
+        y = leaky_relu(x, negative_slope=slope)
+        y.backward(np.array([1.0]))
+        
+        assert x.grad[0] == slope  # Should have small but non-zero gradient
+        
+    def test_elu_gradient_flow(self):
+        """Test ELU gradient flow"""
+        x = Tensor([-1.0, 1.0], requires_grad=True)
+        y = elu(x)
+        y.backward(np.ones_like(x.data))
+        
+        assert x.grad[0] > 0.0  # Should have positive gradient for negative input
+        assert x.grad[1] == 1.0  # Should have gradient 1 for positive input
+
+class TestShapes:
+    """Tests for handling different input shapes"""
+    
+    def test_batch_input(self):
+        """Test activations with batched input"""
+        batch_size, features = 32, 10
+        x = Tensor(np.random.randn(batch_size, features), requires_grad=True)
+        
+        # Test all activations with batched input
+        activations = [relu, leaky_relu, elu, gelu, sigmoid, tanh]
+        for activation in activations:
+            y = activation(x)
+            assert y.shape == x.shape
+            y.backward(np.ones_like(x.data))
+            assert x.grad.shape == x.shape
+            
+    def test_scalar_input_single(self):
+        """Test scalar input handling for a single activation"""
+        x = Tensor(2.0, requires_grad=True)
+        y = relu(x)
+        
+        # Check forward pass maintains scalar nature
+        assert y.data.ndim == 0
+        assert isinstance(y.data, np.ndarray)
+        assert y.data.shape == ()
+        
+        # Check backward pass (gradient should be size 1 array as in PyTorch)
+        y.backward(np.array(1.0))
+        assert x.grad.size == 1
+        assert isinstance(x.grad, np.ndarray)
+
+    def test_scalar_input(self):
+        """Test activations with scalar input"""
+        x = Tensor(2.0, requires_grad=True)
+        
+        # Test all activations with scalar input
+        activations = [relu, leaky_relu, elu, gelu, sigmoid, tanh]
+        for activation in activations:
+            y = activation(x)
+            assert y.data.ndim == 0  # Should preserve scalar nature
+            y.backward(np.array(1.0))
+            assert x.grad.size == 1  # Gradient should be size 1 array (matching PyTorch behavior)
+
+class TestCustomGradients:
+    """Tests for custom gradient computations"""
+    
+    def test_relu_custom_gradient(self):
+        """Test ReLU with custom gradient"""
+        x = Tensor([1.0, -1.0], requires_grad=True)
+        y = relu(x)
+        y.backward(np.array([2.0, 2.0]))  # Custom gradient values
+        
+        assert np.array_equal(x.grad, [2.0, 0.0])  # Should scale gradient for positive input
+        
+    def test_sigmoid_custom_gradient(self):
+        """Test Sigmoid with custom gradient"""
+        x = Tensor([0.0], requires_grad=True)
+        y = sigmoid(x)
+        y.backward(np.array([2.0]))  # Custom gradient value
+        
+        expected_grad = 2.0 * 0.25  # 2.0 * sigmoid(0) * (1 - sigmoid(0))
+        assert np.allclose(x.grad, expected_grad)
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_autograd.py
 // ----------------------------------------
@@ -1400,8 +3287,10 @@ class TestContext:
         assert len(ctx._non_tensor_args) == 0
         assert len(ctx._intermediate_values) == 0
 
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_function.py
+// ----------------------------------------
 import pytest
-from DLpy.core import Function, Context, Tensor
+from DLpy.core import Function, Tensor
 import numpy as np
 
 class TestFunction:
@@ -1460,6 +3349,309 @@ class TestFunction:
             
         with pytest.raises(TypeError):
             IncompleteFunction()
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_loss.py
+// ----------------------------------------
+import pytest
+import numpy as np
+from DLpy.core import Tensor
+from DLpy.ops.loss import (
+    MSELoss,
+    CrossEntropyLoss,
+    BinaryCrossEntropyLoss,
+    L1Loss,
+    HuberLoss,
+    KLDivLoss,
+    CosineSimilarityLoss,
+    HingeLoss,
+    FocalLoss
+)
+
+class TestMSELoss:
+    """Tests for Mean Squared Error Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of MSE loss"""
+        predictions = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        targets = Tensor([[2.0, 1.0], [4.0, 3.0]])
+        
+        # Test mean reduction
+        loss = MSELoss.apply(predictions, targets, 'mean')
+        expected = np.mean((predictions.data - targets.data) ** 2)
+        assert np.allclose(loss.data, expected)
+        
+        # Test sum reduction
+        loss = MSELoss.apply(predictions, targets, 'sum')
+        expected = np.sum((predictions.data - targets.data) ** 2)
+        assert np.allclose(loss.data, expected)
+        
+    def test_backward(self):
+        """Test backward pass of MSE loss"""
+        predictions = Tensor([[1.0]], requires_grad=True)
+        targets = Tensor([[2.0]])
+        
+        loss = MSELoss.apply(predictions, targets, 'mean')
+        loss.backward()
+        
+        # For MSE, gradient should be 2(pred - target)/N
+        expected_grad = 2 * (predictions.data - targets.data) / np.prod(predictions.shape)
+        assert np.allclose(predictions.grad, expected_grad)
+
+class TestCrossEntropyLoss:
+    """Tests for Cross Entropy Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of cross entropy loss"""
+        predictions = Tensor([[1.0, 0.0], [0.0, 1.0]])
+        targets = Tensor([[1.0, 0.0], [0.0, 1.0]])  # One-hot encoded
+        
+        loss = CrossEntropyLoss.apply(predictions, targets)
+        assert loss.data >= 0  # Loss should be non-negative
+        
+    def test_numerical_stability(self):
+        """Test numerical stability with large inputs"""
+        predictions = Tensor([[1000., -1000.], [-1000., 1000.]])
+        targets = Tensor([[1., 0.], [0., 1.]])
+        
+        loss = CrossEntropyLoss.apply(predictions, targets)
+        assert not np.isnan(loss.data)
+        assert not np.isinf(loss.data)
+        
+    def test_gradient(self):
+        """Test gradient computation"""
+        predictions = Tensor([[1.0, 0.0]], requires_grad=True)
+        targets = Tensor([[1.0, 0.0]])
+        
+        loss = CrossEntropyLoss.apply(predictions, targets)
+        loss.backward()
+        
+        assert predictions.grad is not None
+        assert not np.isnan(predictions.grad).any()
+        assert not np.isinf(predictions.grad).any()
+
+class TestBinaryCrossEntropyLoss:
+    """Tests for Binary Cross Entropy Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of binary cross entropy loss"""
+        predictions = Tensor([0.7, 0.3])
+        targets = Tensor([1.0, 0.0])
+        
+        loss = BinaryCrossEntropyLoss.apply(predictions, targets)
+        assert loss.data >= 0  # Loss should be non-negative
+        
+    def test_gradient(self):
+        """Test gradient computation"""
+        predictions = Tensor([0.7], requires_grad=True)
+        targets = Tensor([1.0])
+        
+        loss = BinaryCrossEntropyLoss.apply(predictions, targets)
+        loss.backward()
+        
+        assert predictions.grad is not None
+        assert not np.isnan(predictions.grad).any()
+        
+    def test_reductions(self):
+        """Test different reduction methods"""
+        predictions = Tensor([[0.7, 0.3], [0.2, 0.8]])
+        targets = Tensor([[1.0, 0.0], [0.0, 1.0]])
+        
+        loss_none = BinaryCrossEntropyLoss.apply(predictions, targets, 'none')
+        loss_mean = BinaryCrossEntropyLoss.apply(predictions, targets, 'mean')
+        loss_sum = BinaryCrossEntropyLoss.apply(predictions, targets, 'sum')
+        
+        assert loss_none.shape == predictions.shape
+        # Check if scalar by ensuring it's a 0-dimensional array or float
+        assert loss_mean.data.ndim == 0 or isinstance(loss_mean.data, float)
+        assert loss_sum.data.ndim == 0 or isinstance(loss_sum.data, float)
+
+class TestL1Loss:
+    """Tests for L1 Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of L1 loss"""
+        predictions = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        targets = Tensor([[2.0, 1.0], [4.0, 3.0]])
+        
+        loss = L1Loss.apply(predictions, targets)
+        expected = np.mean(np.abs(predictions.data - targets.data))
+        assert np.allclose(loss.data, expected)
+        
+    def test_backward(self):
+        """Test backward pass of L1 loss"""
+        predictions = Tensor([1.0], requires_grad=True)
+        targets = Tensor([2.0])
+        
+        loss = L1Loss.apply(predictions, targets)
+        loss.backward()
+        
+        # Gradient should be sign(pred - target)
+        expected_grad = np.sign(predictions.data - targets.data)
+        assert np.allclose(predictions.grad, expected_grad)
+
+class TestHuberLoss:
+    """Tests for Huber Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of Huber loss"""
+        predictions = Tensor([1.0, 2.0])
+        targets = Tensor([0.0, 4.0])
+        delta = 1.0
+        
+        loss = HuberLoss.apply(predictions, targets, delta)
+        
+        # Manually calculate expected loss
+        diff = predictions.data - targets.data
+        expected = np.mean(np.where(np.abs(diff) <= delta,
+                                  0.5 * diff ** 2,
+                                  delta * np.abs(diff) - 0.5 * delta ** 2))
+        
+        assert np.allclose(loss.data, expected)
+        
+    def test_backward(self):
+        """Test backward pass of Huber loss"""
+        predictions = Tensor([0.0], requires_grad=True)
+        targets = Tensor([2.0])
+        delta = 1.0
+        
+        loss = HuberLoss.apply(predictions, targets, delta)
+        loss.backward()
+        
+        assert predictions.grad is not None
+        assert not np.isnan(predictions.grad).any()
+
+class TestKLDivLoss:
+    """Tests for KL Divergence Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of KL divergence loss"""
+        predictions = Tensor([[0.5, 0.5]])
+        targets = Tensor([[0.8, 0.2]])
+        
+        loss = KLDivLoss.apply(predictions, targets)
+        assert loss.data >= 0  # KL divergence is always non-negative
+        
+    def test_numerical_stability(self):
+        """Test numerical stability with small probabilities"""
+        predictions = Tensor([[0.999, 0.001]])
+        targets = Tensor([[0.001, 0.999]])
+        
+        loss = KLDivLoss.apply(predictions, targets)
+        assert not np.isnan(loss.data)
+        assert not np.isinf(loss.data)
+
+class TestCosineSimilarityLoss:
+    """Tests for Cosine Similarity Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of cosine similarity loss"""
+        x1 = Tensor([[1.0, 0.0]])
+        x2 = Tensor([[0.0, 1.0]])
+        
+        loss = CosineSimilarityLoss.apply(x1, x2)
+        # Orthogonal vectors should have cos_sim = 0, so loss = 1 - 0 = 1
+        assert np.allclose(loss.data, 1.0), f"Expected 1.0, got {loss.data}"
+        
+    def test_identical_vectors(self):
+        """Test with identical vectors"""
+        x = Tensor([[1.0, 1.0]])
+        loss = CosineSimilarityLoss.apply(x, x)
+        # For identical vectors, cosine similarity is 1, so loss = 1 - 1 = 0
+        assert np.allclose(loss.data, 0.0, atol=1e-7)
+        
+    def test_numerical_stability(self):
+        """Test numerical stability with zero vectors"""
+        x1 = Tensor([[0.0, 0.0]])
+        x2 = Tensor([[1.0, 1.0]])
+        
+        loss = CosineSimilarityLoss.apply(x1, x2)
+        assert not np.isnan(loss.data)
+
+class TestHingeLoss:
+    """Tests for Hinge Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of hinge loss"""
+        predictions = Tensor([0.5, -0.5])
+        targets = Tensor([1.0, 0.0])
+        
+        loss = HingeLoss.apply(predictions, targets)
+        assert loss.data >= 0  # Hinge loss is non-negative
+        
+    def test_perfect_prediction(self):
+        """Test with perfect predictions"""
+        predictions = Tensor([1.0])
+        targets = Tensor([1.0])
+        
+        loss = HingeLoss.apply(predictions, targets)
+        assert np.allclose(loss.data, 0.0)  # Loss should be zero
+        
+    def test_margin(self):
+        """Test different margin values"""
+        predictions = Tensor([0.5])
+        targets = Tensor([1.0])
+        
+        loss1 = HingeLoss.apply(predictions, targets, margin=1.0)
+        loss2 = HingeLoss.apply(predictions, targets, margin=2.0)
+        assert loss2.data > loss1.data  # Larger margin should give larger loss
+
+class TestFocalLoss:
+    """Tests for Focal Loss"""
+    
+    def test_forward(self):
+        """Test forward pass of focal loss"""
+        predictions = Tensor([0.7, 0.3])
+        targets = Tensor([1.0, 0.0])
+        
+        loss = FocalLoss.apply(predictions, targets)
+        assert loss.data >= 0  # Focal loss is non-negative
+        
+    def test_gamma_effect(self):
+        """Test effect of gamma parameter"""
+        predictions = Tensor([0.7])
+        targets = Tensor([1.0])
+        
+        loss1 = FocalLoss.apply(predictions, targets, gamma=0.0)  # Equivalent to BCE
+        loss2 = FocalLoss.apply(predictions, targets, gamma=2.0)  # Standard focal loss
+        
+        # Focal loss should be smaller than BCE for easy examples
+        assert loss2.data < loss1.data
+        
+    def test_numerical_stability(self):
+        """Test numerical stability with extreme probabilities"""
+        predictions = Tensor([0.999, 0.001])
+        targets = Tensor([1.0, 0.0])
+        
+        loss = FocalLoss.apply(predictions, targets)
+        assert not np.isnan(loss.data)
+        assert not np.isinf(loss.data)
+
+class TestEdgeCases:
+    """Tests for edge cases and error conditions"""
+    
+    def test_shape_mismatch(self):
+        """Test shape mismatch handling"""
+        predictions = Tensor([[1.0, 2.0]])
+        targets = Tensor([1.0])
+        
+        with pytest.raises(ValueError):
+            MSELoss.apply(predictions, targets)
+            
+    def test_invalid_reduction(self):
+        """Test invalid reduction method"""
+        predictions = Tensor([1.0])
+        targets = Tensor([1.0])
+        
+        with pytest.raises(ValueError):
+            MSELoss.apply(predictions, targets, reduction='invalid')
+            
+    def test_negative_probabilities(self):
+        """Test handling of negative probabilities"""
+        predictions = Tensor([-0.1, 1.1])
+        targets = Tensor([0.0, 1.0])
+        
+        with pytest.raises(ValueError):
+            BinaryCrossEntropyLoss.apply(predictions, targets)
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_modules.py
 // ----------------------------------------
@@ -1566,8 +3758,6 @@ class TestModuleEdgeCases:
         assert not module.sub1.training
         assert not module.sub2.training
 
-// File: C:\Users\aluja\Desktop\DLpy\tests\test_nn.py
-// ----------------------------------------
 import pytest
 import numpy as np
 from DLpy.core import Tensor
@@ -1765,9 +3955,12 @@ class TestEndToEnd:
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_ops.py
 // ----------------------------------------
 import pytest
-from DLpy.ops import Add, Multiply, Reshape
-from DLpy.core import Tensor
 import numpy as np
+from DLpy.core import Tensor
+from DLpy.ops import (
+    Add, Multiply, Power, Divide, Log, Exp, Sum, Mean, Max, Transpose,
+    Greater, GreaterEqual, Less, LessEqual, Equal, NotEqual
+)
 
 class TestBasicOps:
     """Tests for basic arithmetic operations"""
@@ -1845,152 +4038,420 @@ class TestBasicOps:
         c.backward(np.ones_like(c.data))
         assert a.grad.shape == (2, 1)
         assert b.grad.shape == (1, 2)
-        # Fix expected gradients
-        assert np.allclose(a.grad, np.array([[2.0], [2.0]]))  # Sum of gradients for each row
-        assert np.allclose(b.grad, np.array([[3.0, 3.0]]))    # Sum of gradients for each column
+        # Correct expected gradients
+        assert np.allclose(a.grad, np.array([[3.0], [3.0]]))  # Correct sum of gradients for each row
+        assert np.allclose(b.grad, np.array([[3.0, 3.0]]))    # Correct sum of gradients for each column
 
-class TestReshapeOp:
-    """Tests for Reshape operation"""
+    def test_add_empty_tensors(self):
+        x = Tensor([], requires_grad=True)
+        y = Tensor([], requires_grad=True)
+        z = Add.apply(x, y)
+        assert z.shape == (0,)
     
-    def test_reshape_edge_cases(self):
-        """Test edge cases for Reshape operation"""
-        x = Tensor([1.0, 2.0], requires_grad=True)
-        
-        # Test invalid shape
-        with pytest.raises(ValueError):
-            _ = x.reshape(3)  # Invalid shape
-        
-        # Test gradients with different shapes
-        y = x.reshape(2, 1)
-        y.backward(np.array([[1.0], [1.0]]))
-        assert np.array_equal(x.grad, [1.0, 1.0])
+    def test_multiply_empty_tensors(self):
+        x = Tensor([], requires_grad=True)
+        y = Tensor([], requires_grad=True)
+        z = Multiply.apply(x, y)
+        assert z.shape == (0,)
 
-// File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
+class TestPowerOperations:
+    """Tests for power and division operations"""
+    
+    def test_power_scalar(self):
+        """Test power operation with scalar exponent"""
+        x = Tensor([2.0, 3.0], requires_grad=True)
+        y = x ** 2
+        y.backward(np.array([1.0, 1.0]))
+        
+        assert np.allclose(y.data, [4.0, 9.0])
+        assert np.allclose(x.grad, [4.0, 6.0])  # d/dx(x^2) = 2x
+        
+    def test_power_negative(self):
+        """Test power operation with negative exponent"""
+        x = Tensor([2.0, 4.0], requires_grad=True)
+        y = x ** (-1)
+        y.backward(np.array([1.0, 1.0]))
+        
+        assert np.allclose(y.data, [0.5, 0.25])
+        assert np.allclose(x.grad, [-0.25, -0.0625])  # d/dx(x^-1) = -x^-2
+        
+    def test_division(self):
+        """Test division operation"""
+        x = Tensor([6.0, 8.0], requires_grad=True)
+        y = Tensor([2.0, 4.0], requires_grad=True)
+        z = x / y
+        z.backward(np.array([1.0, 1.0]))
+        
+        assert np.allclose(z.data, [3.0, 2.0])
+        assert np.allclose(x.grad, [0.5, 0.25])  # d/dx(x/y) = 1/y
+        assert np.allclose(y.grad, [-1.5, -0.5])  # d/dy(x/y) = -x/y^2
+        
+    def test_division_by_zero(self):
+        """Test division by zero raises error"""
+        x = Tensor([1.0, 2.0])
+        y = Tensor([1.0, 0.0])
+        with pytest.raises(ValueError):
+            _ = x / y
+
+class TestElementwiseOperations:
+    """Tests for element-wise operations"""
+    
+    def test_log(self):
+        """Test natural logarithm"""
+        x = Tensor([1.0, np.e], requires_grad=True)
+        y = x.log()
+        y.backward(np.array([1.0, 1.0]))
+        
+        assert np.allclose(y.data, [0.0, 1.0])
+        assert np.allclose(x.grad, [1.0, 1/np.e])  # d/dx(log(x)) = 1/x
+        
+    def test_exp(self):
+        """Test exponential function"""
+        x = Tensor([0.0, 1.0], requires_grad=True)
+        y = x.exp()
+        y.backward(np.array([1.0, 1.0]))
+        
+        assert np.allclose(y.data, [1.0, np.e])
+        assert np.allclose(y.data, x.grad)  # d/dx(exp(x)) = exp(x)
+
+class TestReductionOperations:
+    """Tests for reduction operations"""
+    
+    def test_sum(self):
+        """Test sum reduction"""
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        
+        # Test sum all elements
+        y1 = x.sum()
+        y1.backward()
+        assert np.allclose(y1.data, 10.0)
+        assert np.allclose(x.grad, np.ones_like(x.data))
+        
+        # Reset gradients
+        x.grad = None
+        
+        # Test sum along axis
+        y2 = x.sum(axis=0)
+        y2.backward(np.array([1.0, 1.0]))
+        assert np.allclose(y2.data, [4.0, 6.0])
+        assert np.allclose(x.grad, np.ones_like(x.data))
+        
+    def test_mean(self):
+        """Test mean reduction"""
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        y = x.mean()
+        y.backward()
+        
+        assert np.allclose(y.data, 2.5)
+        assert np.allclose(x.grad, np.full_like(x.data, 0.25))  # 1/n for each element
+        
+    def test_max(self):
+        """Test max reduction"""
+        x = Tensor([[1.0, 4.0], [3.0, 2.0]], requires_grad=True)
+        y = x.max()
+        y.backward()
+        
+        assert np.allclose(y.data, 4.0)
+        expected_grad = np.array([[0.0, 1.0], [0.0, 0.0]])
+        assert np.allclose(x.grad, expected_grad)
+
+class TestMatrixOperations:
+    """Tests for matrix operations"""
+    
+    def test_transpose(self):
+        """Test matrix transpose"""
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        y = x.t()
+        y.backward(np.ones_like(y.data))
+        
+        assert np.allclose(y.data, [[1.0, 3.0], [2.0, 4.0]])
+        assert np.allclose(x.grad, np.ones_like(x.data))
+        
+    def test_transpose_3d(self):
+        """Test 3D tensor transpose"""
+        x = Tensor(np.arange(8).reshape(2, 2, 2), requires_grad=True)
+        y = x.transpose(1, 2, 0)
+        y.backward(np.ones_like(y.data))
+        
+        assert y.data.shape == (2, 2, 2)
+        assert np.allclose(x.grad, np.ones_like(x.data))
+
+class TestComparisonOperations:
+    """Tests for comparison operations"""
+    
+    def test_greater(self):
+        """Test greater than operation"""
+        x = Tensor([1.0, 2.0, 3.0])
+        y = Tensor([2.0, 2.0, 2.0])
+        result = x > y
+        assert np.allclose(result.data, [False, False, True])
+        
+    def test_less_equal(self):
+        """Test less than or equal operation"""
+        x = Tensor([1.0, 2.0, 3.0])
+        y = Tensor([2.0, 2.0, 2.0])
+        result = x <= y
+        assert np.allclose(result.data, [True, True, False])
+        
+    def test_equal(self):
+        """Test equality operation"""
+        x = Tensor([1.0, 2.0, 3.0])
+        y = Tensor([1.0, 2.0, 2.0])
+        result = x == y
+        assert np.allclose(result.data, [True, True, False])
+        
+    def test_not_equal(self):
+        """Test inequality operation"""
+        x = Tensor([1.0, 2.0, 3.0])
+        y = Tensor([1.0, 2.0, 2.0])
+        result = x != y
+        assert np.allclose(result.data, [False, False, True])
+
+class TestEdgeCases:
+    """Tests for edge cases and error conditions"""
+    
+    def test_log_negative(self):
+        """Test log of negative number raises error"""
+        x = Tensor([-1.0])
+        with pytest.raises(ValueError):
+            _ = x.log()
+            
+    def test_power_non_scalar(self):
+        """Test power with non-scalar exponent raises error"""
+        x = Tensor([2.0])
+        y = Tensor([1.0, 2.0])
+        with pytest.raises(ValueError):
+            _ = x ** y
+            
+    def test_reduction_keepdims(self):
+        """Test reduction operations with keepdims=True"""
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        y = x.sum(axis=0, keepdims=True)
+        assert y.shape == (1, 2)
+        
+    def test_broadcasting_division(self):
+        """Test division with broadcasting"""
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        y = Tensor([2.0])
+        z = x / y
+        assert z.shape == x.shape
+        assert np.allclose(z.data, [[0.5, 1.0], [1.5, 2.0]])
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_optim.py
 // ----------------------------------------
 import pytest
-from DLpy.ops import Add, Multiply, Reshape
-from DLpy.core import Tensor
 import numpy as np
+from DLpy.core import Tensor
+from DLpy.optim import SGD, Adam, RMSprop, AdaGrad
 
-class TestBasicOps:
-    """Tests for basic arithmetic operations"""
+class TestOptimizers:
+    """Base test class for all optimizers."""
     
-    def test_add_edge_cases(self):
-        """Test edge cases for Add operation"""
-        # Test broadcasting
-        x = Tensor([[1.0]], requires_grad=True)
-        y = Tensor([1.0, 2.0], requires_grad=True)
+    def setup_method(self):
+        """Setup method run before each test."""
+        # Create a simple parameter tensor
+        self.param = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+        self.grad = np.array([0.1, 0.2, 0.3])
+        
+    def _test_basic_update(self, optimizer_class, **kwargs):
+        """Helper method to test basic parameter updates."""
+        optimizer = optimizer_class([self.param], **kwargs)
+        
+        # Initial parameter values
+        initial_params = self.param.data.copy()
+        
+        # Set gradient and perform optimization step
+        self.param.grad = self.grad
+        optimizer.step()
+        
+        # Check that parameters were updated
+        assert not np.array_equal(self.param.data, initial_params)
+        
+    def _test_zero_grad(self, optimizer_class, **kwargs):
+        """Helper method to test zero_grad functionality."""
+        optimizer = optimizer_class([self.param], **kwargs)
+        
+        # Set some gradient
+        self.param.grad = self.grad
+        
+        # Zero out gradients
+        optimizer.zero_grad()
+        
+        # Check that gradients are zeroed
+        assert np.all(self.param.grad == 0)
+
+class TestSGD(TestOptimizers):
+    """Tests for SGD optimizer."""
+    
+    def test_basic_sgd(self):
+        """Test basic SGD functionality."""
+        self._test_basic_update(SGD, lr=0.1)
+        
+    def test_sgd_momentum(self):
+        """Test SGD with momentum."""
+        optimizer = SGD([self.param], lr=0.1, momentum=0.9)
+        
+        # First update
+        self.param.grad = self.grad
+        optimizer.step()
+        first_update = self.param.data.copy()
+        
+        # Second update with same gradient
+        optimizer.step()
+        
+        # With momentum, second update should be larger
+        first_step = np.abs(first_update - np.array([1.0, 2.0, 3.0]))
+        second_step = np.abs(self.param.data - first_update)
+        assert np.all(second_step > first_step)
+        
+    def test_sgd_nesterov(self):
+        """Test SGD with Nesterov momentum."""
+        self._test_basic_update(SGD, lr=0.1, momentum=0.9, nesterov=True)
+        
+    def test_sgd_weight_decay(self):
+        """Test SGD with weight decay."""
+        optimizer = SGD([self.param], lr=0.1, weight_decay=0.1)
+        self.param.grad = self.grad
+        optimizer.step()
+        
+        # Parameters should decrease more with weight decay
+        no_decay_param = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+        no_decay_optimizer = SGD([no_decay_param], lr=0.1)
+        no_decay_param.grad = self.grad
+        no_decay_optimizer.step()
+        
+        assert np.all(np.abs(self.param.data) < np.abs(no_decay_param.data))
+
+class TestAdam(TestOptimizers):
+    """Tests for Adam optimizer."""
+    
+    def test_basic_adam(self):
+        """Test basic Adam functionality."""
+        self._test_basic_update(Adam, lr=0.001)
+        
+    def test_adam_bias_correction(self):
+        """Test Adam bias correction."""
+        optimizer = Adam([self.param], lr=0.001)
+        
+        # First update
+        self.param.grad = self.grad
+        optimizer.step()
+        first_update = self.param.data.copy()
+        
+        # Several more updates
+        for _ in range(5):
+            optimizer.step()
+            
+        # Updates should get smaller due to bias correction
+        assert np.mean(np.abs(self.param.data - first_update)) < np.mean(np.abs(first_update - np.array([1.0, 2.0, 3.0])))
+        
+    def test_adam_amsgrad(self):
+        """Test Adam with AMSGrad."""
+        self._test_basic_update(Adam, lr=0.001, amsgrad=True)
+
+class TestRMSprop(TestOptimizers):
+    """Tests for RMSprop optimizer."""
+    
+    def test_basic_rmsprop(self):
+        """Test basic RMSprop functionality."""
+        self._test_basic_update(RMSprop, lr=0.01)
+        
+    def test_rmsprop_momentum(self):
+        """Test RMSprop with momentum."""
+        self._test_basic_update(RMSprop, lr=0.01, momentum=0.9)
+        
+    def test_rmsprop_centered(self):
+        """Test centered RMSprop."""
+        self._test_basic_update(RMSprop, lr=0.01, centered=True)
+
+class TestAdaGrad(TestOptimizers):
+    """Tests for AdaGrad optimizer."""
+    
+    def test_basic_adagrad(self):
+        """Test basic AdaGrad functionality."""
+        self._test_basic_update(AdaGrad, lr=0.01)
+        
+    def test_adagrad_lr_decay(self):
+        """Test AdaGrad learning rate decay."""
+        optimizer = AdaGrad([self.param], lr=0.01, lr_decay=0.1)
+        
+        # First update
+        self.param.grad = self.grad
+        optimizer.step()
+        first_update = self.param.data.copy()
+        
+        # Several more updates
+        for _ in range(5):
+            optimizer.step()
+            
+        # Updates should get smaller due to learning rate decay
+        assert np.mean(np.abs(self.param.data - first_update)) < np.mean(np.abs(first_update - np.array([1.0, 2.0, 3.0])))
+        
+    def test_adagrad_reset(self):
+        """Test AdaGrad state reset."""
+        optimizer = AdaGrad([self.param], lr=0.01)
+        
+        # Perform some updates
+        self.param.grad = self.grad
+        optimizer.step()
+        
+        # Reset state
+        optimizer.reset_state()
+        
+        # Check that state was reset
+        for state in optimizer.state.values():
+            assert state['step'] == 0
+            assert np.all(state['sum'] == 0)
+
+class TestOptimizerEdgeCases:
+    """Tests for optimizer edge cases and error conditions."""
+    
+    def test_invalid_learning_rates(self):
+        """Test that invalid learning rates raise errors."""
+        param = Tensor([1.0], requires_grad=True)
         
         with pytest.raises(ValueError):
-            _ = Add.apply(x, y)
-        
-        # Test gradient accumulation
-        x = Tensor([1.0], requires_grad=True)
-        y = Tensor([2.0], requires_grad=True)
-        z = Add.apply(x, y)
-        z.backward()
-        
-        assert np.array_equal(x.grad, [1.0])
-        assert np.array_equal(y.grad, [1.0])
-
-    def test_multiply_edge_cases(self):
-        """Test edge cases for Multiply operation"""
-        # Test scalar multiplication
-        x = Tensor([1.0], requires_grad=True)
-        y = Tensor(2.0, requires_grad=True)
-        z = Multiply.apply(x, y)
-        z.backward()
-        
-        assert np.array_equal(x.grad, [2.0])
-        assert np.array_equal(y.grad, [1.0])
-
-class TestReshapeOp:
-    """Tests for Reshape operation"""
-    
-    def test_reshape_edge_cases(self):
-        """Test edge cases for Reshape operation"""
-        x = Tensor([1.0, 2.0], requires_grad=True)
-        
-        # Test invalid shape
+            SGD([param], lr=-0.1)
         with pytest.raises(ValueError):
-            _ = x.reshape(3)  # Invalid shape
+            Adam([param], lr=-0.1)
+        with pytest.raises(ValueError):
+            RMSprop([param], lr=-0.1)
+        with pytest.raises(ValueError):
+            AdaGrad([param], lr=-0.1)
+            
+    def test_no_gradients(self):
+        """Test optimizer behavior with no gradients."""
+        param = Tensor([1.0], requires_grad=True)
+        optimizers = [
+            SGD([param], lr=0.1),
+            Adam([param], lr=0.001),
+            RMSprop([param], lr=0.01),
+            AdaGrad([param], lr=0.01)
+        ]
         
-        # Test gradients with different shapes
-        y = x.reshape(2, 1)
-        y.backward(np.array([[1.0], [1.0]]))
-        assert np.array_equal(x.grad, [1.0, 1.0])
+        # Parameter should not change if there's no gradient
+        for optimizer in optimizers:
+            initial_param = param.data.copy()
+            optimizer.step()
+            assert np.array_equal(param.data, initial_param)
+            
+    def test_param_groups(self):
+        """Test adding parameter groups."""
+        param1 = Tensor([1.0], requires_grad=True)
+        param2 = Tensor([2.0], requires_grad=True)
+        
+        optimizer = SGD([param1], lr=0.1)
+        optimizer.add_param_group({'params': [param2]})
+        
+        # Both parameters should be updated
+        param1.grad = np.array([0.1])
+        param2.grad = np.array([0.2])
+        optimizer.step()
+        
+        assert not np.array_equal(param1.data, [1.0])
+        assert not np.array_equal(param2.data, [2.0])
 
-class TestAdvancedOperations:
-    """Additional tests for basic operations"""
-    
-    def test_broadcasting_edge_cases(self):
-        """Test broadcasting with different dimensions"""
-        # Test broadcasting scalar to matrix
-        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-        y = Tensor(2.0, requires_grad=True)
-        z = x * y
-        z.backward(np.ones_like(x.data))
-        assert y.grad.shape == (1,)
-        assert np.array_equal(x.grad, [[2.0, 2.0], [2.0, 2.0]])
-        
-        # Test broadcasting vector to matrix
-        x = Tensor([[1.0], [2.0]], requires_grad=True)
-        y = Tensor([1.0, 2.0], requires_grad=True)
-        z = x + y  # Should broadcast to [[1,2], [2,3]]
-        z.backward(np.ones((2, 2)))
-        assert x.grad.shape == (2, 1)
-        assert y.grad.shape == (2,)
-        
-    def test_zero_gradient_handling(self):
-        """Test operations with zero gradients"""
-        x = Tensor([1.0, 2.0], requires_grad=True)
-        y = Tensor([3.0, 4.0], requires_grad=True)
-        z = x * y
-        z.backward(np.zeros_like(z.data))
-        assert np.all(x.grad == 0)
-        assert np.all(y.grad == 0)
-        
-    def test_non_differentiable_inputs(self):
-        """Test operations with non-differentiable inputs"""
-        x = Tensor([1.0, 2.0], requires_grad=False)
-        y = Tensor([3.0, 4.0], requires_grad=True)
-        z = x * y
-        z.backward(np.ones_like(z.data))
-        assert x.grad is None  # Non-differentiable input should have no gradient
-        assert np.array_equal(y.grad, [1.0, 2.0])
-
-    def test_tensor_creation_edge_cases(self):
-        """Test edge cases in tensor creation"""
-        # Test with different dtypes
-        t1 = Tensor([1, 2, 3], dtype=np.int32)
-        assert t1.dtype == np.int32
-        
-        # Test with nested lists
-        t2 = Tensor([[1, 2], [3, 4]])
-        assert t2.shape == (2, 2)
-        
-        # Test with another tensor
-        t3 = Tensor(t2)
-        assert np.array_equal(t3.data, t2.data)
-
-    def test_backward_edge_cases(self):
-        """Test edge cases in backward pass"""
-        # Test backward with scalar tensor
-        x = Tensor(2.0, requires_grad=True)
-        y = x * 2
-        y.backward(np.array(3.0))
-        assert x.grad is not None
-        
-        # Test backward with non-scalar tensor without gradient
-        x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
-        y = x * 2
-        with pytest.raises(RuntimeError):
-            y.backward()  # Should raise error for non-scalar
-
-    def test_repr_and_str(self):
-        """Test string representations"""
-        t = Tensor([1.0, 2.0], requires_grad=True)
-        assert 'Tensor' in repr(t)
-        assert 'requires_grad=True' in repr(t)
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
 
 // ----------------------------------------
+// Total Python files found: 41

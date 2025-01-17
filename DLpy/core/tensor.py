@@ -152,3 +152,93 @@ class Tensor:
         """Returns a tensor with the same data and new shape."""
         from ..ops import Reshape
         return Reshape.apply(self, shape)
+
+    def pow(self, exponent: Union['Tensor', float]) -> 'Tensor':
+        """Returns tensor raised to the power of exponent."""
+        from ..ops import Power
+        return Power.apply(self, exponent)
+
+    def div(self, other: Union['Tensor', float]) -> 'Tensor':
+        """Returns self divided by other."""
+        from ..ops import Divide
+        return Divide.apply(self, other)
+
+    def log(self) -> 'Tensor':
+        """Returns the natural logarithm of the tensor."""
+        from ..ops import Log
+        return Log.apply(self)
+
+    def exp(self) -> 'Tensor':
+        """Returns e raised to the power of each element in the tensor."""
+        from ..ops import Exp
+        return Exp.apply(self)
+
+    def sigmoid(self) -> 'Tensor':
+        """Returns the sigmoid of the tensor."""
+        from ..ops import Sigmoid
+        return Sigmoid.apply(self)
+
+    def tanh(self) -> 'Tensor':
+        """Returns the hyperbolic tangent of the tensor."""
+        from ..ops import Tanh
+        return Tanh.apply(self)
+
+    def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the sum of all elements in the tensor."""
+        from ..ops import Sum
+        return Sum.apply(self, axis, keepdims)
+
+    def mean(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the mean of all elements in the tensor."""
+        from ..ops import Mean
+        return Mean.apply(self, axis, keepdims)
+
+    def max(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the maximum value of all elements in the tensor."""
+        from ..ops import Max
+        return Max.apply(self, axis, keepdims)
+
+    def t(self) -> 'Tensor':
+        """Returns the transpose of the tensor."""
+        from ..ops import Transpose
+        return Transpose.apply(self)
+
+    def transpose(self, *axes: int) -> 'Tensor':
+        """Returns the transposed tensor."""
+        from ..ops import Transpose
+        return Transpose.apply(self, axes if axes else None)
+
+    # Comparison operations
+    def __gt__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Greater
+        return Greater.apply(self, other)
+
+    def __ge__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import GreaterEqual
+        return GreaterEqual.apply(self, other)
+
+    def __lt__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Less
+        return Less.apply(self, other)
+
+    def __le__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import LessEqual
+        return LessEqual.apply(self, other)
+
+    def __eq__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import Equal
+        return Equal.apply(self, other)
+
+    def __ne__(self, other: Union['Tensor', float]) -> 'Tensor':
+        from ..ops import NotEqual
+        return NotEqual.apply(self, other)
+
+    def __truediv__(self, other: Union['Tensor', float]) -> 'Tensor':
+        """Implements division using the / operator."""
+        from ..ops import Divide
+        return Divide.apply(self, other)
+
+    def __pow__(self, exponent: Union['Tensor', float]) -> 'Tensor':
+        """Implements power using the ** operator."""
+        from ..ops import Power
+        return Power.apply(self, exponent)

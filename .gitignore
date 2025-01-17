@@ -31,3 +31,5 @@ venv/
 
 # System-specific files
 Thumbs.db
+
+python_files_inventory.txt

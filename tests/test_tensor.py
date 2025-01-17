@@ -1,10 +1,10 @@
 import pytest
-from DLpy.core import Tensor
 import numpy as np
+from DLpy.core import Tensor
 
 class TestReshapeOp:
     """Tests for Reshape operation"""
-    
+
     def test_reshape_edge_cases(self):
         """Test edge cases for Reshape operation"""
         x = Tensor([1.0, 2.0], requires_grad=True)
