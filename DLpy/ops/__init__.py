@@ -30,6 +30,8 @@ from .loss import (
     FocalLoss
 )
 
+from .cnn import Conv2dFunction
+
 __all__ = [
     # Basic operations
     'Add',
@@ -69,5 +71,8 @@ __all__ = [
     'KLDivLoss',
     'CosineSimilarityLoss',
     'HingeLoss',
-    'FocalLoss'
+    'FocalLoss',
+
+    # CNN operations
+    'Conv2dFunction'
 ]

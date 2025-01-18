@@ -11,6 +11,8 @@ from .activations import (
     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
 )
 
+from .conv2d import Conv2d 
+
 __all__ = [
     # Base module
     'Module',
@@ -31,4 +33,7 @@ __all__ = [
     'GELU',
     'Sigmoid',
     'Tanh',
+
+    # Convolutional layers
+    'Conv2d'
 ]
