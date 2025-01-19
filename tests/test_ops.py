@@ -97,6 +97,32 @@ class TestBasicOps:
         y = Tensor([], requires_grad=True)
         z = Multiply.apply(x, y)
         assert z.shape == (0,)
+    
+    def test_add_broadcasting_edge_cases(self):
+        """Test edge cases of broadcasting in Add operation"""
+        # Test scalar + matrix
+        scalar = Tensor(2.0, requires_grad=True)
+        matrix = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        result = Add.apply(scalar, matrix)
+        result.backward(np.ones_like(matrix.data))
+        
+        assert result.shape == matrix.shape
+        assert scalar.grad == 4.0  # Sum of gradients
+        assert np.all(matrix.grad == 1.0)
+        
+        # Test incompatible shapes
+        with pytest.raises(ValueError):
+            Add.apply(Tensor([1.0, 2.0]), Tensor([[1.0]]))
+
+    def test_multiply_zero_gradient(self):
+        """Test multiply operation with zero gradient"""
+        x = Tensor([1.0, 2.0], requires_grad=True)
+        y = Tensor([3.0, 4.0], requires_grad=True)
+        z = Multiply.apply(x, y)
+        z.backward(np.zeros_like(z.data))
+        
+        assert np.all(x.grad == 0)
+        assert np.all(y.grad == 0)
 
 class TestPowerOperations:
     """Tests for power and division operations"""

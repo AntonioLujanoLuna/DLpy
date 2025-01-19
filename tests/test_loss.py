@@ -185,6 +185,17 @@ class TestKLDivLoss:
         loss = KLDivLoss.apply(predictions, targets)
         assert not np.isnan(loss.data)
         assert not np.isinf(loss.data)
+    
+    def test_kldiv_loss_log_target(self):
+        """Test KL divergence loss with log target"""
+        predictions = Tensor([[-1.0, -2.0]], requires_grad=True)
+        targets = Tensor([[-1.0, -1.0]])  # log probabilities
+        
+        loss = KLDivLoss.apply(predictions, targets, log_target=True)
+        loss.backward()
+        
+        assert predictions.grad is not None
+        assert not np.isnan(loss.data)
 
 class TestCosineSimilarityLoss:
     """Tests for Cosine Similarity Loss"""
@@ -212,6 +223,18 @@ class TestCosineSimilarityLoss:
         
         loss = CosineSimilarityLoss.apply(x1, x2)
         assert not np.isnan(loss.data)
+    
+    def test_cosine_similarity_zero_input(self):
+        """Test cosine similarity with zero vectors"""
+        x1 = Tensor([[0.0, 0.0]], requires_grad=True)
+        x2 = Tensor([[1.0, 1.0]], requires_grad=True)
+        
+        loss = CosineSimilarityLoss.apply(x1, x2, eps=1e-8)
+        loss.backward()
+        
+        assert not np.isnan(loss.data)
+        assert not np.isnan(x1.grad).any()
+        assert not np.isnan(x2.grad).any()
 
 class TestHingeLoss:
     """Tests for Hinge Loss"""
@@ -271,6 +294,17 @@ class TestFocalLoss:
         loss = FocalLoss.apply(predictions, targets)
         assert not np.isnan(loss.data)
         assert not np.isinf(loss.data)
+    
+    def test_focal_loss_extreme_probabilities(self):
+        """Test focal loss with extreme probability values"""
+        predictions = Tensor([[0.999, 0.001]], requires_grad=True)
+        targets = Tensor([[1.0, 0.0]])
+        
+        loss = FocalLoss.apply(predictions, targets, gamma=2.0)
+        loss.backward()
+        
+        assert not np.isnan(loss.data)
+        assert not np.isnan(predictions.grad).any()
 
 class TestEdgeCases:
     """Tests for edge cases and error conditions"""

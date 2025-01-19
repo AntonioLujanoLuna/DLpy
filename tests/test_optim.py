@@ -231,3 +231,32 @@ class TestOptimizerEdgeCases:
         
         assert not np.array_equal(param1.data, [1.0])
         assert not np.array_equal(param2.data, [2.0])
+    
+    def test_optimizer_state_dict(self):
+        """Test state dict functionality"""
+        param = Tensor([1.0], requires_grad=True)
+        optimizer = SGD([param], lr=0.1)
+        
+        # Save state
+        state = optimizer.state_dict()
+        assert 'state' in state
+        
+        # Load state
+        new_optimizer = SGD([param], lr=0.1)
+        new_optimizer.load_state_dict(state)
+        
+        assert new_optimizer.state == optimizer.state
+
+    def test_optimizer_add_param_group_validation(self):
+        """Test param group validation"""
+        param = Tensor([1.0], requires_grad=True)
+        optimizer = SGD([param], lr=0.1)
+        
+        # Test adding single tensor
+        optimizer.add_param_group({'params': Tensor([2.0], requires_grad=True)})
+        
+        # Test adding list of tensors instead of set
+        param_list = [Tensor([3.0], requires_grad=True)]
+        optimizer.add_param_group({'params': param_list})
+        
+        assert len(optimizer._params) == 3
