@@ -63,6 +63,14 @@ class Tensor:
     def requires_grad(self) -> bool:
         """Returns whether the tensor requires gradient computation."""
         return self._requires_grad
+    
+    def __getitem__(self, index) -> 'Tensor':
+        """Enable indexing for tensors."""
+        return Tensor(self.data[index], requires_grad=self.requires_grad)
+    
+    def __len__(self) -> int:
+        """Return length of first dimension."""
+        return self.data.shape[0] if self.data.shape else 1
         
     def requires_grad_(self, requires_grad: bool = True) -> 'Tensor':
         """Sets gradient computation requirement and returns self."""

@@ -13,6 +13,10 @@ DLpy/core/autograd.py
 DLpy/core/context.py
 DLpy/core/function.py
 DLpy/core/tensor.py
+DLpy/data/__init__.py
+DLpy/data/dataloader.py
+DLpy/data/dataset.py
+DLpy/data/samplers.py
 DLpy/nn/__init__.py
 DLpy/nn/activations.py
 DLpy/nn/conv2d.py
@@ -41,6 +45,7 @@ tests/test_activations.py
 tests/test_autograd.py
 tests/test_cnn.py
 tests/test_context.py
+tests/test_data.py
 tests/test_function.py
 tests/test_loss.py
 tests/test_modules.py
