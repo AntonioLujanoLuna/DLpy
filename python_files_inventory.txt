@@ -1,4 +1,4 @@
-﻿// Python Files Concatenated on 01/20/2025 12:51:09
+﻿// Python Files Concatenated on 01/20/2025 18:17:19
 // ----------------------------------------
 
 
@@ -37,9 +37,10 @@
 0007: from .tensor import Tensor
 0008: from .function import Function
 0009: from .context import Context
-0010: from .autograd import AutogradEngine, get_autograd_engine
-0011: 
-0012: __all__ = ['Tensor', 'Function', 'Context', 'AutogradEngine', 'get_autograd_engine']
+0010: from .module import Module
+0011: from .autograd import AutogradEngine, get_autograd_engine
+0012: 
+0013: __all__ = ['Tensor', 'Function', 'Context', 'Module', 'AutogradEngine', 'get_autograd_engine']
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\core\autograd.py
 // ----------------------------------------
@@ -510,6 +511,196 @@
 0160:                     
 0161:         return True
 
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\module.py
+// ----------------------------------------
+0001: from typing import Iterator, Dict, Any, Optional, Union
+0002: from collections import OrderedDict
+0003: from ..core import Tensor
+0004: 
+0005: class Module:
+0006:     """
+0007:     Base class for all neural network modules.
+0008:     
+0009:     Your models should also subclass this class.
+0010:     Modules can also contain other Modules, allowing to nest them in
+0011:     a tree structure.
+0012:     """
+0013:     
+0014:     def __init__(self):
+0015:         """Initialize the module."""
+0016:         # First set these directly to avoid triggering __setattr__
+0017:         object.__setattr__(self, 'training', True)
+0018:         object.__setattr__(self, '_parameters', OrderedDict())
+0019:         object.__setattr__(self, '_buffers', OrderedDict())
+0020:         object.__setattr__(self, '_modules', OrderedDict())
+0021:         
+0022:     def register_parameter(self, name: str, param: Optional[Tensor]) -> None:
+0023:         """Add a parameter to the module.
+0024:         
+0025:         Args:
+0026:             name: Name of the parameter
+0027:             param: The parameter tensor to register
+0028:         """
+0029:         if '_parameters' not in self.__dict__:
+0030:             raise TypeError(
+0031:                 "cannot assign parameter before Module.__init__() call"
+0032:             )
+0033:             
+0034:         if param is not None and not isinstance(param, Tensor):
+0035:             raise TypeError(f"Parameter {name} must be a Tensor, not {type(param)}")
+0036:             
+0037:         self._parameters[name] = param
+0038:         
+0039:     def register_buffer(self, name: str, tensor: Optional[Tensor]) -> None:
+0040:         """Add a persistent buffer to the module.
+0041:         
+0042:         Buffers are typically used for running statistics in modules like BatchNorm.
+0043:         
+0044:         Args:
+0045:             name: Name of the buffer
+0046:             tensor: The tensor to register as a buffer
+0047:         """
+0048:         if '_buffers' not in self.__dict__:
+0049:             raise TypeError(
+0050:                 "cannot assign buffer before Module.__init__() call"
+0051:             )
+0052:             
+0053:         if tensor is not None and not isinstance(tensor, Tensor):
+0054:             raise TypeError(f"Buffer {name} must be a Tensor, not {type(tensor)}")
+0055:             
+0056:         self._buffers[name] = tensor
+0057:         
+0058:     def add_module(self, name: str, module: Optional['Module']) -> None:
+0059:         """Add a child module to the current module.
+0060:         
+0061:         Args:
+0062:             name: Name of the child module
+0063:             module: The module to add
+0064:         """
+0065:         if not isinstance(module, (Module, type(None))):
+0066:             raise TypeError(f"{name} is not a Module subclass")
+0067:             
+0068:         if '_modules' not in self.__dict__:
+0069:             raise TypeError(
+0070:                 "cannot assign module before Module.__init__() call"
+0071:             )
+0072:             
+0073:         self._modules[name] = module
+0074:         
+0075:     def __getattr__(self, name: str) -> Any:
+0076:         """Custom getattr that looks through parameters, buffers, and modules."""
+0077:         if '_parameters' in self.__dict__:
+0078:             _parameters = self.__dict__['_parameters']
+0079:             if name in _parameters:
+0080:                 return _parameters[name]
+0081:                 
+0082:         if '_buffers' in self.__dict__:
+0083:             _buffers = self.__dict__['_buffers']
+0084:             if name in _buffers:
+0085:                 return _buffers[name]
+0086:                 
+0087:         if '_modules' in self.__dict__:
+0088:             modules = self.__dict__['_modules']
+0089:             if name in modules:
+0090:                 return modules[name]
+0091:                 
+0092:         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+0093:         
+0094:     def __setattr__(self, name: str, value: Any) -> None:
+0095:         """Custom setattr that handles parameter registration."""
+0096:         # Handle special module attributes first
+0097:         if name in ['training']:
+0098:             object.__setattr__(self, name, value)
+0099:             return
+0100:             
+0101:         if isinstance(value, Tensor):
+0102:             if not hasattr(self, '_parameters'):
+0103:                 raise TypeError(
+0104:                     "cannot assign parameters before Module.__init__() call"
+0105:                 )
+0106:             self.register_parameter(name, value)
+0107:         elif isinstance(value, Module):
+0108:             if not hasattr(self, '_modules'):
+0109:                 raise TypeError(
+0110:                     "cannot assign module before Module.__init__() call"
+0111:                 )
+0112:             self.add_module(name, value)
+0113:         else:
+0114:             object.__setattr__(self, name, value)
+0115:             
+0116:     def parameters(self) -> Iterator[Tensor]:
+0117:         """Returns an iterator over module parameters."""
+0118:         for param in self._parameters.values():
+0119:             if param is not None:
+0120:                 yield param
+0121:         for module in self._modules.values():
+0122:             if module is not None:
+0123:                 yield from module.parameters()
+0124:                 
+0125:     def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
+0126:         """Returns an iterator over module parameters, yielding both the
+0127:         name of the parameter as well as the parameter itself."""
+0128:         for name, param in self._parameters.items():
+0129:             if param is not None:
+0130:                 yield name, param
+0131:         for mname, module in self._modules.items():
+0132:             if module is not None:
+0133:                 for name, param in module.named_parameters():
+0134:                     yield f"{mname}.{name}", param
+0135:                     
+0136:     def train(self, mode: bool = True) -> 'Module':
+0137:         """Sets the module in training mode."""
+0138:         self.training = mode
+0139:         for module in self._modules.values():
+0140:             if module is not None:
+0141:                 module.train(mode)
+0142:         return self
+0143:         
+0144:     def eval(self) -> 'Module':
+0145:         """Sets the module in evaluation mode."""
+0146:         return self.train(False)
+0147:         
+0148:     def __call__(self, *args, **kwargs):
+0149:         return self.forward(*args, **kwargs)
+0150:         
+0151:     def forward(self, *args, **kwargs):
+0152:         """Define the computation performed at every call."""
+0153:         raise NotImplementedError
+0154:         
+0155:     def __repr__(self):
+0156:         """Returns a string representation of the module."""
+0157:         extra_lines = []
+0158:         extra_repr = self.extra_repr()
+0159:         if extra_repr:
+0160:             extra_lines = extra_repr.split('\n')
+0161:             
+0162:         child_lines = []
+0163:         for key, module in self._modules.items():
+0164:             mod_str = repr(module)
+0165:             mod_str = _addindent(mod_str, 2)
+0166:             child_lines.append('(' + key + '): ' + mod_str)
+0167:             
+0168:         lines = extra_lines + child_lines
+0169:         
+0170:         main_str = self.__class__.__name__ + '('
+0171:         if lines:
+0172:             main_str += '\n  ' + '\n  '.join(lines) + '\n'
+0173:         main_str += ')'
+0174:         return main_str
+0175:         
+0176:     def extra_repr(self) -> str:
+0177:         """Set the extra representation of the module."""
+0178:         return ''
+0179: 
+0180: def _addindent(s_: str, numSpaces: int) -> str:
+0181:     """Helper for indenting multiline strings."""
+0182:     s = s_.split('\n')
+0183:     if len(s) == 1:
+0184:         return s_
+0185:     first = s.pop(0)
+0186:     s = [(numSpaces * ' ') + line for line in s]
+0187:     return '\n'.join([first] + s)
+
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\core\tensor.py
 // ----------------------------------------
 0001: import numpy as np
@@ -577,185 +768,374 @@
 0063:     def requires_grad(self) -> bool:
 0064:         """Returns whether the tensor requires gradient computation."""
 0065:         return self._requires_grad
-0066:         
-0067:     def requires_grad_(self, requires_grad: bool = True) -> 'Tensor':
-0068:         """Sets gradient computation requirement and returns self."""
-0069:         self._requires_grad = requires_grad
-0070:         if requires_grad and self.grad is None:
-0071:             self.zero_grad()
-0072:         return self
-0073: 
-0074:     def zero_grad(self) -> None:
-0075:         """Zeros out the gradient."""
-0076:         if self.data.shape == ():  # For scalar tensors
-0077:             self.grad = np.zeros(1, dtype=np.float64)  # Force 1D array
-0078:         else:
-0079:             self.grad = np.zeros_like(self.data, dtype=np.float64)
-0080:         
-0081:     def backward(self, gradient: Optional[np.ndarray] = None) -> None:
-0082:         """
-0083:         Computes gradients of the loss with respect to this tensor.
-0084:         """
-0085:         if not self.requires_grad:
-0086:             return
-0087: 
-0088:         # Handle default gradient for scalar tensors
-0089:         if gradient is None:
-0090:             if np.prod(self.shape) == 1:
-0091:                 if self.shape == ():  # scalar tensor
-0092:                     gradient = np.array(1.0)
-0093:                 else:
-0094:                     gradient = np.ones(self.shape)
-0095:             else:
-0096:                 raise RuntimeError("grad can be implicitly created only for scalar outputs")
-0097: 
-0098:         # Ensure gradient is numpy array
-0099:         if isinstance(gradient, (int, float)):
-0100:             gradient = np.array(gradient)
-0101:             
-0102:         # Ensure matching shapes for scalar case
-0103:         if self.shape == () and gradient.shape != ():
-0104:             gradient = gradient.sum()
-0105:         elif self.shape != () and gradient.shape == ():
-0106:             gradient = np.full(self.shape, gradient)
-0107: 
-0108:         # Get autograd engine and execute backward pass
-0109:         from .autograd import get_autograd_engine
-0110:         engine = get_autograd_engine()
-0111:         engine.backward(self, gradient)
-0112: 
-0113: 
-0114:     def __repr__(self) -> str:
-0115:         return f"Tensor({self.data}, requires_grad={self.requires_grad})"
-0116: 
-0117:     # Basic arithmetic operations that will be connected to Function implementations
-0118:     def __add__(self, other: Union['Tensor', Number]) -> 'Tensor':
-0119:         from ..ops.basic import Add
-0120:         return Add.apply(self, other)
-0121:         
-0122:     def __mul__(self, other: Union['Tensor', Number]) -> 'Tensor':
-0123:         from ..ops.basic import Multiply
-0124:         return Multiply.apply(self, other)
-0125:         
-0126:     def __matmul__(self, other: 'Tensor') -> 'Tensor':
-0127:         from ..ops.basic import MatMul
-0128:         return MatMul.apply(self, other)
+0066:     
+0067:     def __getitem__(self, index) -> 'Tensor':
+0068:         """Enable indexing for tensors."""
+0069:         return Tensor(self.data[index], requires_grad=self.requires_grad)
+0070:     
+0071:     def __len__(self) -> int:
+0072:         """Return length of first dimension."""
+0073:         return self.data.shape[0] if self.data.shape else 1
+0074:         
+0075:     def requires_grad_(self, requires_grad: bool = True) -> 'Tensor':
+0076:         """Sets gradient computation requirement and returns self."""
+0077:         self._requires_grad = requires_grad
+0078:         if requires_grad and self.grad is None:
+0079:             self.zero_grad()
+0080:         return self
+0081: 
+0082:     def zero_grad(self) -> None:
+0083:         """Zeros out the gradient."""
+0084:         if self.data.shape == ():  # For scalar tensors
+0085:             self.grad = np.zeros(1, dtype=np.float64)  # Force 1D array
+0086:         else:
+0087:             self.grad = np.zeros_like(self.data, dtype=np.float64)
+0088:         
+0089:     def backward(self, gradient: Optional[np.ndarray] = None) -> None:
+0090:         """
+0091:         Computes gradients of the loss with respect to this tensor.
+0092:         """
+0093:         if not self.requires_grad:
+0094:             return
+0095: 
+0096:         # Handle default gradient for scalar tensors
+0097:         if gradient is None:
+0098:             if np.prod(self.shape) == 1:
+0099:                 if self.shape == ():  # scalar tensor
+0100:                     gradient = np.array(1.0)
+0101:                 else:
+0102:                     gradient = np.ones(self.shape)
+0103:             else:
+0104:                 raise RuntimeError("grad can be implicitly created only for scalar outputs")
+0105: 
+0106:         # Ensure gradient is numpy array
+0107:         if isinstance(gradient, (int, float)):
+0108:             gradient = np.array(gradient)
+0109:             
+0110:         # Ensure matching shapes for scalar case
+0111:         if self.shape == () and gradient.shape != ():
+0112:             gradient = gradient.sum()
+0113:         elif self.shape != () and gradient.shape == ():
+0114:             gradient = np.full(self.shape, gradient)
+0115: 
+0116:         # Get autograd engine and execute backward pass
+0117:         from .autograd import get_autograd_engine
+0118:         engine = get_autograd_engine()
+0119:         engine.backward(self, gradient)
+0120: 
+0121: 
+0122:     def __repr__(self) -> str:
+0123:         return f"Tensor({self.data}, requires_grad={self.requires_grad})"
+0124: 
+0125:     # Basic arithmetic operations that will be connected to Function implementations
+0126:     def __add__(self, other: Union['Tensor', Number]) -> 'Tensor':
+0127:         from ..ops.basic import Add
+0128:         return Add.apply(self, other)
 0129:         
-0130:     def __neg__(self) -> 'Tensor':
-0131:         return self * (-1)
-0132:         
-0133:     def __sub__(self, other: Union['Tensor', Number]) -> 'Tensor':
-0134:         return self + (-other)
-0135: 
-0136:     def reshape(self, *shape: int) -> 'Tensor':
-0137:         from ..ops.reshape import Reshape
-0138:         return Reshape.apply(self, shape)
-0139: 
-0140:     # Helper methods for numpy compatibility
-0141:     def numpy(self) -> np.ndarray:
-0142:         """Returns the underlying numpy array."""
-0143:         return self.data
-0144:         
-0145:     @classmethod
-0146:     def from_numpy(cls, array: np.ndarray, requires_grad: bool = False) -> 'Tensor':
-0147:         """Creates a Tensor from a numpy array."""
-0148:         return cls(array.copy(), requires_grad=requires_grad)
-0149: 
-0150:     # Shape manipulation methods
-0151:     def reshape(self, *shape: int) -> 'Tensor':
-0152:         """Returns a tensor with the same data and new shape."""
-0153:         from ..ops import Reshape
-0154:         return Reshape.apply(self, shape)
-0155: 
-0156:     def pow(self, exponent: Union['Tensor', float]) -> 'Tensor':
-0157:         """Returns tensor raised to the power of exponent."""
-0158:         from ..ops import Power
-0159:         return Power.apply(self, exponent)
-0160: 
-0161:     def div(self, other: Union['Tensor', float]) -> 'Tensor':
-0162:         """Returns self divided by other."""
-0163:         from ..ops import Divide
-0164:         return Divide.apply(self, other)
-0165: 
-0166:     def log(self) -> 'Tensor':
-0167:         """Returns the natural logarithm of the tensor."""
-0168:         from ..ops import Log
-0169:         return Log.apply(self)
-0170: 
-0171:     def exp(self) -> 'Tensor':
-0172:         """Returns e raised to the power of each element in the tensor."""
-0173:         from ..ops import Exp
-0174:         return Exp.apply(self)
-0175: 
-0176:     def sigmoid(self) -> 'Tensor':
-0177:         """Returns the sigmoid of the tensor."""
-0178:         from ..ops import Sigmoid
-0179:         return Sigmoid.apply(self)
-0180: 
-0181:     def tanh(self) -> 'Tensor':
-0182:         """Returns the hyperbolic tangent of the tensor."""
-0183:         from ..ops import Tanh
-0184:         return Tanh.apply(self)
-0185: 
-0186:     def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
-0187:         """Returns the sum of all elements in the tensor."""
-0188:         from ..ops import Sum
-0189:         return Sum.apply(self, axis, keepdims)
-0190: 
-0191:     def mean(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
-0192:         """Returns the mean of all elements in the tensor."""
-0193:         from ..ops import Mean
-0194:         return Mean.apply(self, axis, keepdims)
-0195: 
-0196:     def max(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
-0197:         """Returns the maximum value of all elements in the tensor."""
-0198:         from ..ops import Max
-0199:         return Max.apply(self, axis, keepdims)
-0200: 
-0201:     def t(self) -> 'Tensor':
-0202:         """Returns the transpose of the tensor."""
-0203:         from ..ops import Transpose
-0204:         return Transpose.apply(self)
-0205: 
-0206:     def transpose(self, *axes: int) -> 'Tensor':
-0207:         """Returns the transposed tensor."""
-0208:         from ..ops import Transpose
-0209:         return Transpose.apply(self, axes if axes else None)
-0210: 
-0211:     # Comparison operations
-0212:     def __gt__(self, other: Union['Tensor', float]) -> 'Tensor':
-0213:         from ..ops import Greater
-0214:         return Greater.apply(self, other)
-0215: 
-0216:     def __ge__(self, other: Union['Tensor', float]) -> 'Tensor':
-0217:         from ..ops import GreaterEqual
-0218:         return GreaterEqual.apply(self, other)
-0219: 
-0220:     def __lt__(self, other: Union['Tensor', float]) -> 'Tensor':
-0221:         from ..ops import Less
-0222:         return Less.apply(self, other)
+0130:     def __mul__(self, other: Union['Tensor', Number]) -> 'Tensor':
+0131:         from ..ops.basic import Multiply
+0132:         return Multiply.apply(self, other)
+0133:         
+0134:     def __matmul__(self, other: 'Tensor') -> 'Tensor':
+0135:         from ..ops.basic import MatMul
+0136:         return MatMul.apply(self, other)
+0137:         
+0138:     def __neg__(self) -> 'Tensor':
+0139:         return self * (-1)
+0140:         
+0141:     def __sub__(self, other: Union['Tensor', Number]) -> 'Tensor':
+0142:         return self + (-other)
+0143: 
+0144:     def reshape(self, *shape: int) -> 'Tensor':
+0145:         from ..ops.reshape import Reshape
+0146:         return Reshape.apply(self, shape)
+0147: 
+0148:     # Helper methods for numpy compatibility
+0149:     def numpy(self) -> np.ndarray:
+0150:         """Returns the underlying numpy array."""
+0151:         return self.data
+0152:         
+0153:     @classmethod
+0154:     def from_numpy(cls, array: np.ndarray, requires_grad: bool = False) -> 'Tensor':
+0155:         """Creates a Tensor from a numpy array."""
+0156:         return cls(array.copy(), requires_grad=requires_grad)
+0157: 
+0158:     # Shape manipulation methods
+0159:     def reshape(self, *shape: int) -> 'Tensor':
+0160:         """Returns a tensor with the same data and new shape."""
+0161:         from ..ops import Reshape
+0162:         return Reshape.apply(self, shape)
+0163: 
+0164:     def pow(self, exponent: Union['Tensor', float]) -> 'Tensor':
+0165:         """Returns tensor raised to the power of exponent."""
+0166:         from ..ops import Power
+0167:         return Power.apply(self, exponent)
+0168: 
+0169:     def div(self, other: Union['Tensor', float]) -> 'Tensor':
+0170:         """Returns self divided by other."""
+0171:         from ..ops import Divide
+0172:         return Divide.apply(self, other)
+0173: 
+0174:     def log(self) -> 'Tensor':
+0175:         """Returns the natural logarithm of the tensor."""
+0176:         from ..ops import Log
+0177:         return Log.apply(self)
+0178: 
+0179:     def exp(self) -> 'Tensor':
+0180:         """Returns e raised to the power of each element in the tensor."""
+0181:         from ..ops import Exp
+0182:         return Exp.apply(self)
+0183: 
+0184:     def sigmoid(self) -> 'Tensor':
+0185:         """Returns the sigmoid of the tensor."""
+0186:         from ..ops import Sigmoid
+0187:         return Sigmoid.apply(self)
+0188: 
+0189:     def tanh(self) -> 'Tensor':
+0190:         """Returns the hyperbolic tangent of the tensor."""
+0191:         from ..ops import Tanh
+0192:         return Tanh.apply(self)
+0193: 
+0194:     def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+0195:         """Returns the sum of all elements in the tensor."""
+0196:         from ..ops import Sum
+0197:         return Sum.apply(self, axis, keepdims)
+0198: 
+0199:     def mean(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+0200:         """Returns the mean of all elements in the tensor."""
+0201:         from ..ops import Mean
+0202:         return Mean.apply(self, axis, keepdims)
+0203: 
+0204:     def max(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+0205:         """Returns the maximum value of all elements in the tensor."""
+0206:         from ..ops import Max
+0207:         return Max.apply(self, axis, keepdims)
+0208: 
+0209:     def t(self) -> 'Tensor':
+0210:         """Returns the transpose of the tensor."""
+0211:         from ..ops import Transpose
+0212:         return Transpose.apply(self)
+0213: 
+0214:     def transpose(self, *axes: int) -> 'Tensor':
+0215:         """Returns the transposed tensor."""
+0216:         from ..ops import Transpose
+0217:         return Transpose.apply(self, axes if axes else None)
+0218: 
+0219:     # Comparison operations
+0220:     def __gt__(self, other: Union['Tensor', float]) -> 'Tensor':
+0221:         from ..ops import Greater
+0222:         return Greater.apply(self, other)
 0223: 
-0224:     def __le__(self, other: Union['Tensor', float]) -> 'Tensor':
-0225:         from ..ops import LessEqual
-0226:         return LessEqual.apply(self, other)
+0224:     def __ge__(self, other: Union['Tensor', float]) -> 'Tensor':
+0225:         from ..ops import GreaterEqual
+0226:         return GreaterEqual.apply(self, other)
 0227: 
-0228:     def __eq__(self, other: Union['Tensor', float]) -> 'Tensor':
-0229:         from ..ops import Equal
-0230:         return Equal.apply(self, other)
+0228:     def __lt__(self, other: Union['Tensor', float]) -> 'Tensor':
+0229:         from ..ops import Less
+0230:         return Less.apply(self, other)
 0231: 
-0232:     def __ne__(self, other: Union['Tensor', float]) -> 'Tensor':
-0233:         from ..ops import NotEqual
-0234:         return NotEqual.apply(self, other)
+0232:     def __le__(self, other: Union['Tensor', float]) -> 'Tensor':
+0233:         from ..ops import LessEqual
+0234:         return LessEqual.apply(self, other)
 0235: 
-0236:     def __truediv__(self, other: Union['Tensor', float]) -> 'Tensor':
-0237:         """Implements division using the / operator."""
-0238:         from ..ops import Divide
-0239:         return Divide.apply(self, other)
-0240: 
-0241:     def __pow__(self, exponent: Union['Tensor', float]) -> 'Tensor':
-0242:         """Implements power using the ** operator."""
-0243:         from ..ops import Power
-0244:         return Power.apply(self, exponent)
+0236:     def __eq__(self, other: Union['Tensor', float]) -> 'Tensor':
+0237:         from ..ops import Equal
+0238:         return Equal.apply(self, other)
+0239: 
+0240:     def __ne__(self, other: Union['Tensor', float]) -> 'Tensor':
+0241:         from ..ops import NotEqual
+0242:         return NotEqual.apply(self, other)
+0243: 
+0244:     def __truediv__(self, other: Union['Tensor', float]) -> 'Tensor':
+0245:         """Implements division using the / operator."""
+0246:         from ..ops import Divide
+0247:         return Divide.apply(self, other)
+0248: 
+0249:     def __pow__(self, exponent: Union['Tensor', float]) -> 'Tensor':
+0250:         """Implements power using the ** operator."""
+0251:         from ..ops import Power
+0252:         return Power.apply(self, exponent)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\data\__init__.py
+// ----------------------------------------
+0001: """
+0002: DLpy.data
+0003: """
+0004: 
+0005: from .dataset import Dataset, TensorDataset
+0006: from .dataloader import DataLoader
+0007: from .samplers import Sampler, SequentialSampler, RandomSampler
+0008: 
+0009: __all__ = [
+0010:     'Dataset',
+0011:     'TensorDataset',
+0012:     'DataLoader',
+0013:     'Sampler',
+0014:     'SequentialSampler',
+0015:     'RandomSampler'
+0016: ]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\data\dataloader.py
+// ----------------------------------------
+0001: # dataloader.py
+0002: from typing import Iterator, Optional, Sequence, Any, Callable
+0003: import numpy as np
+0004: from .samplers import SequentialSampler, RandomSampler, Sampler
+0005: from .dataset import Dataset
+0006: from DLpy.core.tensor import Tensor
+0007: 
+0008: class DataLoader:
+0009:     """
+0010:     Data loader. Combines a dataset and a sampler, and provides an iterable over
+0011:     the given dataset.
+0012:     
+0013:     Args:
+0014:         dataset: Dataset from which to load the data
+0015:         batch_size: How many samples per batch to load
+0016:         shuffle: Set to True to have the data reshuffled at every epoch
+0017:         sampler: Defines the strategy to draw samples from the dataset
+0018:         drop_last: If True, drop the last incomplete batch
+0019:         collate_fn: Merges a list of samples to form a mini-batch
+0020:     """
+0021:     
+0022:     def __init__(
+0023:         self,
+0024:         dataset: Dataset,
+0025:         batch_size: Optional[int] = 1,
+0026:         shuffle: bool = False,
+0027:         sampler: Optional[Sampler] = None,
+0028:         drop_last: bool = False,
+0029:         collate_fn: Optional[Callable] = None
+0030:     ):
+0031:         self.dataset = dataset
+0032:         self.batch_size = batch_size
+0033:         self.drop_last = drop_last
+0034:         self.collate_fn = collate_fn if collate_fn is not None else self._default_collate
+0035:         
+0036:         if sampler is not None:
+0037:             if shuffle:
+0038:                 raise ValueError("Cannot specify both shuffle and sampler")
+0039:             self.sampler = sampler
+0040:         else:
+0041:             if shuffle:
+0042:                 self.sampler = RandomSampler(dataset)
+0043:             else:
+0044:                 self.sampler = SequentialSampler(dataset)
+0045:                 
+0046:     def _default_collate(self, batch: Sequence[Any]) -> Any:
+0047:         """Default collate function for batching samples."""
+0048:         elem = batch[0]
+0049:         
+0050:         if isinstance(elem, Tensor):
+0051:             return Tensor(np.stack([b.data for b in batch]))
+0052:         elif isinstance(elem, (int, float)):
+0053:             # Convert scalar values to a flat tensor
+0054:             return Tensor(np.array(batch))
+0055:         elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+0056:             return type(elem)(*(self._default_collate(samples) for samples in zip(*batch)))
+0057:         elif isinstance(elem, (list, tuple)):
+0058:             return [self._default_collate(samples) for samples in zip(*batch)]
+0059:         else:
+0060:             try:
+0061:                 return Tensor(np.array(batch))
+0062:             except:
+0063:                 return batch
+0064:             
+0065:     def __iter__(self) -> Iterator[Any]:
+0066:         batch = []
+0067:         for idx in self.sampler:
+0068:             batch.append(self.dataset[idx])
+0069:             if len(batch) == self.batch_size:
+0070:                 yield self.collate_fn(batch)
+0071:                 batch = []
+0072:         if len(batch) > 0 and not self.drop_last:
+0073:             yield self.collate_fn(batch)
+0074:             
+0075:     def __len__(self) -> int:
+0076:         if self.drop_last:
+0077:             return len(self.dataset) // self.batch_size
+0078:         else:
+0079:             return (len(self.dataset) + self.batch_size - 1) // self.batch_size
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\data\dataset.py
+// ----------------------------------------
+0001: # dataset.py
+0002: from typing import Any, Sized, TypeVar, Tuple
+0003: from DLpy.core.tensor import Tensor
+0004: 
+0005: T_co = TypeVar('T_co', covariant=True)
+0006: 
+0007: class Dataset(Sized):
+0008:     """
+0009:     Abstract base class for all datasets.
+0010:     
+0011:     All datasets that represent a map from keys to data samples should subclass it.
+0012:     All subclasses must implement __getitem__() and __len__().
+0013:     """
+0014:     
+0015:     def __getitem__(self, index: int) -> Any:
+0016:         raise NotImplementedError
+0017:         
+0018:     def __len__(self) -> int:
+0019:         raise NotImplementedError
+0020:         
+0021: class TensorDataset(Dataset):
+0022:     """
+0023:     Dataset wrapping tensors.
+0024:     
+0025:     Each sample will be retrieved by indexing tensors along the first dimension.
+0026:     
+0027:     Args:
+0028:         *tensors: Tensors that have the same size of the first dimension.
+0029:     """
+0030:     
+0031:     def __init__(self, *tensors: Tensor):
+0032:         assert all(tensors[0].shape[0] == tensor.shape[0] for tensor in tensors), \
+0033:             "Size mismatch between tensors"
+0034:         self.tensors = tensors
+0035:         
+0036:     def __getitem__(self, index: int) -> Tuple[Tensor, ...]:
+0037:         return tuple(tensor[index] for tensor in self.tensors)
+0038:         
+0039:     def __len__(self) -> int:
+0040:         return self.tensors[0].shape[0]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\data\samplers.py
+// ----------------------------------------
+0001: # samplers.py
+0002: from typing import Iterator, Optional, Sized
+0003: import numpy as np
+0004: 
+0005: class Sampler:
+0006:     """Base class for all Samplers."""
+0007:     
+0008:     def __init__(self, data_source: Optional[Sized]):
+0009:         self.data_source = data_source
+0010:         
+0011:     def __iter__(self) -> Iterator[int]:
+0012:         raise NotImplementedError
+0013:         
+0014:     def __len__(self) -> int:
+0015:         raise NotImplementedError
+0016: 
+0017: class SequentialSampler(Sampler):
+0018:     """Samples elements sequentially."""
+0019:     
+0020:     def __iter__(self) -> Iterator[int]:
+0021:         return iter(range(len(self.data_source)))
+0022:         
+0023:     def __len__(self) -> int:
+0024:         return len(self.data_source)
+0025: 
+0026: class RandomSampler(Sampler):
+0027:     """Samples elements randomly without replacement."""
+0028:     
+0029:     def __iter__(self) -> Iterator[int]:
+0030:         indices = np.random.permutation(len(self.data_source))
+0031:         return iter(indices.tolist())
+0032:         
+0033:     def __len__(self) -> int:
+0034:         return len(self.data_source)
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\__init__.py
 // ----------------------------------------
@@ -765,39 +1145,53 @@
 0004: This module contains all components needed for building neural networks.
 0005: """
 0006: 
-0007: from .modules import Module
-0008: from .linear import Linear
-0009: from .activations import (
-0010:     relu, leaky_relu, elu, gelu, sigmoid, tanh,
-0011:     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
-0012: )
-0013: 
-0014: from .conv2d import Conv2d 
+0007: from .linear import Linear
+0008: from .batch_norm import BatchNorm1d, BatchNorm2d
+0009: from .layer_norm import LayerNorm
+0010: from .dropout import Dropout, Dropout2d
+0011: from .activations import (
+0012:     relu, leaky_relu, elu, gelu, sigmoid, tanh,
+0013:     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
+0014: )
 0015: 
-0016: __all__ = [
-0017:     # Base module
-0018:     'Module',
-0019:     
-0020:     # Layers
-0021:     'Linear',
-0022:     
-0023:     # Activation functions
-0024:     'relu',
-0025:     'leaky_relu',
-0026:     'elu',
-0027:     'gelu',
-0028:     'sigmoid',
-0029:     'tanh',
-0030:     'ReLU',
-0031:     'LeakyReLU',
-0032:     'ELU',
-0033:     'GELU',
-0034:     'Sigmoid',
-0035:     'Tanh',
-0036: 
-0037:     # Convolutional layers
-0038:     'Conv2d'
-0039: ]
+0016: from .conv2d import Conv2d 
+0017: from .pooling import MaxPool2d, AvgPool2d
+0018: from .normalization import GroupNorm, InstanceNorm2d
+0019: 
+0020: __all__ = [
+0021:     # Layers
+0022:     'Linear',
+0023:     'BatchNorm1d',
+0024:     'BatchNorm2d',
+0025:     'LayerNorm',
+0026:     'Dropout',
+0027:     'Dropout2d',
+0028:     
+0029:     # Activation functions
+0030:     'relu',
+0031:     'leaky_relu',
+0032:     'elu',
+0033:     'gelu',
+0034:     'sigmoid',
+0035:     'tanh',
+0036:     'ReLU',
+0037:     'LeakyReLU',
+0038:     'ELU',
+0039:     'GELU',
+0040:     'Sigmoid',
+0041:     'Tanh',
+0042: 
+0043:     # Convolutional layers
+0044:     'Conv2d',
+0045: 
+0046:     # Pooling layers
+0047:     'MaxPool2d',
+0048:     'AvgPool2d',
+0049: 
+0050:     # Normalization layers
+0051:     'GroupNorm',
+0052:     'InstanceNorm2d'
+0053: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\activations.py
 // ----------------------------------------
@@ -1034,423 +1428,690 @@
 0231:     """Applies Tanh activation function."""
 0232:     return Tanh.apply(x)
 
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\batch_norm.py
+// ----------------------------------------
+0001: # batch_norm.py
+0002: import numpy as np
+0003: from typing import Optional, Tuple
+0004: from ..core import Tensor, Module
+0005: 
+0006: class BatchNorm1d(Module):
+0007:     """
+0008:     Applies Batch Normalization over a 2D input (batch, features)
+0009: 
+0010:     Args:
+0011:         num_features: Number of features or channels
+0012:         eps: Small constant for numerical stability
+0013:         momentum: Value for running_mean and running_var computation
+0014:         affine: If True, use learnable affine parameters
+0015:         track_running_stats: If True, track running mean and variance
+0016:     """
+0017:     def __init__(self, 
+0018:                  num_features: int,
+0019:                  eps: float = 1e-5,
+0020:                  momentum: float = 0.1,
+0021:                  affine: bool = True,
+0022:                  track_running_stats: bool = True):
+0023:         super().__init__()
+0024:         self.num_features = num_features
+0025:         self.eps = eps
+0026:         self.momentum = momentum
+0027:         self.affine = affine
+0028:         self.track_running_stats = track_running_stats
+0029: 
+0030:         if self.affine:
+0031:             self.weight = Tensor(np.ones(num_features), requires_grad=True)
+0032:             self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+0033:         else:
+0034:             self.register_parameter('weight', None)
+0035:             self.register_parameter('bias', None)
+0036: 
+0037:         if self.track_running_stats:
+0038:             self.register_buffer('running_mean', Tensor(np.zeros(num_features)))
+0039:             self.register_buffer('running_var', Tensor(np.ones(num_features)))
+0040:             self.register_buffer('num_batches_tracked', Tensor(np.array([0])))
+0041:         else:
+0042:             self.register_buffer('running_mean', None)
+0043:             self.register_buffer('running_var', None)
+0044:             self.register_buffer('num_batches_tracked', None)
+0045: 
+0046:     def forward(self, x: Tensor) -> Tensor:
+0047:         if self.momentum is None:
+0048:             exponential_average_factor = 0.0
+0049:         else:
+0050:             exponential_average_factor = self.momentum
+0051: 
+0052:         if self.training and self.track_running_stats:
+0053:             if self.num_batches_tracked is not None:
+0054:                 self.num_batches_tracked += 1
+0055:                 if self.momentum is None:  # Use cumulative moving average
+0056:                     exponential_average_factor = 1.0 / float(self.num_batches_tracked)
+0057:                 else:  # Use exponential moving average
+0058:                     exponential_average_factor = self.momentum
+0059: 
+0060:         # Calculate mean and variance for the current batch
+0061:         if self.training or not self.track_running_stats:
+0062:             mean = x.data.mean(axis=0)
+0063:             var = x.data.var(axis=0, ddof=0)
+0064:             n = x.data.shape[0]
+0065:         else:
+0066:             mean = self.running_mean.data
+0067:             var = self.running_var.data
+0068:             n = None
+0069: 
+0070:         # Update running stats if tracking
+0071:         if self.training and self.track_running_stats:
+0072:             running_mean = self.running_mean.data
+0073:             running_var = self.running_var.data
+0074:             running_mean = running_mean * (1 - exponential_average_factor) + mean * exponential_average_factor
+0075:             running_var = running_var * (1 - exponential_average_factor) + var * exponential_average_factor
+0076:             self.running_mean.data = running_mean
+0077:             self.running_var.data = running_var
+0078: 
+0079:         # Normalize with fixed std calculation
+0080:         x_norm = (x.data - mean) / np.sqrt(var)
+0081:         
+0082:         # Apply affine transform if specified
+0083:         if self.affine:
+0084:             # Explicit broadcasting by adding batch dimension
+0085:             weight = self.weight.data
+0086:             bias = self.bias.data
+0087:             x_norm = x_norm * weight + bias
+0088: 
+0089:         return Tensor(x_norm, requires_grad=x.requires_grad)
+0090: 
+0091: class BatchNorm2d(BatchNorm1d):
+0092:     """
+0093:     Applies Batch Normalization over a 4D input (batch, channels, height, width)
+0094:     
+0095:     Args:
+0096:         num_features: Number of channels (C from input of size (N,C,H,W))
+0097:         eps: Small constant for numerical stability
+0098:         momentum: Value for running_mean and running_var computation
+0099:         affine: If True, use learnable affine parameters
+0100:         track_running_stats: If True, track running mean and variance
+0101:     """
+0102:     def forward(self, x: Tensor) -> Tensor:
+0103:         assert len(x.shape) == 4, f'expected 4D input, got {len(x.shape)}D input'
+0104:         
+0105:         # Reshape input: (N,C,H,W) -> (N*H*W,C)
+0106:         N, C, H, W = x.shape
+0107:         x_reshaped = x.data.transpose(0, 2, 3, 1).reshape(-1, C)
+0108:         x_normed = super().forward(Tensor(x_reshaped, requires_grad=x.requires_grad))
+0109:         
+0110:         # Reshape back: (N*H*W,C) -> (N,C,H,W)
+0111:         return Tensor(x_normed.data.reshape(N, H, W, C).transpose(0, 3, 1, 2),
+0112:                      requires_grad=x.requires_grad)
+
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\conv2d.py
 // ----------------------------------------
 0001: from typing import Tuple, Optional, Union
 0002: import numpy as np
-0003: from ..core import Tensor
-0004: from .modules import Module
-0005: from ..ops.cnn import Conv2dFunction
-0006: 
-0007: def _pair(x: Union[int, Tuple[int, int]]) -> Tuple[int, int]:
-0008:     """Convert input to a pair of values."""
-0009:     if isinstance(x, tuple):
-0010:         return x
-0011:     return (x, x)
-0012: 
-0013: class Conv2d(Module):
+0003: from ..core import Tensor, Module
+0004: from ..ops.cnn import Conv2dFunction
+0005: 
+0006: def _pair(x: Union[int, Tuple[int, int]]) -> Tuple[int, int]:
+0007:     """Convert input to a pair of values."""
+0008:     if isinstance(x, tuple):
+0009:         return x
+0010:     return (x, x)
+0011: 
+0012: class Conv2d(Module):
+0013:     """
+0014:     Applies a 2D convolution over an input signal composed of several input planes.
+0015:     
+0016:     Args:
+0017:         in_channels (int): Number of channels in the input image
+0018:         out_channels (int): Number of channels produced by the convolution
+0019:         kernel_size (int or tuple): Size of the convolving kernel
+0020:         stride (int or tuple, optional): Stride of the convolution. Default: 1
+0021:         padding (int or tuple, optional): Zero-padding added to both sides of the input. Default: 0
+0022:         dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
+0023:         groups (int, optional): Number of blocked connections from input channels to output channels. Default: 1 
+0024:         bias (bool, optional): If True, adds a learnable bias to the output. Default: True
+0025:         
+0026:     Shape:
+0027:         - Input: (N, C_in, H, W)
+0028:         - Output: (N, C_out, H_out, W_out)
+0029:           where
+0030:           H_out = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) / stride[0] + 1
+0031:           W_out = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) / stride[1] + 1
+0032:     """
+0033:     
+0034:     def __init__(
+0035:         self,
+0036:         in_channels: int,
+0037:         out_channels: int,
+0038:         kernel_size: Union[int, Tuple[int, int]],
+0039:         stride: Union[int, Tuple[int, int]] = 1,
+0040:         padding: Union[int, Tuple[int, int]] = 0,
+0041:         dilation: Union[int, Tuple[int, int]] = 1,
+0042:         groups: int = 1,
+0043:         bias: bool = True
+0044:     ):
+0045:         super().__init__()
+0046:         
+0047:         if in_channels % groups != 0:
+0048:             raise ValueError('in_channels must be divisible by groups')
+0049:         if out_channels % groups != 0:
+0050:             raise ValueError('out_channels must be divisible by groups')
+0051:             
+0052:         self.in_channels = in_channels
+0053:         self.out_channels = out_channels
+0054:         self.kernel_size = _pair(kernel_size)
+0055:         self.stride = _pair(stride)
+0056:         self.padding = _pair(padding)
+0057:         self.dilation = _pair(dilation)
+0058:         self.groups = groups
+0059:         
+0060:         # Initialize weights using He initialization
+0061:         # Adjust fan_in to account for groups
+0062:         fan_in = in_channels // groups * self.kernel_size[0] * self.kernel_size[1]
+0063:         bound = np.sqrt(2.0 / fan_in)
+0064:         weight_shape = (out_channels, in_channels // groups, *self.kernel_size)
+0065:         weight = Tensor(
+0066:             np.random.uniform(-bound, bound, weight_shape),
+0067:             requires_grad=True
+0068:         )
+0069:         self.register_parameter('weight', weight)
+0070:         
+0071:         if bias:
+0072:             # Initialize bias to zero
+0073:             bias_data = np.zeros(out_channels)
+0074:             self.register_parameter('bias', Tensor(bias_data, requires_grad=True))
+0075:         else:
+0076:             self.register_parameter('bias', None)
+0077:             
+0078:     def forward(self, x: Tensor) -> Tensor:
+0079:         """
+0080:         Forward pass of the convolution layer.
+0081:         
+0082:         Args:
+0083:             x: Input tensor of shape (N, C_in, H, W)
+0084:             
+0085:         Returns:
+0086:             Output tensor of shape (N, C_out, H_out, W_out)
+0087:         """
+0088:         return Conv2dFunction.apply(
+0089:             x, self.weight, self.bias,
+0090:             self.stride, self.padding,
+0091:             self.dilation, self.groups
+0092:         )
+0093:         
+0094:     def extra_repr(self) -> str:
+0095:         """Returns a string with extra representation information."""
+0096:         s = (f'{self.in_channels}, {self.out_channels}, '
+0097:              f'kernel_size={self.kernel_size}')
+0098:         
+0099:         if self.stride != (1, 1):
+0100:             s += f', stride={self.stride}'
+0101:         if self.padding != (0, 0):
+0102:             s += f', padding={self.padding}'
+0103:         if self.dilation != (1, 1):
+0104:             s += f', dilation={self.dilation}'
+0105:         if self.groups != 1:
+0106:             s += f', groups={self.groups}'
+0107:         if self.bias is None:
+0108:             s += ', bias=False'
+0109:         return s
+0110: 
+0111:     @staticmethod
+0112:     def calc_output_shape(
+0113:         input_shape: Tuple[int, ...],
+0114:         out_channels: int,
+0115:         kernel_size: Tuple[int, int],
+0116:         stride: Tuple[int, int],
+0117:         padding: Tuple[int, int],
+0118:         dilation: Tuple[int, int]
+0119:     ) -> Tuple[int, int, int, int]:
+0120:         """
+0121:         Calculate the output shape of the convolution.
+0122:         
+0123:         Args:
+0124:             input_shape: Input shape (N, C_in, H, W)
+0125:             out_channels: Number of output channels
+0126:             kernel_size: Size of the kernel
+0127:             stride: Stride of the convolution
+0128:             padding: Zero-padding added to both sides
+0129:             dilation: Spacing between kernel elements
+0130:             
+0131:         Returns:
+0132:             Output shape (N, C_out, H_out, W_out)
+0133:         """
+0134:         N, _, H, W = input_shape
+0135:         
+0136:         H_out = ((H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) 
+0137:                 // stride[0] + 1)
+0138:         W_out = ((W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) 
+0139:                 // stride[1] + 1)
+0140:         
+0141:         return (N, out_channels, H_out, W_out)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\dropout.py
+// ----------------------------------------
+0001: # dropout.py
+0002: import numpy as np
+0003: from typing import Optional
+0004: from ..core import Tensor, Module
+0005: 
+0006: class Dropout(Module):
+0007:     """
+0008:     Randomly zeroes some of the elements of the input tensor with probability p using samples 
+0009:     from a Bernoulli distribution.
+0010:     
+0011:     Args:
+0012:         p: Probability of an element to be zeroed. Default: 0.5
+0013:         inplace: If set to True, will do operation in-place. Default: False
 0014:     """
-0015:     Applies a 2D convolution over an input signal composed of several input planes.
-0016:     
-0017:     Args:
-0018:         in_channels (int): Number of channels in the input image
-0019:         out_channels (int): Number of channels produced by the convolution
-0020:         kernel_size (int or tuple): Size of the convolving kernel
-0021:         stride (int or tuple, optional): Stride of the convolution. Default: 1
-0022:         padding (int or tuple, optional): Zero-padding added to both sides of the input. Default: 0
-0023:         dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
-0024:         groups (int, optional): Number of blocked connections from input channels to output channels. Default: 1 
-0025:         bias (bool, optional): If True, adds a learnable bias to the output. Default: True
-0026:         
-0027:     Shape:
-0028:         - Input: (N, C_in, H, W)
-0029:         - Output: (N, C_out, H_out, W_out)
-0030:           where
-0031:           H_out = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) / stride[0] + 1
-0032:           W_out = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) / stride[1] + 1
-0033:     """
-0034:     
-0035:     def __init__(
-0036:         self,
-0037:         in_channels: int,
-0038:         out_channels: int,
-0039:         kernel_size: Union[int, Tuple[int, int]],
-0040:         stride: Union[int, Tuple[int, int]] = 1,
-0041:         padding: Union[int, Tuple[int, int]] = 0,
-0042:         dilation: Union[int, Tuple[int, int]] = 1,
-0043:         groups: int = 1,
-0044:         bias: bool = True
-0045:     ):
-0046:         super().__init__()
-0047:         
-0048:         if in_channels % groups != 0:
-0049:             raise ValueError('in_channels must be divisible by groups')
-0050:         if out_channels % groups != 0:
-0051:             raise ValueError('out_channels must be divisible by groups')
-0052:             
-0053:         self.in_channels = in_channels
-0054:         self.out_channels = out_channels
-0055:         self.kernel_size = _pair(kernel_size)
-0056:         self.stride = _pair(stride)
-0057:         self.padding = _pair(padding)
-0058:         self.dilation = _pair(dilation)
-0059:         self.groups = groups
-0060:         
-0061:         # Initialize weights using He initialization
-0062:         # Adjust fan_in to account for groups
-0063:         fan_in = in_channels // groups * self.kernel_size[0] * self.kernel_size[1]
-0064:         bound = np.sqrt(2.0 / fan_in)
-0065:         weight_shape = (out_channels, in_channels // groups, *self.kernel_size)
-0066:         weight = Tensor(
-0067:             np.random.uniform(-bound, bound, weight_shape),
-0068:             requires_grad=True
-0069:         )
-0070:         self.register_parameter('weight', weight)
-0071:         
-0072:         if bias:
-0073:             # Initialize bias to zero
-0074:             bias_data = np.zeros(out_channels)
-0075:             self.register_parameter('bias', Tensor(bias_data, requires_grad=True))
-0076:         else:
-0077:             self.register_parameter('bias', None)
-0078:             
-0079:     def forward(self, x: Tensor) -> Tensor:
-0080:         """
-0081:         Forward pass of the convolution layer.
-0082:         
-0083:         Args:
-0084:             x: Input tensor of shape (N, C_in, H, W)
-0085:             
-0086:         Returns:
-0087:             Output tensor of shape (N, C_out, H_out, W_out)
-0088:         """
-0089:         return Conv2dFunction.apply(
-0090:             x, self.weight, self.bias,
-0091:             self.stride, self.padding,
-0092:             self.dilation, self.groups
-0093:         )
-0094:         
-0095:     def extra_repr(self) -> str:
-0096:         """Returns a string with extra representation information."""
-0097:         s = (f'{self.in_channels}, {self.out_channels}, '
-0098:              f'kernel_size={self.kernel_size}')
-0099:         
-0100:         if self.stride != (1, 1):
-0101:             s += f', stride={self.stride}'
-0102:         if self.padding != (0, 0):
-0103:             s += f', padding={self.padding}'
-0104:         if self.dilation != (1, 1):
-0105:             s += f', dilation={self.dilation}'
-0106:         if self.groups != 1:
-0107:             s += f', groups={self.groups}'
-0108:         if self.bias is None:
-0109:             s += ', bias=False'
-0110:         return s
-0111: 
-0112:     @staticmethod
-0113:     def calc_output_shape(
-0114:         input_shape: Tuple[int, ...],
-0115:         out_channels: int,
-0116:         kernel_size: Tuple[int, int],
-0117:         stride: Tuple[int, int],
-0118:         padding: Tuple[int, int],
-0119:         dilation: Tuple[int, int]
-0120:     ) -> Tuple[int, int, int, int]:
-0121:         """
-0122:         Calculate the output shape of the convolution.
-0123:         
-0124:         Args:
-0125:             input_shape: Input shape (N, C_in, H, W)
-0126:             out_channels: Number of output channels
-0127:             kernel_size: Size of the kernel
-0128:             stride: Stride of the convolution
-0129:             padding: Zero-padding added to both sides
-0130:             dilation: Spacing between kernel elements
-0131:             
-0132:         Returns:
-0133:             Output shape (N, C_out, H_out, W_out)
-0134:         """
-0135:         N, _, H, W = input_shape
-0136:         
-0137:         H_out = ((H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) 
-0138:                 // stride[0] + 1)
-0139:         W_out = ((W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) 
-0140:                 // stride[1] + 1)
-0141:         
-0142:         return (N, out_channels, H_out, W_out)
+0015:     def __init__(self, p: float = 0.5, inplace: bool = False):
+0016:         super().__init__()
+0017:         if p < 0 or p > 1:
+0018:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+0019:         self.p = p
+0020:         self.inplace = inplace
+0021:         self.mask: Optional[np.ndarray] = None
+0022: 
+0023:     def forward(self, x: Tensor) -> Tensor:
+0024:         if self.training:
+0025:             # Generate mask
+0026:             self.mask = (np.random.rand(*x.shape) > self.p).astype(np.float64)
+0027:             # Scale up by 1/(1-p) to maintain expected value
+0028:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
+0029:             
+0030:             if self.inplace:
+0031:                 x.data *= self.mask * scale
+0032:                 return x
+0033:             else:
+0034:                 return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
+0035:         else:
+0036:             return x
+0037: 
+0038: class Dropout2d(Module):
+0039:     """
+0040:     Randomly zero out entire channels (a channel is a 2D feature map,
+0041:     e.g., the j-th channel of the i-th sample in the batch input) of the input tensor.
+0042:     Each channel will be zeroed out independently on every forward call with probability p.
+0043:     
+0044:     Args:
+0045:         p: Probability of a channel to be zeroed. Default: 0.5
+0046:         inplace: If set to True, will do operation in-place. Default: False
+0047:     """
+0048:     def __init__(self, p: float = 0.5, inplace: bool = False):
+0049:         super().__init__()
+0050:         if p < 0 or p > 1:
+0051:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+0052:         self.p = p
+0053:         self.inplace = inplace
+0054:         self.mask: Optional[np.ndarray] = None
+0055: 
+0056:     def forward(self, x: Tensor) -> Tensor:
+0057:         if self.training:
+0058:             assert len(x.shape) == 4, f'expected 4D input, got {len(x.shape)}D input'
+0059:             
+0060:             # Generate mask for entire channels
+0061:             mask = (np.random.rand(x.shape[0], x.shape[1], 1, 1) > self.p).astype(np.float64)
+0062:             self.mask = np.broadcast_to(mask, x.shape)
+0063:             
+0064:             # Scale up by 1/(1-p) to maintain expected value
+0065:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
+0066:             
+0067:             if self.inplace:
+0068:                 x.data *= self.mask * scale
+0069:                 return x
+0070:             else:
+0071:                 return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
+0072:         else:
+0073:             return x
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\layer_norm.py
+// ----------------------------------------
+0001: # layer_norm.py
+0002: import numpy as np
+0003: from typing import List, Optional, Tuple
+0004: from ..core import Tensor, Module
+0005: 
+0006: class LayerNorm(Module):
+0007:     """
+0008:     Applies Layer Normalization over a mini-batch of inputs
+0009: 
+0010:     Args:
+0011:         normalized_shape: Input shape from an expected input of size
+0012:         eps: Small constant for numerical stability
+0013:         elementwise_affine: If True, use learnable affine parameters
+0014:     """
+0015:     def __init__(self,
+0016:                  normalized_shape: List[int],
+0017:                  eps: float = 1e-5,
+0018:                  elementwise_affine: bool = True):
+0019:         super().__init__()
+0020:         if isinstance(normalized_shape, int):
+0021:             normalized_shape = (normalized_shape,)
+0022:         self.normalized_shape = tuple(normalized_shape)
+0023:         self.eps = eps
+0024:         self.elementwise_affine = elementwise_affine
+0025: 
+0026:         if self.elementwise_affine:
+0027:             self.weight = Tensor(np.ones(normalized_shape), requires_grad=True)
+0028:             self.bias = Tensor(np.zeros(normalized_shape), requires_grad=True)
+0029:         else:
+0030:             self.register_parameter('weight', None)
+0031:             self.register_parameter('bias', None)
+0032: 
+0033:     def forward(self, x: Tensor) -> Tensor:
+0034:         # Check input dimensions
+0035:         input_shape = x.shape
+0036:         ndim = len(input_shape)
+0037:         normalized_ndim = len(self.normalized_shape)
+0038:         
+0039:         if ndim < normalized_ndim:
+0040:             raise ValueError(f'Expected {normalized_ndim}D or higher input, got {ndim}D input')
+0041:         
+0042:         for i, s in enumerate(reversed(self.normalized_shape)):
+0043:             if input_shape[ndim - i - 1] != s:
+0044:                 raise ValueError(
+0045:                     f'Expected normalized_shape={self.normalized_shape}, '
+0046:                     f'got input shape={input_shape}'
+0047:                 )
+0048: 
+0049:         # Calculate statistics over the normalized dimensions
+0050:         stats_shape = input_shape[:-normalized_ndim] + (1,) * normalized_ndim
+0051:         reduction_axes = tuple(range(ndim - normalized_ndim, ndim))
+0052:         
+0053:         mean = np.mean(x.data, axis=reduction_axes, keepdims=True)
+0054:         # Use ddof=0 for layer normalization
+0055:         var = np.var(x.data, axis=reduction_axes, keepdims=True, ddof=0)
+0056:         
+0057:         # Normalize
+0058:         x_norm = (x.data - mean) / np.sqrt(var + self.eps)
+0059: 
+0060:         # Apply affine transform if specified
+0061:         if self.elementwise_affine:
+0062:             # Reshape weight and bias to broadcast correctly
+0063:             weight_shape = (1,) * (ndim - normalized_ndim) + self.normalized_shape
+0064:             bias_shape = (1,) * (ndim - normalized_ndim) + self.normalized_shape
+0065:             
+0066:             # Handle broadcasting for weight and bias
+0067:             weight = np.broadcast_to(
+0068:                 self.weight.data.reshape(weight_shape), 
+0069:                 x_norm.shape
+0070:             )
+0071:             bias = np.broadcast_to(
+0072:                 self.bias.data.reshape(bias_shape),
+0073:                 x_norm.shape
+0074:             )
+0075:             
+0076:             x_norm = x_norm * weight + bias
+0077: 
+0078:         return Tensor(x_norm, requires_grad=x.requires_grad)
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\linear.py
 // ----------------------------------------
 0001: from typing import Optional, Dict
 0002: import numpy as np
-0003: from ..core import Tensor, Function
-0004: from .modules import Module
-0005: 
-0006: class LinearFunction(Function):
-0007:     @staticmethod
-0008:     def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
-0009:         # Save tensors needed for backward pass
-0010:         ctx.save_for_backward(input, weight, bias)
-0011:         
-0012:         # Compute output: y = xW^T + b
-0013:         output = input.data @ weight.data
-0014:         if bias is not None:
-0015:             output += bias.data
-0016:             
-0017:         return Tensor(output)
-0018:     
-0019:     @staticmethod
-0020:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
-0021:         # Retrieve saved tensors
-0022:         input, weight, bias = ctx.saved_tensors
-0023:         
-0024:         # Compute gradient with respect to input: dx = dout @ W
-0025:         if input.requires_grad:
-0026:             grad_dict[id(input)] = grad_output @ weight.data.T
-0027:             
-0028:         # Compute gradient with respect to weight: dW = x^T @ dout
-0029:         if weight.requires_grad:
-0030:             grad_dict[id(weight)] = input.data.T @ grad_output
-0031:             
-0032:         # Compute gradient with respect to bias: db = sum(dout, dim=0)
-0033:         if bias is not None and bias.requires_grad:
-0034:             grad_dict[id(bias)] = grad_output.sum(axis=0)
-0035: 
-0036: class Linear(Module):
-0037:     """
-0038:     Applies a linear transformation to the incoming data: y = xW^T + b
-0039:     
-0040:     Args:
-0041:         in_features: size of each input sample
-0042:         out_features: size of each output sample
-0043:         bias: If set to False, the layer will not learn an additive bias
-0044:         
-0045:     Shape:
-0046:         - Input: (batch_size, in_features)
-0047:         - Output: (batch_size, out_features)
-0048:         
-0049:     Attributes:
-0050:         weight: the learnable weights of shape (in_features, out_features)
-0051:         bias: the learnable bias of shape (out_features,)
-0052:     """
-0053:     
-0054:     def __init__(self, in_features: int, out_features: int, bias: bool = True):
-0055:         super().__init__()
-0056:         
-0057:         self.in_features = in_features
-0058:         self.out_features = out_features
-0059:         
-0060:         # Initialize weights using He initialization
-0061:         bound = np.sqrt(2.0 / in_features)
-0062:         weight = Tensor(
-0063:             np.random.uniform(-bound, bound, (in_features, out_features)),
-0064:             requires_grad=True
-0065:         )
-0066:         self.register_parameter('weight', weight)
-0067:         
-0068:         if bias:
-0069:             bias = Tensor(np.zeros(out_features), requires_grad=True)
-0070:             self.register_parameter('bias', bias)
-0071:         else:
-0072:             self.register_parameter('bias', None)
-0073:             
-0074:     def forward(self, input: Tensor) -> Tensor:
-0075:         """Forward pass of the linear layer."""
-0076:         return LinearFunction.apply(input, self.weight, self.bias)
-0077:             
-0078:     def extra_repr(self) -> str:
-0079:         """Extra information to add to the string representation."""
-0080:         return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
-
-// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\modules.py
-// ----------------------------------------
-0001: from typing import Iterator, Dict, Any, Optional, Union
-0002: from collections import OrderedDict
-0003: from ..core import Tensor
+0003: from ..core import Tensor, Function, Module
 0004: 
-0005: class Module:
-0006:     """
-0007:     Base class for all neural network modules.
-0008:     
-0009:     Your models should also subclass this class.
-0010:     Modules can also contain other Modules, allowing to nest them in
-0011:     a tree structure.
-0012:     """
-0013:     
-0014:     def __init__(self):
-0015:         """Initialize the module."""
-0016:         # First set these directly to avoid triggering __setattr__
-0017:         object.__setattr__(self, 'training', True)
-0018:         object.__setattr__(self, '_parameters', OrderedDict())
-0019:         object.__setattr__(self, '_buffers', OrderedDict())
-0020:         object.__setattr__(self, '_modules', OrderedDict())
-0021:         
-0022:     def register_parameter(self, name: str, param: Optional[Tensor]) -> None:
-0023:         """Add a parameter to the module.
-0024:         
-0025:         Args:
-0026:             name: Name of the parameter
-0027:             param: The parameter tensor to register
-0028:         """
-0029:         if '_parameters' not in self.__dict__:
-0030:             raise TypeError(
-0031:                 "cannot assign parameter before Module.__init__() call"
-0032:             )
-0033:             
-0034:         if param is not None and not isinstance(param, Tensor):
-0035:             raise TypeError(f"Parameter {name} must be a Tensor, not {type(param)}")
-0036:             
-0037:         self._parameters[name] = param
-0038:         
-0039:     def register_buffer(self, name: str, tensor: Optional[Tensor]) -> None:
-0040:         """Add a persistent buffer to the module.
-0041:         
-0042:         Buffers are typically used for running statistics in modules like BatchNorm.
+0005: class LinearFunction(Function):
+0006:     @staticmethod
+0007:     def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
+0008:         # Save tensors needed for backward pass
+0009:         ctx.save_for_backward(input, weight, bias)
+0010:         
+0011:         # Compute output: y = xW^T + b
+0012:         output = input.data @ weight.data
+0013:         if bias is not None:
+0014:             output += bias.data
+0015:             
+0016:         return Tensor(output)
+0017:     
+0018:     @staticmethod
+0019:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0020:         # Retrieve saved tensors
+0021:         input, weight, bias = ctx.saved_tensors
+0022:         
+0023:         # Compute gradient with respect to input: dx = dout @ W
+0024:         if input.requires_grad:
+0025:             grad_dict[id(input)] = grad_output @ weight.data.T
+0026:             
+0027:         # Compute gradient with respect to weight: dW = x^T @ dout
+0028:         if weight.requires_grad:
+0029:             grad_dict[id(weight)] = input.data.T @ grad_output
+0030:             
+0031:         # Compute gradient with respect to bias: db = sum(dout, dim=0)
+0032:         if bias is not None and bias.requires_grad:
+0033:             grad_dict[id(bias)] = grad_output.sum(axis=0)
+0034: 
+0035: class Linear(Module):
+0036:     """
+0037:     Applies a linear transformation to the incoming data: y = xW^T + b
+0038:     
+0039:     Args:
+0040:         in_features: size of each input sample
+0041:         out_features: size of each output sample
+0042:         bias: If set to False, the layer will not learn an additive bias
 0043:         
-0044:         Args:
-0045:             name: Name of the buffer
-0046:             tensor: The tensor to register as a buffer
-0047:         """
-0048:         if '_buffers' not in self.__dict__:
-0049:             raise TypeError(
-0050:                 "cannot assign buffer before Module.__init__() call"
-0051:             )
-0052:             
-0053:         if tensor is not None and not isinstance(tensor, Tensor):
-0054:             raise TypeError(f"Buffer {name} must be a Tensor, not {type(tensor)}")
-0055:             
-0056:         self._buffers[name] = tensor
-0057:         
-0058:     def add_module(self, name: str, module: Optional['Module']) -> None:
-0059:         """Add a child module to the current module.
-0060:         
-0061:         Args:
-0062:             name: Name of the child module
-0063:             module: The module to add
-0064:         """
-0065:         if not isinstance(module, (Module, type(None))):
-0066:             raise TypeError(f"{name} is not a Module subclass")
-0067:             
-0068:         if '_modules' not in self.__dict__:
-0069:             raise TypeError(
-0070:                 "cannot assign module before Module.__init__() call"
-0071:             )
+0044:     Shape:
+0045:         - Input: (batch_size, in_features)
+0046:         - Output: (batch_size, out_features)
+0047:         
+0048:     Attributes:
+0049:         weight: the learnable weights of shape (in_features, out_features)
+0050:         bias: the learnable bias of shape (out_features,)
+0051:     """
+0052:     
+0053:     def __init__(self, in_features: int, out_features: int, bias: bool = True):
+0054:         super().__init__()
+0055:         
+0056:         self.in_features = in_features
+0057:         self.out_features = out_features
+0058:         
+0059:         # Initialize weights using He initialization
+0060:         bound = np.sqrt(2.0 / in_features)
+0061:         weight = Tensor(
+0062:             np.random.uniform(-bound, bound, (in_features, out_features)),
+0063:             requires_grad=True
+0064:         )
+0065:         self.register_parameter('weight', weight)
+0066:         
+0067:         if bias:
+0068:             bias = Tensor(np.zeros(out_features), requires_grad=True)
+0069:             self.register_parameter('bias', bias)
+0070:         else:
+0071:             self.register_parameter('bias', None)
 0072:             
-0073:         self._modules[name] = module
-0074:         
-0075:     def __getattr__(self, name: str) -> Any:
-0076:         """Custom getattr that looks through parameters, buffers, and modules."""
-0077:         if '_parameters' in self.__dict__:
-0078:             _parameters = self.__dict__['_parameters']
-0079:             if name in _parameters:
-0080:                 return _parameters[name]
-0081:                 
-0082:         if '_buffers' in self.__dict__:
-0083:             _buffers = self.__dict__['_buffers']
-0084:             if name in _buffers:
-0085:                 return _buffers[name]
-0086:                 
-0087:         if '_modules' in self.__dict__:
-0088:             modules = self.__dict__['_modules']
-0089:             if name in modules:
-0090:                 return modules[name]
-0091:                 
-0092:         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-0093:         
-0094:     def __setattr__(self, name: str, value: Any) -> None:
-0095:         """Custom setattr that handles parameter registration."""
-0096:         # Handle special module attributes first
-0097:         if name in ['training']:
-0098:             object.__setattr__(self, name, value)
-0099:             return
-0100:             
-0101:         if isinstance(value, Tensor):
-0102:             if not hasattr(self, '_parameters'):
-0103:                 raise TypeError(
-0104:                     "cannot assign parameters before Module.__init__() call"
-0105:                 )
-0106:             self.register_parameter(name, value)
-0107:         elif isinstance(value, Module):
-0108:             if not hasattr(self, '_modules'):
-0109:                 raise TypeError(
-0110:                     "cannot assign module before Module.__init__() call"
-0111:                 )
-0112:             self.add_module(name, value)
-0113:         else:
-0114:             object.__setattr__(self, name, value)
-0115:             
-0116:     def parameters(self) -> Iterator[Tensor]:
-0117:         """Returns an iterator over module parameters."""
-0118:         for param in self._parameters.values():
-0119:             if param is not None:
-0120:                 yield param
-0121:         for module in self._modules.values():
-0122:             if module is not None:
-0123:                 yield from module.parameters()
-0124:                 
-0125:     def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
-0126:         """Returns an iterator over module parameters, yielding both the
-0127:         name of the parameter as well as the parameter itself."""
-0128:         for name, param in self._parameters.items():
-0129:             if param is not None:
-0130:                 yield name, param
-0131:         for mname, module in self._modules.items():
-0132:             if module is not None:
-0133:                 for name, param in module.named_parameters():
-0134:                     yield f"{mname}.{name}", param
-0135:                     
-0136:     def train(self, mode: bool = True) -> 'Module':
-0137:         """Sets the module in training mode."""
-0138:         self.training = mode
-0139:         for module in self._modules.values():
-0140:             if module is not None:
-0141:                 module.train(mode)
-0142:         return self
-0143:         
-0144:     def eval(self) -> 'Module':
-0145:         """Sets the module in evaluation mode."""
-0146:         return self.train(False)
-0147:         
-0148:     def __call__(self, *args, **kwargs):
-0149:         return self.forward(*args, **kwargs)
-0150:         
-0151:     def forward(self, *args, **kwargs):
-0152:         """Define the computation performed at every call."""
-0153:         raise NotImplementedError
-0154:         
-0155:     def __repr__(self):
-0156:         """Returns a string representation of the module."""
-0157:         extra_lines = []
-0158:         extra_repr = self.extra_repr()
-0159:         if extra_repr:
-0160:             extra_lines = extra_repr.split('\n')
-0161:             
-0162:         child_lines = []
-0163:         for key, module in self._modules.items():
-0164:             mod_str = repr(module)
-0165:             mod_str = _addindent(mod_str, 2)
-0166:             child_lines.append('(' + key + '): ' + mod_str)
-0167:             
-0168:         lines = extra_lines + child_lines
-0169:         
-0170:         main_str = self.__class__.__name__ + '('
-0171:         if lines:
-0172:             main_str += '\n  ' + '\n  '.join(lines) + '\n'
-0173:         main_str += ')'
-0174:         return main_str
-0175:         
-0176:     def extra_repr(self) -> str:
-0177:         """Set the extra representation of the module."""
-0178:         return ''
-0179: 
-0180: def _addindent(s_: str, numSpaces: int) -> str:
-0181:     """Helper for indenting multiline strings."""
-0182:     s = s_.split('\n')
-0183:     if len(s) == 1:
-0184:         return s_
-0185:     first = s.pop(0)
-0186:     s = [(numSpaces * ' ') + line for line in s]
-0187:     return '\n'.join([first] + s)
+0073:     def forward(self, input: Tensor) -> Tensor:
+0074:         """Forward pass of the linear layer."""
+0075:         return LinearFunction.apply(input, self.weight, self.bias)
+0076:             
+0077:     def extra_repr(self) -> str:
+0078:         """Extra information to add to the string representation."""
+0079:         return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\normalization.py
+// ----------------------------------------
+0001: # normalization.py
+0002: from typing import List, Optional, Tuple, Union
+0003: import numpy as np
+0004: from ..core import Module, Tensor
+0005: 
+0006: class InstanceNorm2d(Module):
+0007:     """Applies Instance Normalization over a 4D input"""
+0008:     
+0009:     def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1,
+0010:                 affine: bool = True, track_running_stats: bool = False):
+0011:         super().__init__()
+0012:         self.num_features = num_features
+0013:         self.eps = eps
+0014:         self.momentum = momentum
+0015:         self.affine = affine
+0016:         self.track_running_stats = track_running_stats
+0017:         
+0018:         if self.affine:
+0019:             self.weight = Tensor(np.ones(num_features), requires_grad=True)
+0020:             self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+0021:         else:
+0022:             self.register_parameter('weight', None)
+0023:             self.register_parameter('bias', None)
+0024:             
+0025:         if self.track_running_stats:
+0026:             self.register_buffer('running_mean', Tensor(np.zeros(num_features)))
+0027:             self.register_buffer('running_var', Tensor(np.ones(num_features)))
+0028:         else:
+0029:             self.register_buffer('running_mean', None)
+0030:             self.register_buffer('running_var', None)
+0031: 
+0032:     def forward(self, x: Tensor) -> Tensor:
+0033:         if self.training or not self.track_running_stats:
+0034:             # Calculate per-instance statistics
+0035:             batch_size, num_channels = x.shape[:2]
+0036:             x_reshaped = x.data.reshape(batch_size, num_channels, -1)
+0037:             
+0038:             mean = x_reshaped.mean(axis=2, keepdims=True)  # (N, C, 1)
+0039:             var = x_reshaped.var(axis=2, keepdims=True, ddof=0)  # (N, C, 1)
+0040: 
+0041:             # Reshape for broadcasting (N, C, 1, 1)
+0042:             mean = mean.reshape(batch_size, num_channels, 1, 1)
+0043:             var = var.reshape(batch_size, num_channels, 1, 1)
+0044: 
+0045:             if self.track_running_stats and self.training:
+0046:                 # Update running stats with proper dimension handling
+0047:                 self.running_mean.data = (
+0048:                     (1 - self.momentum) * self.running_mean.data +
+0049:                     self.momentum * mean.mean(axis=0).squeeze()  # Remove extra dimensions
+0050:                 )
+0051:                 self.running_var.data = (
+0052:                     (1 - self.momentum) * self.running_var.data +
+0053:                     self.momentum * var.mean(axis=0).squeeze()
+0054:                 )
+0055:         else:
+0056:             # Use running stats with correct broadcasting shape
+0057:             mean = self.running_mean.data.reshape(1, -1, 1, 1)
+0058:             var = self.running_var.data.reshape(1, -1, 1, 1)
+0059: 
+0060:         # Normalization
+0061:         x_norm = (x.data - mean) / np.sqrt(var + self.eps)
+0062: 
+0063:         # Apply affine transform if enabled
+0064:         if self.affine:
+0065:             x_norm = x_norm * self.weight.data.reshape(1, -1, 1, 1) + \
+0066:                     self.bias.data.reshape(1, -1, 1, 1)
+0067: 
+0068:         return Tensor(x_norm, requires_grad=x.requires_grad)
+0069:         
+0070:     def extra_repr(self) -> str:
+0071:         return (f'num_features={self.num_features}, eps={self.eps}, momentum={self.momentum}, '
+0072:                 f'affine={self.affine}, track_running_stats={self.track_running_stats}')
+0073: 
+0074: class GroupNorm(Module):
+0075:     """
+0076:     Applies Group Normalization over a mini-batch of inputs.
+0077:     
+0078:     Group Normalization divides channels into groups and computes within each group
+0079:     the mean and variance for normalization.
+0080:     
+0081:     Args:
+0082:         num_groups: Number of groups to separate the channels into
+0083:         num_channels: Number of channels expected in input
+0084:         eps: Small value for numerical stability
+0085:         affine: If True, use learnable affine parameters
+0086:     """
+0087:     
+0088:     def __init__(self, num_groups: int, num_channels: int, eps: float = 1e-5, affine: bool = True):
+0089:         super().__init__()
+0090:         
+0091:         if num_channels % num_groups != 0:
+0092:             raise ValueError('num_channels must be divisible by num_groups')
+0093:             
+0094:         self.num_groups = num_groups
+0095:         self.num_channels = num_channels
+0096:         self.eps = eps
+0097:         self.affine = affine
+0098:         
+0099:         if self.affine:
+0100:             self.weight = Tensor(np.ones(num_channels), requires_grad=True)
+0101:             self.bias = Tensor(np.zeros(num_channels), requires_grad=True)
+0102:         else:
+0103:             self.register_parameter('weight', None)
+0104:             self.register_parameter('bias', None)
+0105: 
+0106:     def forward(self, x: Tensor) -> Tensor:
+0107:         # Check input dimensions
+0108:         if len(x.shape) != 4:
+0109:             raise ValueError(f'expected 4D input, got {len(x.shape)}D input')
+0110:             
+0111:         N, C, H, W = x.shape
+0112:         if C != self.num_channels:
+0113:             raise ValueError(f'expected {self.num_channels} channels, got {C} channels')
+0114:             
+0115:         # Reshape input to (N, G, C/G, H, W)
+0116:         x_reshaped = x.data.reshape(N, self.num_groups, -1, H, W)
+0117:         
+0118:         # Calculate mean and variance over (C/G, H, W) for each group
+0119:         mean = x_reshaped.mean(axis=(2, 3, 4), keepdims=True)
+0120:         var = x_reshaped.var(axis=(2, 3, 4), keepdims=True, ddof=0)
+0121:         
+0122:         # Normalize
+0123:         x_norm = (x_reshaped - mean) / np.sqrt(var + self.eps)
+0124:         
+0125:         # Reshape back to (N, C, H, W)
+0126:         x_norm = x_norm.reshape(N, C, H, W)
+0127:         
+0128:         # Apply affine transform if specified
+0129:         if self.affine:
+0130:             x_norm = x_norm * self.weight.data.reshape(1, -1, 1, 1) + \
+0131:                     self.bias.data.reshape(1, -1, 1, 1)
+0132:             
+0133:         return Tensor(x_norm, requires_grad=x.requires_grad)
+0134:         
+0135:     def extra_repr(self) -> str:
+0136:         return (f'num_groups={self.num_groups}, num_channels={self.num_channels}, '
+0137:                 f'eps={self.eps}, affine={self.affine}')
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\pooling.py
+// ----------------------------------------
+0001: # pooling.py
+0002: from typing import Tuple, Union, Optional
+0003: from ..core import Module, Tensor
+0004: from ..ops.pooling import MaxPool2dFunction, AvgPool2dFunction
+0005: 
+0006: class MaxPool2d(Module):
+0007:     """2D max pooling layer."""
+0008:     
+0009:     def __init__(self, kernel_size: Union[int, Tuple[int, int]],
+0010:                 stride: Optional[Union[int, Tuple[int, int]]] = None,
+0011:                 padding: Union[int, Tuple[int, int]] = 0):
+0012:         super().__init__()
+0013:         
+0014:         # Convert scalar parameters to tuples
+0015:         self.kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
+0016:         self.stride = self.kernel_size if stride is None else \
+0017:                     (stride, stride) if isinstance(stride, int) else stride
+0018:         self.padding = (padding, padding) if isinstance(padding, int) else padding
+0019:         
+0020:     def forward(self, x: Tensor) -> Tensor:
+0021:         return MaxPool2dFunction.apply(x, self.kernel_size, self.stride, self.padding)
+0022:         
+0023:     def extra_repr(self) -> str:
+0024:         return f'kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}'
+0025: 
+0026: class AvgPool2d(Module):
+0027:     """2D average pooling layer."""
+0028:     
+0029:     def __init__(self, kernel_size: Union[int, Tuple[int, int]],
+0030:                 stride: Optional[Union[int, Tuple[int, int]]] = None,
+0031:                 padding: Union[int, Tuple[int, int]] = 0):
+0032:         super().__init__()
+0033:         
+0034:         # Convert scalar parameters to tuples
+0035:         self.kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
+0036:         self.stride = self.kernel_size if stride is None else \
+0037:                     (stride, stride) if isinstance(stride, int) else stride
+0038:         self.padding = (padding, padding) if isinstance(padding, int) else padding
+0039:         
+0040:     def forward(self, x: Tensor) -> Tensor:
+0041:         return AvgPool2dFunction.apply(x, self.kernel_size, self.stride, self.padding)
+0042:         
+0043:     def extra_repr(self) -> str:
+0044:         return f'kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}'
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\sequential.py
 // ----------------------------------------
@@ -1490,51 +2151,56 @@
 0031: )
 0032: 
 0033: from .cnn import Conv2dFunction
-0034: 
-0035: __all__ = [
-0036:     # Basic operations
-0037:     'Add',
-0038:     'Multiply',
-0039:     'Reshape',
-0040:     
-0041:     # Power operations
-0042:     'Power',
-0043:     'Divide',
-0044:     
-0045:     # Element-wise operations
-0046:     'Log',
-0047:     'Exp',
-0048:     
-0049:     # Reduction operations
-0050:     'Sum',
-0051:     'Mean',
-0052:     'Max',
-0053:     
-0054:     # Matrix operations
-0055:     'Transpose',
-0056:     
-0057:     # Comparison operations
-0058:     'Greater',
-0059:     'GreaterEqual',
-0060:     'Less',
-0061:     'LessEqual',
-0062:     'Equal',
-0063:     'NotEqual',
-0064: 
-0065:     # Loss functions
-0066:     'MSELoss',
-0067:     'CrossEntropyLoss',
-0068:     'BinaryCrossEntropyLoss',
-0069:     'L1Loss',
-0070:     'HuberLoss',
-0071:     'KLDivLoss',
-0072:     'CosineSimilarityLoss',
-0073:     'HingeLoss',
-0074:     'FocalLoss',
-0075: 
-0076:     # CNN operations
-0077:     'Conv2dFunction'
-0078: ]
+0034: from .pooling import MaxPool2dFunction, AvgPool2dFunction
+0035: 
+0036: __all__ = [
+0037:     # Basic operations
+0038:     'Add',
+0039:     'Multiply',
+0040:     'Reshape',
+0041:     
+0042:     # Power operations
+0043:     'Power',
+0044:     'Divide',
+0045:     
+0046:     # Element-wise operations
+0047:     'Log',
+0048:     'Exp',
+0049:     
+0050:     # Reduction operations
+0051:     'Sum',
+0052:     'Mean',
+0053:     'Max',
+0054:     
+0055:     # Matrix operations
+0056:     'Transpose',
+0057:     
+0058:     # Comparison operations
+0059:     'Greater',
+0060:     'GreaterEqual',
+0061:     'Less',
+0062:     'LessEqual',
+0063:     'Equal',
+0064:     'NotEqual',
+0065: 
+0066:     # Loss functions
+0067:     'MSELoss',
+0068:     'CrossEntropyLoss',
+0069:     'BinaryCrossEntropyLoss',
+0070:     'L1Loss',
+0071:     'HuberLoss',
+0072:     'KLDivLoss',
+0073:     'CosineSimilarityLoss',
+0074:     'HingeLoss',
+0075:     'FocalLoss',
+0076: 
+0077:     # CNN operations
+0078:     'Conv2dFunction',
+0079: 
+0080:     # Pooling operations
+0081:     'MaxPool2dFunction',
+0082:     'AvgPool2dFunction'
+0083: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\basic.py
 // ----------------------------------------
@@ -3567,6 +4233,150 @@
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\nn.py
 // ----------------------------------------
 
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\pooling.py
+// ----------------------------------------
+0001: from typing import Tuple, Dict
+0002: import numpy as np
+0003: from ..core import Tensor, Function
+0004: from ..core.context import Context
+0005: 
+0006: def _compute_output_shape(input_size: Tuple[int, int], kernel_size: Tuple[int, int],
+0007:                        stride: Tuple[int, int], padding: Tuple[int, int]) -> Tuple[int, int]:
+0008:     """Calculate output shape for pooling operations."""
+0009:     H_out = ((input_size[0] + 2 * padding[0] - kernel_size[0]) // stride[0] + 1)
+0010:     W_out = ((input_size[1] + 2 * padding[1] - kernel_size[1]) // stride[1] + 1)
+0011:     return (H_out, W_out)
+0012: 
+0013: def _pad_input(x: np.ndarray, padding: Tuple[int, int]) -> np.ndarray:
+0014:     """Add padding to input tensor."""
+0015:     if padding[0] == 0 and padding[1] == 0:
+0016:         return x
+0017:     return np.pad(x, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])),
+0018:                  mode='constant', constant_values=0)
+0019: 
+0020: class MaxPool2dFunction(Function):
+0021:     """Function implementing 2D max pooling."""
+0022:     
+0023:     @staticmethod
+0024:     def forward(ctx: Context, x: Tensor, kernel_size: Tuple[int, int],
+0025:               stride: Tuple[int, int], padding: Tuple[int, int]) -> Tensor:
+0026:         # Save params for backward pass
+0027:         ctx.save_arguments(kernel_size=kernel_size, stride=stride, padding=padding)
+0028:         
+0029:         # Apply padding
+0030:         x_padded = _pad_input(x.data, padding)
+0031:         N, C, H, W = x_padded.shape
+0032:         kH, kW = kernel_size
+0033:         sH, sW = stride
+0034:         
+0035:         # Calculate output dimensions
+0036:         H_out = ((H - kH) // sH) + 1
+0037:         W_out = ((W - kW) // sW) + 1
+0038:         
+0039:         # Initialize output and max indices for backward pass
+0040:         output = np.zeros((N, C, H_out, W_out))
+0041:         max_indices = np.zeros((N, C, H_out, W_out, 2), dtype=np.int32)
+0042:         
+0043:         # Compute max pooling
+0044:         for n in range(N):
+0045:             for c in range(C):
+0046:                 for h in range(H_out):
+0047:                     for w in range(W_out):
+0048:                         h_start = h * sH
+0049:                         h_end = h_start + kH
+0050:                         w_start = w * sW
+0051:                         w_end = w_start + kW
+0052:                         
+0053:                         window = x_padded[n, c, h_start:h_end, w_start:w_end]
+0054:                         output[n, c, h, w] = np.max(window)
+0055:                         max_idx = np.unravel_index(np.argmax(window), window.shape)
+0056:                         max_indices[n, c, h, w] = [h_start + max_idx[0], w_start + max_idx[1]]
+0057:                         
+0058:         ctx.save_for_backward(x)
+0059:         ctx.save_arguments(max_indices=max_indices)
+0060:         return Tensor(output)
+0061:     
+0062:     @staticmethod
+0063:     def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0064:         x, = ctx.saved_tensors
+0065:         max_indices = ctx.saved_arguments['max_indices']
+0066:         
+0067:         if x.requires_grad:
+0068:             grad = np.zeros_like(x.data)
+0069:             N, C, H_out, W_out = grad_output.shape
+0070:             
+0071:             # Distribute gradients to max positions
+0072:             for n in range(N):
+0073:                 for c in range(C):
+0074:                     for h in range(H_out):
+0075:                         for w in range(W_out):
+0076:                             h_max, w_max = max_indices[n, c, h, w]
+0077:                             grad[n, c, h_max, w_max] += grad_output[n, c, h, w]
+0078:                             
+0079:             grad_dict[id(x)] = grad
+0080: 
+0081: class AvgPool2dFunction(Function):
+0082:     """Function implementing 2D average pooling."""
+0083:     
+0084:     @staticmethod
+0085:     def forward(ctx: Context, x: Tensor, kernel_size: Tuple[int, int],
+0086:               stride: Tuple[int, int], padding: Tuple[int, int]) -> Tensor:
+0087:         # Save params for backward pass
+0088:         ctx.save_arguments(kernel_size=kernel_size, stride=stride, padding=padding)
+0089:         
+0090:         # Apply padding
+0091:         x_padded = _pad_input(x.data, padding)
+0092:         N, C, H, W = x_padded.shape
+0093:         kH, kW = kernel_size
+0094:         sH, sW = stride
+0095:         
+0096:         # Calculate output dimensions
+0097:         H_out = ((H - kH) // sH) + 1
+0098:         W_out = ((W - kW) // sW) + 1
+0099:         
+0100:         output = np.zeros((N, C, H_out, W_out))
+0101:         
+0102:         # Compute average pooling
+0103:         for n in range(N):
+0104:             for c in range(C):
+0105:                 for h in range(H_out):
+0106:                     for w in range(W_out):
+0107:                         h_start = h * sH
+0108:                         h_end = h_start + kH
+0109:                         w_start = w * sW
+0110:                         w_end = w_start + kW
+0111:                         window = x_padded[n, c, h_start:h_end, w_start:w_end]
+0112:                         output[n, c, h, w] = np.mean(window)
+0113:                         
+0114:         ctx.save_for_backward(x)
+0115:         return Tensor(output)
+0116:     
+0117:     @staticmethod
+0118:     def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0119:         x, = ctx.saved_tensors
+0120:         kernel_size = ctx.saved_arguments['kernel_size']
+0121:         stride = ctx.saved_arguments['stride']
+0122:         padding = ctx.saved_arguments['padding']
+0123:         
+0124:         if x.requires_grad:
+0125:             kH, kW = kernel_size
+0126:             grad = np.zeros_like(x.data)
+0127:             N, C, H_out, W_out = grad_output.shape
+0128:             
+0129:             # Distribute gradients uniformly within each pooling window
+0130:             scale = 1.0 / (kH * kW)
+0131:             for n in range(N):
+0132:                 for c in range(C):
+0133:                     for h in range(H_out):
+0134:                         for w in range(W_out):
+0135:                             h_start = h * stride[0]
+0136:                             h_end = h_start + kH
+0137:                             w_start = w * stride[1]
+0138:                             w_end = w_start + kW
+0139:                             grad[n, c, h_start:h_end, w_start:w_end] += grad_output[n, c, h, w] * scale
+0140:                             
+0141:             grad_dict[id(x)] = grad
+
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\power.py
 // ----------------------------------------
 0001: from typing import Dict
@@ -5486,6 +6296,317 @@
 0063:         assert len(ctx._non_tensor_args) == 0
 0064:         assert len(ctx._intermediate_values) == 0
 
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_data.py
+// ----------------------------------------
+0001: # test_data.py
+0002: import pytest
+0003: import numpy as np
+0004: from DLpy.core import Tensor
+0005: from DLpy.data import (
+0006:     Dataset, TensorDataset, DataLoader,
+0007:     SequentialSampler, RandomSampler
+0008: )
+0009: 
+0010: class SimpleDataset(Dataset):
+0011:     """Simple dataset for testing."""
+0012:     def __init__(self, size: int = 10):
+0013:         self.size = size
+0014:         self.data = list(range(size))
+0015:         
+0016:     def __getitem__(self, index: int):
+0017:         return self.data[index]
+0018:         
+0019:     def __len__(self):
+0020:         return self.size
+0021: 
+0022: class TestDataset:
+0023:     """Tests for Dataset base class and implementations."""
+0024:     
+0025:     def test_tensor_dataset(self):
+0026:         """Test TensorDataset functionality."""
+0027:         # Test creation with matching sizes
+0028:         x = Tensor([[1, 2], [3, 4], [5, 6]])
+0029:         y = Tensor([1, 2, 3])
+0030:         dataset = TensorDataset(x, y)
+0031:         
+0032:         assert len(dataset) == 3
+0033:         sample = dataset[0]
+0034:         assert len(sample) == 2
+0035:         assert np.array_equal(sample[0].data, [1, 2])
+0036:         assert np.array_equal(sample[1].data, 1)
+0037:         
+0038:         # Test creation with mismatched sizes
+0039:         x = Tensor([[1, 2], [3, 4]])
+0040:         y = Tensor([1, 2, 3])
+0041:         with pytest.raises(AssertionError):
+0042:             TensorDataset(x, y)
+0043:             
+0044:     def test_dataset_interface(self):
+0045:         """Test Dataset abstract base class."""
+0046:         # Should raise NotImplementedError when not implemented
+0047:         dataset = Dataset()
+0048:         with pytest.raises(NotImplementedError):
+0049:             len(dataset)
+0050:         with pytest.raises(NotImplementedError):
+0051:             dataset[0]
+0052: 
+0053: class TestDataLoader:
+0054:     """Tests for DataLoader functionality."""
+0055:     
+0056:     def test_sequential_loading(self):
+0057:         """Test sequential data loading."""
+0058:         dataset = SimpleDataset(10)
+0059:         loader = DataLoader(dataset, batch_size=3, shuffle=False)
+0060:         
+0061:         # Check number of batches
+0062:         assert len(loader) == 4  # 3 full batches + 1 partial
+0063:         
+0064:         # Check batch contents
+0065:         batches = list(loader)
+0066:         assert len(batches) == 4
+0067:         assert np.array_equal(batches[0].data, [0, 1, 2])
+0068:         assert len(batches[-1]) == 1  # Last batch should have 1 element
+0069:         
+0070:     def test_shuffle_loading(self):
+0071:         """Test shuffled data loading."""
+0072:         dataset = SimpleDataset(10)
+0073:         loader = DataLoader(dataset, batch_size=3, shuffle=True)
+0074:         
+0075:         # Get two epochs of data
+0076:         epoch1 = [item.data.tolist() for item in loader]
+0077:         epoch2 = [item.data.tolist() for item in loader]
+0078:         
+0079:         # Epochs should be different (note: there's a tiny chance they're the same)
+0080:         assert epoch1 != epoch2
+0081:         
+0082:         # All elements should still be present in each epoch
+0083:         assert sorted([x for batch in epoch1 for x in batch]) == list(range(10))
+0084:         
+0085:     def test_drop_last(self):
+0086:         """Test drop_last functionality."""
+0087:         dataset = SimpleDataset(10)
+0088:         loader = DataLoader(dataset, batch_size=3, drop_last=True)
+0089:         
+0090:         batches = list(loader)
+0091:         assert len(batches) == 3  # Should drop the last incomplete batch
+0092:         assert all(len(batch) == 3 for batch in batches)
+0093:         
+0094:     def test_custom_sampler(self):
+0095:         """Test custom sampling."""
+0096:         dataset = SimpleDataset(10)
+0097:         sampler = SequentialSampler(dataset)
+0098:         
+0099:         # Test that sampler and shuffle are mutually exclusive
+0100:         with pytest.raises(ValueError):
+0101:             DataLoader(dataset, sampler=sampler, shuffle=True)
+0102:             
+0103:         # Test custom sampler works
+0104:         loader = DataLoader(dataset, sampler=sampler, batch_size=2)
+0105:         batches = list(loader)
+0106:         assert len(batches) == 5
+0107:         assert np.array_equal(batches[0].data, [0, 1])
+0108: 
+0109: class TestSamplers:
+0110:     """Tests for sampler implementations."""
+0111:     
+0112:     def test_sequential_sampler(self):
+0113:         """Test SequentialSampler."""
+0114:         dataset = SimpleDataset(5)
+0115:         sampler = SequentialSampler(dataset)
+0116:         
+0117:         indices = list(sampler)
+0118:         assert indices == [0, 1, 2, 3, 4]
+0119:         assert len(sampler) == 5
+0120:         
+0121:     def test_random_sampler(self):
+0122:         """Test RandomSampler."""
+0123:         dataset = SimpleDataset(5)
+0124:         sampler = RandomSampler(dataset)
+0125:         
+0126:         # Check length
+0127:         assert len(sampler) == 5
+0128:         
+0129:         # Check randomization
+0130:         indices1 = list(sampler)
+0131:         indices2 = list(sampler)
+0132:         
+0133:         # Should contain all indices
+0134:         assert sorted(indices1) == list(range(5))
+0135:         # Should be in different order (note: tiny chance they're the same)
+0136:         assert indices1 != indices2
+0137: 
+0138: class TestEdgeCases:
+0139:     """Tests for edge cases and error conditions."""
+0140:     
+0141:     def test_empty_dataset(self):
+0142:         """Test handling of empty datasets."""
+0143:         dataset = SimpleDataset(0)
+0144:         loader = DataLoader(dataset, batch_size=2)
+0145:         
+0146:         assert len(loader) == 0
+0147:         assert list(loader) == []
+0148:         
+0149:     def test_single_element_dataset(self):
+0150:         """Test datasets with a single element."""
+0151:         dataset = SimpleDataset(1)
+0152:         loader = DataLoader(dataset, batch_size=2)  # Batch size larger than dataset
+0153:         
+0154:         batches = list(loader)
+0155:         assert len(batches) == 1
+0156:         assert np.array_equal(batches[0].data, [0])
+0157:         
+0158:     def test_batch_size_one(self):
+0159:         """Test batch size of 1."""
+0160:         dataset = SimpleDataset(3)
+0161:         loader = DataLoader(dataset, batch_size=1)
+0162:         
+0163:         batches = list(loader)
+0164:         assert len(batches) == 3
+0165:         assert all(len(batch) == 1 for batch in batches)
+0166:         
+0167:     def test_custom_collate(self):
+0168:         """Test custom collate function."""
+0169:         def custom_collate(batch):
+0170:             # Convert Tensors to values before summing
+0171:             return sum(item.data[0] if isinstance(item, Tensor) else item for item in batch)
+0172:         
+0173:         dataset = SimpleDataset(4)
+0174:         loader = DataLoader(dataset, batch_size=2, collate_fn=custom_collate)
+0175:         
+0176:         batches = list(loader)
+0177:         assert batches[0] == 1  # 0 + 1
+0178:         assert batches[1] == 5  # 2 + 3
+0179: 
+0180:     def test_large_batch_size(self):
+0181:         """Test batch size larger than dataset."""
+0182:         dataset = SimpleDataset(3)
+0183:         loader = DataLoader(dataset, batch_size=5)
+0184:         
+0185:         batches = list(loader)
+0186:         assert len(batches) == 1
+0187:         assert np.array_equal(batches[0].data, [0, 1, 2])
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_dropout.py
+// ----------------------------------------
+0001: import pytest
+0002: import numpy as np
+0003: from DLpy.core import Tensor
+0004: from DLpy.nn import Dropout, Dropout2d
+0005: 
+0006: class TestDropout:
+0007:     """Tests for Dropout layer"""
+0008:     
+0009:     def test_training_mode(self):
+0010:         """Test dropout behavior in training mode"""
+0011:         dropout = Dropout(p=0.5)
+0012:         x = Tensor(np.ones((100, 100)))  # Large tensor for stable statistics
+0013:         
+0014:         dropout.train()  # Ensure training mode
+0015:         output = dropout(x)
+0016:         
+0017:         # Check that approximately p% of elements are zeroed
+0018:         zero_ratio = np.mean(output.data == 0)
+0019:         assert np.abs(zero_ratio - 0.5) < 0.1  # Allow some statistical variation
+0020:         
+0021:         # Check scaling of non-zero elements
+0022:         nonzero_vals = output.data[output.data != 0]
+0023:         assert np.allclose(nonzero_vals, 2.0)  # Scale factor should be 1/(1-p) = 2
+0024:         
+0025:     def test_eval_mode(self):
+0026:         """Test dropout behavior in evaluation mode"""
+0027:         dropout = Dropout(p=0.5)
+0028:         x = Tensor(np.ones((10, 10)))
+0029:         
+0030:         dropout.eval()  # Set to evaluation mode
+0031:         output = dropout(x)
+0032:         
+0033:         # In eval mode, should return input unchanged
+0034:         assert np.array_equal(output.data, x.data)
+0035:         
+0036:     def test_invalid_p(self):
+0037:         """Test error handling for invalid dropout probability"""
+0038:         with pytest.raises(ValueError):
+0039:             Dropout(p=1.5)
+0040:         with pytest.raises(ValueError):
+0041:             Dropout(p=-0.5)
+0042:             
+0043:     def test_stochastic_behavior(self):
+0044:         """Test that different calls produce different masks"""
+0045:         dropout = Dropout(p=0.5)
+0046:         x = Tensor(np.ones((10, 10)))
+0047:         
+0048:         dropout.train()
+0049:         output1 = dropout(x)
+0050:         output2 = dropout(x)
+0051:         
+0052:         # Different calls should produce different results
+0053:         assert not np.array_equal(output1.data, output2.data)
+0054:         
+0055:     def test_inplace_operation(self):
+0056:         """Test inplace dropout operation"""
+0057:         dropout = Dropout(p=0.5, inplace=True)
+0058:         x = Tensor(np.ones((10, 10)))
+0059:         original_data = x.data.copy()
+0060:         
+0061:         dropout.train()
+0062:         output = dropout(x)
+0063:         
+0064:         # Output should be same object as input
+0065:         assert output is x
+0066:         # Data should be modified
+0067:         assert not np.array_equal(x.data, original_data)
+0068: 
+0069: class TestDropout2d:
+0070:     """Tests for Dropout2d layer"""
+0071:     
+0072:     def test_channel_dropout(self):
+0073:         """Test that entire channels are dropped"""
+0074:         dropout = Dropout2d(p=0.5)
+0075:         x = Tensor(np.ones((2, 4, 3, 3)))  # (N, C, H, W)
+0076:         
+0077:         dropout.train()
+0078:         output = dropout(x)
+0079:         
+0080:         # Check that channels are entirely zero or scaled
+0081:         for n in range(x.shape[0]):
+0082:             for c in range(x.shape[1]):
+0083:                 channel = output.data[n, c]
+0084:                 # Channel should either be all zero or all scaled
+0085:                 assert np.all(channel == 0) or np.all(np.isclose(channel, 2.0))
+0086:                 
+0087:     def test_invalid_dimensions(self):
+0088:         """Test error handling for invalid input dimensions"""
+0089:         dropout = Dropout2d(p=0.5)
+0090:         x = Tensor(np.ones((2, 3)))  # 2D input
+0091:         
+0092:         with pytest.raises(AssertionError):
+0093:             dropout(x)
+0094:             
+0095:     def test_eval_mode_2d(self):
+0096:         """Test Dropout2d behavior in evaluation mode"""
+0097:         dropout = Dropout2d(p=0.5)
+0098:         x = Tensor(np.ones((2, 3, 4, 4)))
+0099:         
+0100:         dropout.eval()
+0101:         output = dropout(x)
+0102:         
+0103:         # In eval mode, should return input unchanged
+0104:         assert np.array_equal(output.data, x.data)
+0105:         
+0106:     def test_inplace_2d(self):
+0107:         """Test inplace Dropout2d operation"""
+0108:         dropout = Dropout2d(p=0.5, inplace=True)
+0109:         x = Tensor(np.ones((2, 3, 4, 4)))
+0110:         original_data = x.data.copy()
+0111:         
+0112:         dropout.train()
+0113:         output = dropout(x)
+0114:         
+0115:         # Output should be same object as input
+0116:         assert output is x
+0117:         # Data should be modified
+0118:         assert not np.array_equal(x.data, original_data)
+
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_function.py
 // ----------------------------------------
 0001: import pytest
@@ -5889,303 +7010,716 @@
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_modules.py
 // ----------------------------------------
 0001: import pytest
-0002: from DLpy.nn.modules import Module
-0003: from DLpy.core import Tensor
-0004: import numpy as np
-0005: from DLpy.nn.linear import Linear  
-0006: 
-0007: class TestModuleEdgeCases:
-0008:     """Tests for edge cases in Module functionality"""
-0009:     
-0010:     def test_premature_parameter_registration(self):
-0011:         """Test parameter registration before initialization"""
-0012:         with pytest.raises(TypeError):
-0013:             class BadModule(Module):
-0014:                 def __init__(self):
-0015:                     self.param = Tensor([1.0])  # Before super().__init__()
-0016:             BadModule()
-0017: 
-0018:     def test_invalid_module_addition(self):
-0019:         """Test adding invalid modules"""
-0020:         module = Module()
-0021:         
-0022:         # Test adding None module
-0023:         module.add_module('none_module', None)
-0024:         assert module._modules['none_module'] is None
-0025:         
-0026:         # Test adding invalid type
-0027:         with pytest.raises(TypeError):
-0028:             module.add_module('invalid', "not a module")
-0029:             
-0030:         # Test adding before initialization
-0031:         with pytest.raises(TypeError):
-0032:             class BadModule(Module):
-0033:                 def __init__(self):
-0034:                     self.add_module('test', Module())  # Before super().__init__()
-0035:             BadModule()
-0036: 
-0037:     def test_attribute_access(self):
-0038:         """Test attribute access edge cases"""
-0039:         # Test accessing non-existent attribute
-0040:         module = Module()
-0041:         with pytest.raises(AttributeError):
-0042:             _ = module.nonexistent_attr
-0043:         
-0044:         # Test accessing training attribute before initialization
-0045:         class BadModule(Module):
-0046:             def __init__(self):
-0047:                 # Access training before super().__init__()
-0048:                 try:
-0049:                     _ = self._parameters
-0050:                 except AttributeError:
-0051:                     pass  # Expected
-0052:                     
-0053:                 # Now try to get the training attribute which should fail
-0054:                 _ = self.training
-0055:                 super().__init__()
-0056:                 
-0057:         with pytest.raises(AttributeError):
-0058:             BadModule()
-0059: 
-0060:     def test_module_buffer_operations(self):
-0061:         """Test buffer operations in detail"""
-0062:         class TestModule(Module):
-0063:             def __init__(self):
-0064:                 super().__init__()
-0065:                 self.register_buffer('running_mean', Tensor([0.0]))
-0066:                 self.register_buffer('running_var', None)
-0067:                 
-0068:         module = TestModule()
-0069:         assert 'running_mean' in module._buffers
-0070:         assert module._buffers['running_var'] is None
-0071:         
-0072:         # Test buffer replacement
-0073:         module.register_buffer('running_mean', Tensor([1.0]))
-0074:         assert np.array_equal(module._buffers['running_mean'].data, [1.0])
-0075: 
-0076:     def test_module_state_dict(self):
-0077:         """Test state dict functionality"""
-0078:         class ComplexModule(Module):
-0079:             def __init__(self):
-0080:                 super().__init__()
-0081:                 self.linear = Linear(2, 2)
-0082:                 self.register_buffer('running_stats', Tensor([0.0]))
-0083:                 
-0084:         module = ComplexModule()
-0085:         # Test parameter access
-0086:         params = dict(module.named_parameters())
-0087:         assert 'linear.weight' in params
-0088:         assert 'linear.bias' in params
-0089: 
-0090:     def test_nested_module_training(self):
-0091:         """Test training mode propagation in nested modules"""
-0092:         class NestedModule(Module):
-0093:             def __init__(self):
-0094:                 super().__init__()
-0095:                 self.sub1 = Linear(2, 2)
-0096:                 self.sub2 = Linear(2, 2)
-0097:                 
-0098:         module = NestedModule()
-0099:         module.train(False)
-0100:         assert not module.training
-0101:         assert not module.sub1.training
-0102:         assert not module.sub2.training
+0002: from DLpy.core import Tensor, Module
+0003: import numpy as np
+0004: from DLpy.nn.linear import Linear  
+0005: 
+0006: class TestModuleEdgeCases:
+0007:     """Tests for edge cases in Module functionality"""
+0008:     
+0009:     def test_premature_parameter_registration(self):
+0010:         """Test parameter registration before initialization"""
+0011:         with pytest.raises(TypeError):
+0012:             class BadModule(Module):
+0013:                 def __init__(self):
+0014:                     self.param = Tensor([1.0])  # Before super().__init__()
+0015:             BadModule()
+0016: 
+0017:     def test_invalid_module_addition(self):
+0018:         """Test adding invalid modules"""
+0019:         module = Module()
+0020:         
+0021:         # Test adding None module
+0022:         module.add_module('none_module', None)
+0023:         assert module._modules['none_module'] is None
+0024:         
+0025:         # Test adding invalid type
+0026:         with pytest.raises(TypeError):
+0027:             module.add_module('invalid', "not a module")
+0028:             
+0029:         # Test adding before initialization
+0030:         with pytest.raises(TypeError):
+0031:             class BadModule(Module):
+0032:                 def __init__(self):
+0033:                     self.add_module('test', Module())  # Before super().__init__()
+0034:             BadModule()
+0035: 
+0036:     def test_attribute_access(self):
+0037:         """Test attribute access edge cases"""
+0038:         # Test accessing non-existent attribute
+0039:         module = Module()
+0040:         with pytest.raises(AttributeError):
+0041:             _ = module.nonexistent_attr
+0042:         
+0043:         # Test accessing training attribute before initialization
+0044:         class BadModule(Module):
+0045:             def __init__(self):
+0046:                 # Access training before super().__init__()
+0047:                 try:
+0048:                     _ = self._parameters
+0049:                 except AttributeError:
+0050:                     pass  # Expected
+0051:                     
+0052:                 # Now try to get the training attribute which should fail
+0053:                 _ = self.training
+0054:                 super().__init__()
+0055:                 
+0056:         with pytest.raises(AttributeError):
+0057:             BadModule()
+0058: 
+0059:     def test_module_buffer_operations(self):
+0060:         """Test buffer operations in detail"""
+0061:         class TestModule(Module):
+0062:             def __init__(self):
+0063:                 super().__init__()
+0064:                 self.register_buffer('running_mean', Tensor([0.0]))
+0065:                 self.register_buffer('running_var', None)
+0066:                 
+0067:         module = TestModule()
+0068:         assert 'running_mean' in module._buffers
+0069:         assert module._buffers['running_var'] is None
+0070:         
+0071:         # Test buffer replacement
+0072:         module.register_buffer('running_mean', Tensor([1.0]))
+0073:         assert np.array_equal(module._buffers['running_mean'].data, [1.0])
+0074: 
+0075:     def test_module_state_dict(self):
+0076:         """Test state dict functionality"""
+0077:         class ComplexModule(Module):
+0078:             def __init__(self):
+0079:                 super().__init__()
+0080:                 self.linear = Linear(2, 2)
+0081:                 self.register_buffer('running_stats', Tensor([0.0]))
+0082:                 
+0083:         module = ComplexModule()
+0084:         # Test parameter access
+0085:         params = dict(module.named_parameters())
+0086:         assert 'linear.weight' in params
+0087:         assert 'linear.bias' in params
+0088: 
+0089:     def test_nested_module_training(self):
+0090:         """Test training mode propagation in nested modules"""
+0091:         class NestedModule(Module):
+0092:             def __init__(self):
+0093:                 super().__init__()
+0094:                 self.sub1 = Linear(2, 2)
+0095:                 self.sub2 = Linear(2, 2)
+0096:                 
+0097:         module = NestedModule()
+0098:         module.train(False)
+0099:         assert not module.training
+0100:         assert not module.sub1.training
+0101:         assert not module.sub2.training
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_nn.py
 // ----------------------------------------
 0001: import pytest
 0002: import numpy as np
-0003: from DLpy.core import Tensor
+0003: from DLpy.core import Tensor, Module
 0004: from DLpy.nn.linear import Linear
-0005: from DLpy.nn.modules import Module
+0005: 
 0006: 
-0007: 
-0008: class TestLinearLayer:
-0009:     """Test suite for the Linear layer implementation."""
-0010:     
-0011:     def test_linear_layer_creation(self):
-0012:         """Test that linear layers are created with correct shapes and initialization."""
-0013:         in_features, out_features = 5, 3
-0014:         layer = Linear(in_features, out_features)
-0015:         
-0016:         # Test weight dimensions
-0017:         assert layer.weight.shape == (in_features, out_features)
-0018:         assert layer.weight.requires_grad
-0019:         
-0020:         # Test bias dimensions
-0021:         assert layer.bias is not None
-0022:         assert layer.bias.shape == (out_features,)
-0023:         assert layer.bias.requires_grad
-0024:         
-0025:         # Test layer without bias
-0026:         layer_no_bias = Linear(in_features, out_features, bias=False)
-0027:         assert layer_no_bias.bias is None
-0028:         
-0029:     def test_linear_forward(self):
-0030:         """Test the forward pass of the linear layer."""
-0031:         # Create a simple linear layer with known weights for testing
-0032:         layer = Linear(2, 3)
-0033:         layer.weight.data = np.array([[1., 2., 3.], [4., 5., 6.]])
-0034:         layer.bias.data = np.array([0.1, 0.2, 0.3])
-0035:         
-0036:         # Create input tensor
-0037:         x = Tensor([[1., 2.]])  # Batch size 1, 2 features
-0038:         
-0039:         # Compute expected output manually
-0040:         expected_output = np.array([[9.1, 12.2, 15.3]])  # (1×2) @ (2×3) + bias
-0041:         
-0042:         # Get actual output
-0043:         output = layer(x)
-0044:         
-0045:         # Compare results
-0046:         assert isinstance(output, Tensor)
-0047:         assert output.shape == (1, 3)
-0048:         assert np.allclose(output.data, expected_output)
-0049:         
-0050:     def test_linear_backward(self):
-0051:         """Test the backward pass and gradient computation of the linear layer."""
-0052:         # Create a layer with specific weights for testing
-0053:         layer = Linear(2, 1)
-0054:         layer.weight.data = np.array([[1.], [2.]])
-0055:         layer.bias.data = np.array([0.])
-0056:         
-0057:         # Forward pass
-0058:         x = Tensor([[1., 2.]], requires_grad=True)
-0059:         output = layer(x)
-0060:         
-0061:         # Backward pass
-0062:         output.backward(np.array([[1.]]))
-0063:         
-0064:         # Check input gradients
-0065:         expected_input_grad = np.array([[1., 2.]])  # Gradient w.r.t input
-0066:         assert np.allclose(x.grad, expected_input_grad)
-0067:         
-0068:         # Check weight gradients
-0069:         expected_weight_grad = np.array([[1.], [2.]])  # Gradient w.r.t weights
-0070:         assert np.allclose(layer.weight.grad, expected_weight_grad)
-0071:         
-0072:         # Check bias gradients
-0073:         expected_bias_grad = np.array([1.])  # Gradient w.r.t bias
-0074:         assert np.allclose(layer.bias.grad, expected_bias_grad)
-0075:         
-0076:     def test_linear_batch_processing(self):
-0077:         """Test that the linear layer correctly handles batched inputs."""
-0078:         layer = Linear(3, 2)
-0079:         batch_size = 4
-0080:         x = Tensor(np.random.randn(batch_size, 3))
-0081:         
-0082:         output = layer(x)
-0083:         assert output.shape == (batch_size, 2)
-0084:         
-0085:     def test_weight_initialization(self):
-0086:         """Test that weights are properly initialized using He initialization."""
-0087:         in_features, out_features = 100, 100
-0088:         layer = Linear(in_features, out_features)
-0089:         
-0090:         # Check if weights follow He initialization statistics
-0091:         weights = layer.weight.data
-0092:         mean = np.mean(weights)
-0093:         std = np.std(weights)
-0094:         
-0095:         # He initialization should have mean ≈ 0 and std ≈ sqrt(2/in_features)
-0096:         expected_std = np.sqrt(2.0 / in_features)
-0097:         assert abs(mean) < 0.1  # Mean should be close to 0
-0098:         assert abs(std - expected_std) < 0.1  # Std should be close to expected
+0007: class TestLinearLayer:
+0008:     """Test suite for the Linear layer implementation."""
+0009:     
+0010:     def test_linear_layer_creation(self):
+0011:         """Test that linear layers are created with correct shapes and initialization."""
+0012:         in_features, out_features = 5, 3
+0013:         layer = Linear(in_features, out_features)
+0014:         
+0015:         # Test weight dimensions
+0016:         assert layer.weight.shape == (in_features, out_features)
+0017:         assert layer.weight.requires_grad
+0018:         
+0019:         # Test bias dimensions
+0020:         assert layer.bias is not None
+0021:         assert layer.bias.shape == (out_features,)
+0022:         assert layer.bias.requires_grad
+0023:         
+0024:         # Test layer without bias
+0025:         layer_no_bias = Linear(in_features, out_features, bias=False)
+0026:         assert layer_no_bias.bias is None
+0027:         
+0028:     def test_linear_forward(self):
+0029:         """Test the forward pass of the linear layer."""
+0030:         # Create a simple linear layer with known weights for testing
+0031:         layer = Linear(2, 3)
+0032:         layer.weight.data = np.array([[1., 2., 3.], [4., 5., 6.]])
+0033:         layer.bias.data = np.array([0.1, 0.2, 0.3])
+0034:         
+0035:         # Create input tensor
+0036:         x = Tensor([[1., 2.]])  # Batch size 1, 2 features
+0037:         
+0038:         # Compute expected output manually
+0039:         expected_output = np.array([[9.1, 12.2, 15.3]])  # (1×2) @ (2×3) + bias
+0040:         
+0041:         # Get actual output
+0042:         output = layer(x)
+0043:         
+0044:         # Compare results
+0045:         assert isinstance(output, Tensor)
+0046:         assert output.shape == (1, 3)
+0047:         assert np.allclose(output.data, expected_output)
+0048:         
+0049:     def test_linear_backward(self):
+0050:         """Test the backward pass and gradient computation of the linear layer."""
+0051:         # Create a layer with specific weights for testing
+0052:         layer = Linear(2, 1)
+0053:         layer.weight.data = np.array([[1.], [2.]])
+0054:         layer.bias.data = np.array([0.])
+0055:         
+0056:         # Forward pass
+0057:         x = Tensor([[1., 2.]], requires_grad=True)
+0058:         output = layer(x)
+0059:         
+0060:         # Backward pass
+0061:         output.backward(np.array([[1.]]))
+0062:         
+0063:         # Check input gradients
+0064:         expected_input_grad = np.array([[1., 2.]])  # Gradient w.r.t input
+0065:         assert np.allclose(x.grad, expected_input_grad)
+0066:         
+0067:         # Check weight gradients
+0068:         expected_weight_grad = np.array([[1.], [2.]])  # Gradient w.r.t weights
+0069:         assert np.allclose(layer.weight.grad, expected_weight_grad)
+0070:         
+0071:         # Check bias gradients
+0072:         expected_bias_grad = np.array([1.])  # Gradient w.r.t bias
+0073:         assert np.allclose(layer.bias.grad, expected_bias_grad)
+0074:         
+0075:     def test_linear_batch_processing(self):
+0076:         """Test that the linear layer correctly handles batched inputs."""
+0077:         layer = Linear(3, 2)
+0078:         batch_size = 4
+0079:         x = Tensor(np.random.randn(batch_size, 3))
+0080:         
+0081:         output = layer(x)
+0082:         assert output.shape == (batch_size, 2)
+0083:         
+0084:     def test_weight_initialization(self):
+0085:         """Test that weights are properly initialized using He initialization."""
+0086:         in_features, out_features = 100, 100
+0087:         layer = Linear(in_features, out_features)
+0088:         
+0089:         # Check if weights follow He initialization statistics
+0090:         weights = layer.weight.data
+0091:         mean = np.mean(weights)
+0092:         std = np.std(weights)
+0093:         
+0094:         # He initialization should have mean ≈ 0 and std ≈ sqrt(2/in_features)
+0095:         expected_std = np.sqrt(2.0 / in_features)
+0096:         assert abs(mean) < 0.1  # Mean should be close to 0
+0097:         assert abs(std - expected_std) < 0.1  # Std should be close to expected
+0098: 
 0099: 
-0100: 
-0101: class TestModule:
-0102:     """Test suite for the base Module class."""
-0103:     
-0104:     class SimpleModule(Module):
-0105:         """A simple module for testing purposes."""
-0106:         def __init__(self):
-0107:             super().__init__()
-0108:             self.linear1 = Linear(2, 3)
-0109:             self.linear2 = Linear(3, 1)
-0110:             self.register_buffer('running_mean', Tensor(np.zeros(3)))
-0111:             
-0112:         def forward(self, x):
-0113:             x = self.linear1(x)
-0114:             return self.linear2(x)
-0115:     
-0116:     def test_module_parameter_registration(self):
-0117:         """Test that parameters are correctly registered and tracked."""
-0118:         model = self.SimpleModule()
-0119:         
-0120:         # Count parameters
-0121:         params = list(model.parameters())
-0122:         assert len(params) == 4  # 2 weights + 2 biases
-0123:         
-0124:         # Check named parameters
-0125:         named_params = dict(model.named_parameters())
-0126:         assert 'linear1.weight' in named_params
-0127:         assert 'linear1.bias' in named_params
-0128:         assert 'linear2.weight' in named_params
-0129:         assert 'linear2.bias' in named_params
-0130:         
-0131:     def test_module_buffer_registration(self):
-0132:         """Test that buffers are correctly registered."""
-0133:         model = self.SimpleModule()
-0134:         assert 'running_mean' in model._buffers
-0135:         assert isinstance(model._buffers['running_mean'], Tensor)
-0136:         
-0137:     def test_module_train_eval_modes(self):
-0138:         """Test switching between training and evaluation modes."""
-0139:         model = self.SimpleModule()
-0140:         
-0141:         # Test train mode
-0142:         model.train()
-0143:         assert model.training
-0144:         assert model.linear1.training
-0145:         assert model.linear2.training
-0146:         
-0147:         # Test eval mode
-0148:         model.eval()
-0149:         assert not model.training
-0150:         assert not model.linear1.training
-0151:         assert not model.linear2.training
-0152:         
-0153:     def test_module_repr(self):
-0154:         """Test the string representation of modules."""
-0155:         model = self.SimpleModule()
-0156:         repr_str = repr(model)
-0157:         
-0158:         # Check that repr includes important information
-0159:         assert 'SimpleModule' in repr_str
-0160:         assert 'linear1' in repr_str
-0161:         assert 'linear2' in repr_str
+0100: class TestModule:
+0101:     """Test suite for the base Module class."""
+0102:     
+0103:     class SimpleModule(Module):
+0104:         """A simple module for testing purposes."""
+0105:         def __init__(self):
+0106:             super().__init__()
+0107:             self.linear1 = Linear(2, 3)
+0108:             self.linear2 = Linear(3, 1)
+0109:             self.register_buffer('running_mean', Tensor(np.zeros(3)))
+0110:             
+0111:         def forward(self, x):
+0112:             x = self.linear1(x)
+0113:             return self.linear2(x)
+0114:     
+0115:     def test_module_parameter_registration(self):
+0116:         """Test that parameters are correctly registered and tracked."""
+0117:         model = self.SimpleModule()
+0118:         
+0119:         # Count parameters
+0120:         params = list(model.parameters())
+0121:         assert len(params) == 4  # 2 weights + 2 biases
+0122:         
+0123:         # Check named parameters
+0124:         named_params = dict(model.named_parameters())
+0125:         assert 'linear1.weight' in named_params
+0126:         assert 'linear1.bias' in named_params
+0127:         assert 'linear2.weight' in named_params
+0128:         assert 'linear2.bias' in named_params
+0129:         
+0130:     def test_module_buffer_registration(self):
+0131:         """Test that buffers are correctly registered."""
+0132:         model = self.SimpleModule()
+0133:         assert 'running_mean' in model._buffers
+0134:         assert isinstance(model._buffers['running_mean'], Tensor)
+0135:         
+0136:     def test_module_train_eval_modes(self):
+0137:         """Test switching between training and evaluation modes."""
+0138:         model = self.SimpleModule()
+0139:         
+0140:         # Test train mode
+0141:         model.train()
+0142:         assert model.training
+0143:         assert model.linear1.training
+0144:         assert model.linear2.training
+0145:         
+0146:         # Test eval mode
+0147:         model.eval()
+0148:         assert not model.training
+0149:         assert not model.linear1.training
+0150:         assert not model.linear2.training
+0151:         
+0152:     def test_module_repr(self):
+0153:         """Test the string representation of modules."""
+0154:         model = self.SimpleModule()
+0155:         repr_str = repr(model)
+0156:         
+0157:         # Check that repr includes important information
+0158:         assert 'SimpleModule' in repr_str
+0159:         assert 'linear1' in repr_str
+0160:         assert 'linear2' in repr_str
+0161: 
 0162: 
-0163: 
-0164: class TestEndToEnd:
-0165:     """End-to-end tests for neural network components."""
-0166:     
-0167:     def test_simple_network(self):
-0168:         """Test a simple network with multiple layers."""
-0169:         # Create a simple network
-0170:         class SimpleNet(Module):
-0171:             def __init__(self):
-0172:                 super().__init__()
-0173:                 self.linear1 = Linear(2, 3)
-0174:                 self.linear2 = Linear(3, 1)
-0175:                 
-0176:             def forward(self, x):
-0177:                 x = self.linear1(x)
-0178:                 return self.linear2(x)
-0179:         
-0180:         # Create model and input
-0181:         model = SimpleNet()
-0182:         x = Tensor([[1., 2.]], requires_grad=True)
-0183:         
-0184:         # Forward pass
-0185:         output = model(x)
-0186:         assert output.shape == (1, 1)
-0187:         
-0188:         # Backward pass
-0189:         output.backward(np.array([[1.]]))
-0190:         
-0191:         # Check that all parameters have gradients
-0192:         for param in model.parameters():
-0193:             assert param.grad is not None
+0163: class TestEndToEnd:
+0164:     """End-to-end tests for neural network components."""
+0165:     
+0166:     def test_simple_network(self):
+0167:         """Test a simple network with multiple layers."""
+0168:         # Create a simple network
+0169:         class SimpleNet(Module):
+0170:             def __init__(self):
+0171:                 super().__init__()
+0172:                 self.linear1 = Linear(2, 3)
+0173:                 self.linear2 = Linear(3, 1)
+0174:                 
+0175:             def forward(self, x):
+0176:                 x = self.linear1(x)
+0177:                 return self.linear2(x)
+0178:         
+0179:         # Create model and input
+0180:         model = SimpleNet()
+0181:         x = Tensor([[1., 2.]], requires_grad=True)
+0182:         
+0183:         # Forward pass
+0184:         output = model(x)
+0185:         assert output.shape == (1, 1)
+0186:         
+0187:         # Backward pass
+0188:         output.backward(np.array([[1.]]))
+0189:         
+0190:         # Check that all parameters have gradients
+0191:         for param in model.parameters():
+0192:             assert param.grad is not None
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_norm_layers.py
+// ----------------------------------------
+0001: import pytest
+0002: import numpy as np
+0003: from DLpy.core import Tensor
+0004: from DLpy.nn import BatchNorm1d, BatchNorm2d, LayerNorm
+0005: 
+0006: class TestBatchNorm1d:
+0007:     """Tests for BatchNorm1d layer"""
+0008:     
+0009:     def test_basic_normalization(self):
+0010:         """Test basic normalization without affine transform"""
+0011:         batch_norm = BatchNorm1d(3, affine=False)
+0012:         x = Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64))
+0013:         
+0014:         output = batch_norm(x)
+0015:         
+0016:         # Output should be normalized (mean ≈ 0, std ≈ 1)
+0017:         assert np.allclose(output.data.mean(axis=0), 0, atol=1e-6)
+0018:         assert np.allclose(output.data.std(axis=0), 1, atol=1e-6)
+0019:         
+0020:     def test_affine_transform(self):
+0021:         """Test normalization with affine transform"""
+0022:         batch_norm = BatchNorm1d(2)
+0023:         batch_norm.weight.data = np.array([2.0, 3.0])
+0024:         batch_norm.bias.data = np.array([1.0, 2.0])
+0025: 
+0026:         x = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float64))
+0027:         output = batch_norm(x)
+0028: 
+0029:         # Output should be normalized and then transformed
+0030:         mean = x.data.mean(axis=0)
+0031:         var = x.data.var(axis=0, ddof=0)  # Use ddof=0 to match the implementation
+0032:         normalized = (x.data - mean) / np.sqrt(var)
+0033:         # No extra broadcasting needed, just direct multiply and add
+0034:         expected = normalized * batch_norm.weight.data + batch_norm.bias.data
+0035: 
+0036:         assert np.allclose(output.data, expected)
+0037:         
+0038:     def test_running_stats(self):
+0039:         """Test tracking of running statistics"""
+0040:         batch_norm = BatchNorm1d(2, momentum=0.1)
+0041:         x1 = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float64))
+0042:         x2 = Tensor(np.array([[2, 3], [4, 5]], dtype=np.float64))
+0043:         
+0044:         # Training mode
+0045:         batch_norm.train()
+0046:         _ = batch_norm(x1)
+0047:         initial_mean = batch_norm.running_mean.data.copy()
+0048:         _ = batch_norm(x2)
+0049:         
+0050:         # Running mean should be updated
+0051:         assert not np.array_equal(batch_norm.running_mean.data, initial_mean)
+0052:         
+0053:         # Eval mode
+0054:         batch_norm.eval()
+0055:         output = batch_norm(x1)
+0056:         # Should use running statistics
+0057:         expected = (x1.data - batch_norm.running_mean.data) / np.sqrt(batch_norm.running_var.data + batch_norm.eps)
+0058:         assert np.allclose(output.data, expected)
+0059:         
+0060:     def test_backward(self):
+0061:         """Test backward pass with gradients"""
+0062:         batch_norm = BatchNorm1d(2)
+0063:         x = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float64), requires_grad=True)
+0064:         
+0065:         output = batch_norm(x)
+0066:         output.backward(np.ones_like(output.data))
+0067:         
+0068:         assert x.grad is not None
+0069:         assert batch_norm.weight.grad is not None
+0070:         assert batch_norm.bias.grad is not None
+0071: 
+0072: class TestBatchNorm2d:
+0073:     """Tests for BatchNorm2d layer"""
+0074:     
+0075:     def test_shape_handling(self):
+0076:         """Test proper handling of 4D input"""
+0077:         batch_norm = BatchNorm2d(3)  # 3 channels
+0078:         x = Tensor(np.random.randn(2, 3, 4, 4))  # (N, C, H, W)
+0079:         
+0080:         output = batch_norm(x)
+0081:         assert output.shape == x.shape
+0082:         
+0083:     def test_channel_normalization(self):
+0084:         """Test that normalization is applied per channel"""
+0085:         batch_norm = BatchNorm2d(2, affine=False)
+0086:         x = Tensor(np.random.randn(3, 2, 4, 4))  # (N, C, H, W)
+0087:         
+0088:         output = batch_norm(x)
+0089:         
+0090:         # Reshape output to (N*H*W, C) for checking statistics
+0091:         output_reshaped = output.data.transpose(0, 2, 3, 1).reshape(-1, 2)
+0092:         
+0093:         # Each channel should be normalized
+0094:         assert np.allclose(output_reshaped.mean(axis=0), 0, atol=1e-6)
+0095:         assert np.allclose(output_reshaped.std(axis=0), 1, atol=1e-6)
+0096:         
+0097:     def test_invalid_input_shape(self):
+0098:         """Test error handling for invalid input shapes"""
+0099:         batch_norm = BatchNorm2d(3)
+0100:         x = Tensor(np.random.randn(2, 3))  # 2D input
+0101:         
+0102:         with pytest.raises(AssertionError):
+0103:             _ = batch_norm(x)
+0104: 
+0105: class TestLayerNorm:
+0106:     """Tests for LayerNorm layer"""
+0107:     
+0108:     def test_basic_normalization(self):
+0109:         """Test basic layer normalization without affine transform"""
+0110:         norm = LayerNorm(normalized_shape=(3,), elementwise_affine=False)
+0111:         x = Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64))
+0112:         
+0113:         output = norm(x)
+0114:         
+0115:         # Each sample should be independently normalized
+0116:         for i in range(len(x)):
+0117:             assert np.allclose(output.data[i].mean(), 0, atol=1e-6)
+0118:             assert np.allclose(output.data[i].std(), 1, atol=1e-6)
+0119:             
+0120:     def test_affine_transform(self):
+0121:         """Test normalization with affine transform"""
+0122:         norm = LayerNorm(normalized_shape=(2,))
+0123:         norm.weight.data = np.array([2.0, 3.0])
+0124:         norm.bias.data = np.array([1.0, 2.0])
+0125:         
+0126:         x = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float64))
+0127:         output = norm(x)
+0128:         
+0129:         # Manually compute expected output
+0130:         means = x.data.mean(axis=1, keepdims=True)
+0131:         stds = x.data.std(axis=1, keepdims=True)
+0132:         normalized = (x.data - means) / (stds + norm.eps)
+0133:         expected = normalized * norm.weight.data + norm.bias.data
+0134:         
+0135:         assert np.allclose(output.data, expected)
+0136:         
+0137:     def test_different_shapes(self):
+0138:         """Test normalization over different shapes"""
+0139:         # 2D input
+0140:         norm1 = LayerNorm((3,))
+0141:         x1 = Tensor(np.random.randn(2, 3))
+0142:         out1 = norm1(x1)
+0143:         assert out1.shape == x1.shape
+0144:         
+0145:         # 3D input
+0146:         norm2 = LayerNorm((4, 3))
+0147:         x2 = Tensor(np.random.randn(2, 4, 3))
+0148:         out2 = norm2(x2)
+0149:         assert out2.shape == x2.shape
+0150:         
+0151:         # 4D input
+0152:         norm3 = LayerNorm((5, 4, 3))
+0153:         x3 = Tensor(np.random.randn(2, 5, 4, 3))
+0154:         out3 = norm3(x3)
+0155:         assert out3.shape == x3.shape
+0156:         
+0157:     def test_backward(self):
+0158:         """Test backward pass with gradients"""
+0159:         norm = LayerNorm((3,))
+0160:         x = Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64), requires_grad=True)
+0161:         
+0162:         output = norm(x)
+0163:         output.backward(np.ones_like(output.data))
+0164:         
+0165:         assert x.grad is not None
+0166:         assert norm.weight.grad is not None
+0167:         assert norm.bias.grad is not None
+0168:         
+0169:     def test_invalid_input_shape(self):
+0170:         """Test error handling for invalid input shapes"""
+0171:         norm = LayerNorm((3, 2))
+0172:         x = Tensor(np.random.randn(2, 3))  # Wrong shape
+0173:         
+0174:         with pytest.raises(ValueError):
+0175:             _ = norm(x)
+0176:             
+0177:     def test_scalar_normalized_shape(self):
+0178:         """Test initialization with scalar normalized_shape"""
+0179:         norm = LayerNorm(3)  # Should be equivalent to (3,)
+0180:         x = Tensor(np.random.randn(2, 3))
+0181:         
+0182:         output = norm(x)
+0183:         assert output.shape == x.shape
+
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_norm_pool.py
+// ----------------------------------------
+0001: import pytest
+0002: import numpy as np
+0003: from DLpy.core import Tensor
+0004: from DLpy.nn.pooling import MaxPool2d, AvgPool2d
+0005: from DLpy.nn.normalization import InstanceNorm2d, GroupNorm
+0006: 
+0007: class TestPoolingLayers:
+0008:     """Tests for pooling layers"""
+0009:     
+0010:     def test_maxpool2d_basic(self):
+0011:         """Test basic MaxPool2d functionality"""
+0012:         pool = MaxPool2d(kernel_size=2, stride=2)
+0013:         x = Tensor(np.array([[[[1, 2, 3, 4],
+0014:                              [5, 6, 7, 8],
+0015:                              [9, 10, 11, 12],
+0016:                              [13, 14, 15, 16]]]]), requires_grad=True)
+0017:         
+0018:         output = pool(x)
+0019:         assert output.shape == (1, 1, 2, 2)
+0020:         assert np.array_equal(output.data, [[[[6, 8],
+0021:                                             [14, 16]]]])
+0022:                                             
+0023:         # Test backward pass
+0024:         output.backward(np.ones_like(output.data))
+0025:         assert x.grad is not None
+0026:         # Only maximum values should receive gradients
+0027:         expected_grad = np.zeros_like(x.data)
+0028:         expected_grad[0, 0, 1, 1] = 1
+0029:         expected_grad[0, 0, 1, 3] = 1
+0030:         expected_grad[0, 0, 3, 1] = 1
+0031:         expected_grad[0, 0, 3, 3] = 1
+0032:         assert np.array_equal(x.grad, expected_grad)
+0033: 
+0034:     def test_avgpool2d_basic(self):
+0035:         """Test basic AvgPool2d functionality"""
+0036:         pool = AvgPool2d(kernel_size=2, stride=2)
+0037:         # Use float values to avoid dtype mismatch during gradient calculation
+0038:         x = Tensor(np.array([[[[1.0, 2.0, 3.0, 4.0],
+0039:                             [5.0, 6.0, 7.0, 8.0],
+0040:                             [9.0, 10.0, 11.0, 12.0],
+0041:                             [13.0, 14.0, 15.0, 16.0]]]]), requires_grad=True)
+0042:         
+0043:         output = pool(x)
+0044:         assert output.shape == (1, 1, 2, 2)
+0045:         expected_output = np.array([[[[3.5, 5.5],
+0046:                                     [11.5, 13.5]]]])
+0047:         assert np.allclose(output.data, expected_output)
+0048:         
+0049:         # Test backward pass
+0050:         output.backward(np.ones_like(output.data))
+0051: 
+0052:     def test_pooling_with_padding(self):
+0053:         """Test pooling layers with padding"""
+0054:         pool_max = MaxPool2d(kernel_size=2, stride=2, padding=1)
+0055:         pool_avg = AvgPool2d(kernel_size=2, stride=2, padding=1)
+0056:         
+0057:         x = Tensor(np.random.randn(1, 3, 4, 4))
+0058:         output_max = pool_max(x)
+0059:         output_avg = pool_avg(x)
+0060:         
+0061:         # Check output shapes
+0062:         assert output_max.shape == (1, 3, 3, 3)
+0063:         assert output_avg.shape == (1, 3, 3, 3)
+0064: 
+0065:     def test_pooling_with_different_kernel_stride(self):
+0066:         """Test pooling with different kernel and stride sizes"""
+0067:         pool_max = MaxPool2d(kernel_size=3, stride=2)
+0068:         pool_avg = AvgPool2d(kernel_size=3, stride=2)
+0069:         
+0070:         x = Tensor(np.random.randn(2, 2, 5, 5))
+0071:         output_max = pool_max(x)
+0072:         output_avg = pool_avg(x)
+0073:         
+0074:         expected_shape = (2, 2, 2, 2)
+0075:         assert output_max.shape == expected_shape
+0076:         assert output_avg.shape == expected_shape
+0077: 
+0078:     def test_pooling_edge_cases(self):
+0079:         """Test pooling layers with edge cases"""
+0080:         # Test with single pixel per channel
+0081:         x = Tensor(np.random.randn(1, 1, 1, 1))
+0082:         pool_max = MaxPool2d(kernel_size=1)
+0083:         pool_avg = AvgPool2d(kernel_size=1)
+0084:         
+0085:         assert pool_max(x).shape == (1, 1, 1, 1)
+0086:         assert pool_avg(x).shape == (1, 1, 1, 1)
+0087:         
+0088:         # Test with kernel size larger than input
+0089:         x = Tensor(np.random.randn(1, 1, 2, 2))
+0090:         pool_max = MaxPool2d(kernel_size=3, stride=1, padding=1)
+0091:         pool_avg = AvgPool2d(kernel_size=3, stride=1, padding=1)
+0092:         
+0093:         assert pool_max(x).shape == (1, 1, 2, 2)
+0094:         assert pool_avg(x).shape == (1, 1, 2, 2)
+0095: 
+0096: class TestNormalizationLayers:
+0097:     """Tests for normalization layers"""
+0098:     
+0099:     def test_instance_norm_basic(self):
+0100:         """Test basic InstanceNorm2d functionality"""
+0101:         norm = InstanceNorm2d(num_features=2)
+0102:         x = Tensor(np.random.randn(4, 2, 8, 8), requires_grad=True)
+0103:         
+0104:         output = norm(x)
+0105:         # Check output shape
+0106:         assert output.shape == x.shape
+0107:         
+0108:         # Check normalization statistics
+0109:         # Should be approximately zero mean and unit variance per instance and channel
+0110:         x_reshaped = output.data.reshape(4, 2, -1)
+0111:         means = x_reshaped.mean(axis=2)
+0112:         vars = x_reshaped.var(axis=2)
+0113:         assert np.allclose(means, 0, atol=1e-5)
+0114:         assert np.allclose(vars, 1, atol=1e-5)
+0115: 
+0116:     def test_group_norm_basic(self):
+0117:         """Test basic GroupNorm functionality"""
+0118:         norm = GroupNorm(num_groups=2, num_channels=4)
+0119:         x = Tensor(np.random.randn(3, 4, 8, 8), requires_grad=True)
+0120:         
+0121:         output = norm(x)
+0122:         # Check output shape
+0123:         assert output.shape == x.shape
+0124:         
+0125:         # Check normalization statistics
+0126:         # Reshape to (N, G, C/G, H, W) for checking stats
+0127:         x_reshaped = output.data.reshape(3, 2, 2, 8, 8)
+0128:         means = x_reshaped.mean(axis=(2, 3, 4))
+0129:         vars = x_reshaped.var(axis=(2, 3, 4))
+0130:         assert np.allclose(means, 0, atol=1e-5)
+0131:         assert np.allclose(vars, 1, atol=1e-5)
+0132: 
+0133:     def test_instance_norm_affine(self):
+0134:         """Test InstanceNorm2d with affine parameters"""
+0135:         norm = InstanceNorm2d(num_features=2, affine=True)
+0136:         x = Tensor(np.random.randn(3, 2, 4, 4), requires_grad=True)
+0137:         
+0138:         # Set specific affine parameters
+0139:         norm.weight.data = np.array([2.0, 3.0])
+0140:         norm.bias.data = np.array([0.5, -0.5])
+0141:         
+0142:         output = norm(x)
+0143:         assert output.shape == x.shape
+0144:         
+0145:         # Test backward pass
+0146:         output.backward(np.ones_like(output.data))
+0147:         assert x.grad is not None
+0148:         assert norm.weight.grad is not None
+0149:         assert norm.bias.grad is not None
+0150: 
+0151:     def test_group_norm_invalid_groups(self):
+0152:         """Test GroupNorm with invalid number of groups"""
+0153:         with pytest.raises(ValueError):
+0154:             GroupNorm(num_groups=3, num_channels=4)  # 4 is not divisible by 3
+0155: 
+0156:     def test_normalization_eval_mode(self):
+0157:         """Test normalization layers in eval mode"""
+0158:         # Correct num_features to match input channels (4 instead of 2)
+0159:         norm_instance = InstanceNorm2d(num_features=4, track_running_stats=True)
+0160:         norm_group = GroupNorm(num_groups=2, num_channels=4)
+0161:         
+0162:         x = Tensor(np.random.randn(2, 4, 4, 4))  # 4 channels
+0163:         
+0164:         # Test in train mode
+0165:         train_output_instance = norm_instance(x)
+0166:         train_output_group = norm_group(x)
+0167:         
+0168:         # Test in eval mode
+0169:         norm_instance.eval()
+0170:         norm_group.eval()
+0171:         eval_output_instance = norm_instance(x)
+0172:         eval_output_group = norm_group(x)
+0173:         
+0174:         # GroupNorm should behave the same in both modes
+0175:         assert np.allclose(train_output_group.data, eval_output_group.data)
+0176:         
+0177:         # InstanceNorm with track_running_stats=True should use running stats in eval
+0178:         if norm_instance.track_running_stats:
+0179:             # Check means from running stats vs batch stats
+0180:             assert not np.allclose(train_output_instance.data, eval_output_instance.data)
+0181: 
+0182:     def test_normalization_no_affine(self):
+0183:         """Test normalization layers without affine parameters"""
+0184:         norm_instance = InstanceNorm2d(num_features=2, affine=False)
+0185:         norm_group = GroupNorm(num_groups=2, num_channels=4, affine=False)
+0186:         
+0187:         x = Tensor(np.random.randn(2, 4, 4, 4))  
+0188:         
+0189:         output_instance = norm_instance(x)
+0190:         output_group = norm_group(x)
+0191:         
+0192:         assert norm_instance.weight is None
+0193:         assert norm_instance.bias is None
+0194:         assert norm_group.weight is None
+0195:         assert norm_group.bias is None
+0196: 
+0197:     def test_instance_norm_momentum(self):
+0198:         """Test InstanceNorm2d with different momentum values"""
+0199:         norm = InstanceNorm2d(num_features=2, momentum=0.1, track_running_stats=True)
+0200:         x = Tensor(np.random.randn(2, 2, 4, 4))
+0201:         
+0202:         # Multiple forward passes should update running statistics
+0203:         initial_mean = norm.running_mean.data.copy()
+0204:         initial_var = norm.running_var.data.copy()
+0205:         
+0206:         for _ in range(5):
+0207:             _ = norm(x)
+0208:             
+0209:         assert not np.array_equal(norm.running_mean.data, initial_mean)
+0210:         assert not np.array_equal(norm.running_var.data, initial_var)
+0211: 
+0212:     def test_group_norm_different_groups(self):
+0213:         """Test GroupNorm with different group configurations"""
+0214:         norm1 = GroupNorm(num_groups=1, num_channels=4)
+0215:         norm2 = GroupNorm(num_groups=4, num_channels=4)
+0216:         
+0217:         x = Tensor(np.random.randn(2, 4, 4, 4))
+0218:         
+0219:         output1 = norm1(x)
+0220:         output2 = norm2(x)
+0221:         
+0222:         assert output1.shape == x.shape
+0223:         assert output2.shape == x.shape
+0224:         
+0225:         # Check if the actual outputs are different
+0226:         assert not np.allclose(output1.data, output2.data, atol=1e-5)
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_ops.py
 // ----------------------------------------
@@ -7148,4 +8682,4 @@
 0092:         assert 'requires_grad=True' in repr(t)
 
 // ----------------------------------------
-// Total Python files found: 45
+// Total Python files found: 59

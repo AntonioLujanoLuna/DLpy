@@ -31,6 +31,7 @@ from .loss import (
 )
 
 from .cnn import Conv2dFunction
+from .pooling import MaxPool2dFunction, AvgPool2dFunction
 
 __all__ = [
     # Basic operations
@@ -74,5 +75,9 @@ __all__ = [
     'FocalLoss',
 
     # CNN operations
-    'Conv2dFunction'
+    'Conv2dFunction',
+
+    # Pooling operations
+    'MaxPool2dFunction',
+    'AvgPool2dFunction'
 ]

@@ -12,6 +12,7 @@ DLpy/core/__init__.py
 DLpy/core/autograd.py
 DLpy/core/context.py
 DLpy/core/function.py
+DLpy/core/module.py
 DLpy/core/tensor.py
 DLpy/data/__init__.py
 DLpy/data/dataloader.py
@@ -19,9 +20,13 @@ DLpy/data/dataset.py
 DLpy/data/samplers.py
 DLpy/nn/__init__.py
 DLpy/nn/activations.py
+DLpy/nn/batch_norm.py
 DLpy/nn/conv2d.py
+DLpy/nn/dropout.py
+DLpy/nn/layer_norm.py
 DLpy/nn/linear.py
-DLpy/nn/modules.py
+DLpy/nn/normalization.py
+DLpy/nn/pooling.py
 DLpy/nn/sequential.py
 DLpy/ops/__init__.py
 DLpy/ops/basic.py
@@ -30,6 +35,7 @@ DLpy/ops/elementwise.py
 DLpy/ops/loss.py
 DLpy/ops/matrix.py
 DLpy/ops/nn.py
+DLpy/ops/pooling.py
 DLpy/ops/power.py
 DLpy/ops/reduction.py
 DLpy/ops/reshape.py
@@ -46,10 +52,13 @@ tests/test_autograd.py
 tests/test_cnn.py
 tests/test_context.py
 tests/test_data.py
+tests/test_dropout.py
 tests/test_function.py
 tests/test_loss.py
 tests/test_modules.py
 tests/test_nn.py
+tests/test_norm_layers.py
+tests/test_norm_pool.py
 tests/test_ops.py
 tests/test_optim.py
 tests/test_tensor.py

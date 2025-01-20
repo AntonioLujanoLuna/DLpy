@@ -1,8 +1,7 @@
 import pytest
 import numpy as np
-from DLpy.core import Tensor
+from DLpy.core import Tensor, Module
 from DLpy.nn.linear import Linear
-from DLpy.nn.modules import Module
 
 
 class TestLinearLayer:

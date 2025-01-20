@@ -1,6 +1,5 @@
 import pytest
-from DLpy.nn.modules import Module
-from DLpy.core import Tensor
+from DLpy.core import Tensor, Module
 import numpy as np
 from DLpy.nn.linear import Linear  
 

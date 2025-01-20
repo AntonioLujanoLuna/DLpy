@@ -1,7 +1,6 @@
 from typing import Tuple, Optional, Union
 import numpy as np
-from ..core import Tensor
-from .modules import Module
+from ..core import Tensor, Module
 from ..ops.cnn import Conv2dFunction
 
 def _pair(x: Union[int, Tuple[int, int]]) -> Tuple[int, int]:

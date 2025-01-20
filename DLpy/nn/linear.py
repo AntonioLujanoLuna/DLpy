@@ -1,7 +1,6 @@
 from typing import Optional, Dict
 import numpy as np
-from ..core import Tensor, Function
-from .modules import Module
+from ..core import Tensor, Function, Module
 
 class LinearFunction(Function):
     @staticmethod

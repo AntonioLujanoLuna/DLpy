@@ -7,6 +7,7 @@ This module contains the fundamental building blocks of the deep learning librar
 from .tensor import Tensor
 from .function import Function
 from .context import Context
+from .module import Module
 from .autograd import AutogradEngine, get_autograd_engine
 
-__all__ = ['Tensor', 'Function', 'Context', 'AutogradEngine', 'get_autograd_engine']
+__all__ = ['Tensor', 'Function', 'Context', 'Module', 'AutogradEngine', 'get_autograd_engine']
