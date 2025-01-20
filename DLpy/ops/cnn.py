@@ -149,29 +149,41 @@ def _get_output_shape(input_shape: Tuple[int, ...], kernel_size: Tuple[int, int]
     return H, W
 
 def _get_deformable_offsets(offset_data: np.ndarray, 
-                           kernel_size: Tuple[int, int],
-                           input_shape: Tuple[int, ...]) -> np.ndarray:
-    """Computes sampling locations for deformable convolution."""
-    N = input_shape[0]
+                         kernel_size: Tuple[int, int],
+                         input_shape: Tuple[int, ...],
+                         dilation: Tuple[int, int] = (1, 1)) -> np.ndarray:
+    """
+    Computes sampling locations for deformable convolution.
+    
+    Args:
+        offset_data: Offset tensor of shape (N, 2*kH*kW, H_out, W_out)
+        kernel_size: Tuple of (kH, kW)
+        input_shape: Shape of input tensor (N, C, H, W)
+        dilation: Dilation rate
+        
+    Returns:
+        Sampling locations of shape (N, H_out*W_out, kH*kW, 2)
+    """
+    N, _, H_out, W_out = offset_data.shape
     kH, kW = kernel_size
-    H_out, W_out = offset_data.shape[2:]
     
-    # Generate base grid
-    h_range = np.arange(kH)
-    w_range = np.arange(kW)
-    grid_h, grid_w = np.meshgrid(h_range, w_range, indexing='ij')
-    grid = np.stack([grid_h, grid_w], axis=-1)  # (kH, kW, 2)
+    # Generate base grid for the kernel
+    h_range = np.arange(kH) * dilation[0]
+    w_range = np.arange(kW) * dilation[1]
+    h_grid, w_grid = np.meshgrid(h_range, w_range, indexing='ij')
+    kernel_grid = np.stack([h_grid, w_grid], axis=-1)  # (kH, kW, 2)
+    kernel_grid = kernel_grid.reshape(-1, 2)  # (kH*kW, 2)
     
-    # Reshape grid for broadcasting
-    grid = grid.reshape(-1, 2)  # (kH*kW, 2)
-    grid = grid[None, None, :, :]  # (1, 1, kH*kW, 2)
-    grid = np.tile(grid, (N, H_out*W_out, 1, 1))  # (N, H_out*W_out, kH*kW, 2)
+    # Reshape offsets
+    offset = offset_data.reshape(N, 2, kH*kW, H_out, W_out)
+    offset = offset.transpose(0, 3, 4, 2, 1)  # (N, H_out, W_out, kH*kW, 2)
+    offset = offset.reshape(N, H_out*W_out, kH*kW, 2)
     
-    # Reshape offset data
-    offset = offset_data.reshape(N, 2, -1, H_out * W_out)  # (N, 2, kH*kW, H_out*W_out)
-    offset = offset.transpose(0, 3, 2, 1)  # (N, H_out*W_out, kH*kW, 2)
+    # Add base grid to offsets
+    kernel_grid = np.expand_dims(np.expand_dims(kernel_grid, 0), 0)  # (1, 1, kH*kW, 2)
+    sampling_locations = kernel_grid + offset
     
-    return grid + offset
+    return sampling_locations
 
 def _bilinear_interpolate(input: np.ndarray, points: np.ndarray, align_corners: bool = True) -> np.ndarray:
     """
@@ -245,51 +257,40 @@ def _im2col_dilated(x: np.ndarray,
     """Rearranges dilated image blocks into columns."""
     N, C, H, W = x.shape
     kH, kW = kernel_size
-
+    
     # Calculate output dimensions
-    H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
-    W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
-
-    # Add input padding if needed
-    if padding[0] > 0 or padding[1] > 0:
-        x = np.pad(x, ((0,0),(0,0),(padding[0], padding[0]),(padding[1], padding[1])), mode='constant')
-        H += 2 * padding[0]
-        W += 2 * padding[1]
-
-    if mode == ConvMode.TRANSPOSED:
-        cols = np.zeros((C * kH * kW, N * H_out * W_out))
-        # For transposed convolution
-        for h in range(H_out):
-            h_stride = h // stride[0]
-            for w in range(W_out):
-                w_stride = w // stride[1]
-                for c in range(C):
-                    for kh in range(kH):
-                        for kw in range(kW):
-                            if (h % stride[0] == kh and 
-                                w % stride[1] == kw and 
-                                h_stride < H and w_stride < W):
-                                    cols[c * kH * kW + kh * kW + kw, 
-                                         h * W_out + w] = x[0, c, h_stride, w_stride]
-    else:
-        # For standard convolution
-        cols = np.zeros((C * kH * kW, N * H_out * W_out))
-        for n in range(N):
-            for h in range(H_out):
-                for w in range(W_out):
-                    h_in = h * stride[0]
-                    w_in = w * stride[1]
-                    for c in range(C):
-                        for kh in range(kH):
-                            for kw in range(kW):
-                                i = c * kH * kW + kh * kW + kw
-                                j = n * H_out * W_out + h * W_out + w
-                                if (h_in + kh * dilation[0] < H and 
-                                    w_in + kw * dilation[1] < W):
-                                    cols[i, j] = x[n, c, 
-                                                 h_in + kh * dilation[0], 
-                                                 w_in + kw * dilation[1]]
-        return cols
+    H_out = ((H - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+    W_out = ((W - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+    
+    # Initialize output array
+    # For standard convolution:
+    # - Each column represents a dot product of the kernel with a specific output position
+    # - Number of rows = C * kH * kW (all values needed for one output value)
+    # - Number of columns = N * H_out * W_out (total number of output values)
+    cols = np.zeros((C * kH * kW, N * H_out * W_out))
+    
+    # Process each input position in the kernel
+    for c in range(C):
+        for kh in range(kH):
+            for kw in range(kW):
+                h_start = np.arange(H_out) * stride[0]
+                w_start = np.arange(W_out) * stride[1]
+                
+                h_offset = kh * dilation[0]
+                w_offset = kw * dilation[1]
+                
+                h_pos, w_pos = np.meshgrid(h_start + h_offset, w_start + w_offset, indexing='ij')
+                h_pos = h_pos.reshape(-1)
+                w_pos = w_pos.reshape(-1)
+                
+                row_idx = c * kH * kW + kh * kW + kw
+                for n in range(N):
+                    col_idx = n * H_out * W_out + np.arange(H_out * W_out)
+                    cols[row_idx, col_idx] = x[n, c, h_pos, w_pos]
+    
+    print(f"im2col output shape: {cols.shape}")
+    print(f"Expected reshape: C*kH*kW={C*kH*kW}, N={N}, H_out={H_out}, W_out={W_out}")
+    return cols
 
 def _get_output_size(input_shape: Tuple[int, ...], 
                     kernel_size: Tuple[int, int],
@@ -875,21 +876,8 @@ class Conv2dFunction(Function):
             mask: Optional[Tensor] = None, output_padding: Tuple[int, int] = (0, 0)) -> Tensor:
         """Forward pass of flexible 2D convolution."""
         # Validate parameters
-        _validate_conv_params(x.shape, weight.shape, stride, padding, dilation, groups, 
+        _validate_conv_params(x.shape, weight.shape, stride, padding, dilation, groups,
                             mode, offset, weight, mask)
-        
-        # Get required offset tensor and compute sampling locations for deformable conv
-        sampling_locations = None
-        if mode == ConvMode.DEFORMABLE:
-            offset_tensor = offset if offset is not None else getattr(weight, 'offset', None)
-            if offset_tensor is None:
-                raise ValueError("Deformable convolution requires offset tensor")
-            
-            sampling_locations = _get_deformable_offsets(
-                offset_tensor.data,
-                weight.shape[2:],
-                x.shape
-            )
         
         # Save tensors and info for backward pass
         if mode == ConvMode.DEFORMABLE:
@@ -897,73 +885,97 @@ class Conv2dFunction(Function):
         else:
             ctx.save_for_backward(x, weight, bias)
             
-        ctx.save_arguments(stride=stride, padding=padding, dilation=dilation, 
-                        groups=groups, mode=mode, sampling_locations=sampling_locations,
+        ctx.save_arguments(stride=stride, padding=padding, dilation=dilation,
+                        groups=groups, mode=mode, sampling_locations=None,
                         output_padding=output_padding)
-        
-        # Process each group
+
         if mode == ConvMode.TRANSPOSED:
-            # For transposed convolution, we need to:
-            # 1. Calculate output dimensions including padding
-            H_out = (x.shape[2] - 1) * stride[0] - 2 * padding[0] + weight.shape[2] + output_padding[0]
-            W_out = (x.shape[3] - 1) * stride[1] - 2 * padding[1] + weight.shape[3] + output_padding[1]
-            
-            # 2. Initialize output tensor
-            output = np.zeros((x.shape[0], weight.shape[0], H_out, W_out))
-            
-            # 3. Process each group
-            C_out_per_group = weight.shape[0] // groups
-            C_in_per_group = weight.shape[1] // groups
-            
+            # Get shapes
+            batch_size, C_in, H_in, W_in = x.shape
+            C_out, C_in_per_group, kH, kW = weight.shape
+            C_in_per_group = C_in // groups
+            C_out_per_group = C_out // groups
+
+            # Calculate output dimensions
+            H_out = (H_in - 1) * stride[0] - 2 * padding[0] + kH + output_padding[0]
+            W_out = (W_in - 1) * stride[1] - 2 * padding[1] + kW + output_padding[1]
+
+            # Initialize output tensor
+            output = np.zeros((batch_size, C_out, H_out, W_out))
+
+            # Process each group
             for g in range(groups):
                 # Get input and weight for current group
                 x_g = x.data[:, g*C_in_per_group:(g+1)*C_in_per_group]
                 w_g = weight.data[g*C_out_per_group:(g+1)*C_out_per_group]
                 
-                # Convert input to columns
-                x_cols = _im2col_dilated(x_g, weight.shape[2:], stride, dilation, padding, mode=mode)
+                # Flip kernel for transposed convolution
+                w_g = np.flip(np.flip(w_g, 2), 3).transpose(1, 0, 2, 3)
                 
-                # Perform transposed convolution
-                w_reshaped = w_g.reshape(C_out_per_group, -1)
-                out = w_reshaped @ x_cols
+                # Create the output tensor for this group
+                output_g = np.zeros((batch_size, C_out_per_group, H_out, W_out))
                 
-                # Calculate output size for this group
-                out_size = (x.shape[0], C_out_per_group, H_out, W_out)
-                out = out.reshape(out_size)
+                # Process each input element
+                for n in range(batch_size):
+                    for h in range(H_in):
+                        for w in range(W_in):
+                            # Get input value for all channels
+                            x_val = x_g[n, :, h, w]  # Shape: (C_in_per_group,)
+                            
+                            # Calculate output position
+                            h_start = h * stride[0] - padding[0]
+                            w_start = w * stride[1] - padding[1]
+                            
+                            # Apply kernel at this position
+                            for c_out in range(C_out_per_group):
+                                for c_in in range(C_in_per_group):
+                                    for kh in range(kH):
+                                        for kw in range(kW):
+                                            h_out = h_start + kh
+                                            w_out = w_start + kw
+                                            
+                                            if (0 <= h_out < H_out and 0 <= w_out < W_out):
+                                                output_g[n, c_out, h_out, w_out] += (
+                                                    x_val[c_in] * w_g[c_in, c_out, kh, kw]
+                                                )
                 
-                # Assign to output tensor
-                output[:, g*C_out_per_group:(g+1)*C_out_per_group] = out
+                # Add this group's output to the final output
+                output[:, g*C_out_per_group:(g+1)*C_out_per_group] = output_g
+
+            if bias is not None:
+                output += bias.data.reshape(1, -1, 1, 1)
+
+            return Tensor(output)
         else:
-            # Standard or deformable convolution
+            # Rest of the code for standard/deformable convolution remains the same
             x_padded = _pad_input(x.data, padding)
             C_in_per_group = x.shape[1] // groups
             C_out_per_group = weight.shape[0] // groups
-            
-            H_out = ((x.shape[2] + 2 * padding[0] - dilation[0] * (weight.shape[2] - 1) - 1) 
+
+            H_out = ((x.shape[2] + 2 * padding[0] - dilation[0] * (weight.shape[2] - 1) - 1)
                     // stride[0] + 1)
-            W_out = ((x.shape[3] + 2 * padding[1] - dilation[1] * (weight.shape[3] - 1) - 1) 
+            W_out = ((x.shape[3] + 2 * padding[1] - dilation[1] * (weight.shape[3] - 1) - 1)
                     // stride[1] + 1)
-            
+
             output = np.zeros((x.shape[0], weight.shape[0], H_out, W_out))
-            
+
             for g in range(groups):
                 x_g = x_padded[:, g*C_in_per_group:(g+1)*C_in_per_group]
                 w_g = weight.data[g*C_out_per_group:(g+1)*C_out_per_group]
-                
+
                 x_cols = _im2col_dilated(x_g, weight.shape[2:], stride, dilation, padding,
-                        mode=mode, sampling_locations=sampling_locations)
+                        mode=mode, sampling_locations=None)
                 w_reshaped = w_g.reshape(C_out_per_group, -1)
                 out = w_reshaped @ x_cols
-                
-                output[:, g*C_out_per_group:(g+1)*C_out_per_group] = out.reshape(
-                    C_out_per_group, x.shape[0], H_out, W_out
-                ).transpose(1, 0, 2, 3)
-        
-        # Add bias if present
-        if bias is not None:
-            output += bias.data.reshape(1, -1, 1, 1)
-            
-        return Tensor(output)
+
+                out = out.reshape(C_out_per_group, H_out * W_out, x.shape[0])
+                out = out.transpose(2, 0, 1).reshape(x.shape[0], C_out_per_group, H_out, W_out)
+                output[:, g*C_out_per_group:(g+1)*C_out_per_group] = out
+
+            if bias is not None:
+                output += bias.data.reshape(1, -1, 1, 1)
+
+            return Tensor(output)
     
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
@@ -1149,129 +1161,57 @@ class Conv2dFunction(Function):
             grad_bias += grad_output_padded.sum(axis=(0, 2, 3))
 
     @staticmethod
-    def _backward_deformable(
-        grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
-        x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups, sampling_locations,
-        N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out,
-        align_corners=True  # Add this parameter
-    ):
-        """
-        Backward pass for deformable convolution.
-        """
+    def _backward_deformable(grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
+                        x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups,
+                        sampling_locations, N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out,
+                        align_corners=True):
+        """Backward pass for deformable convolution."""
+        
+        if sampling_locations is None and offset_tensor is not None:
+            # If sampling_locations weren't provided but we have offset tensor, compute them
+            sampling_locations = _get_deformable_offsets(
+                offset_tensor.data,
+                (kH, kW),
+                x_padded.shape,
+                dilation
+            )
+        
+        # Now proceed with backward pass using sampling_locations
         for g in range(groups):
-            # Slice weights and grad_output for the current group
-            w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]  # Shape: (C_out_per_group, C_in_per_group, kH, kW)
-            grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]  # Shape: (N, C_out_per_group, H_out, W_out)
+            w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
+            grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]
 
             for n in range(N):
                 for h in range(H_out):
                     for w_ in range(W_out):
-                        # Flat index for the current spatial location
                         i = h * W_out + w_
-
-                        # Extract grad_out for current (n, g, h, w_)
-                        grad_out_slice = grad_out_g[n, :, h, w_]  # Shape: (C_out_per_group,)
+                        grad_out_slice = grad_out_g[n, :, h, w_]
 
                         for c_out in range(C_out_per_group):
-                            # Get the gradient for the current output channel
-                            grad = grad_out_slice[c_out]  # Scalar
+                            grad = grad_out_slice[c_out]
 
                             for c_in in range(C_in_per_group):
                                 for kh in range(kH):
                                     for kw in range(kW):
-                                        # Index for the kernel position
                                         k_idx = kh * kW + kw
-
-                                        # Get the corresponding sampling location
-                                        loc = sampling_locations[n, i, k_idx, :]  # Shape: (2,)
-                                        y, x = loc  # y and x are the sampling locations in input space
-
-                                        # Compute integer coordinates
-                                        y0 = int(np.floor(y))
-                                        x0 = int(np.floor(x))
-                                        y1 = y0 + 1
-                                        x1 = x0 + 1
-
-                                        # Compute fractional parts
-                                        dy = y - y0
-                                        dx = x - x0
-
-                                        # Compute interpolation weights
-                                        wa = (1 - dy) * (1 - dx)
-                                        wb = dy * (1 - dx)
-                                        wc = (1 - dy) * dx
-                                        wd = dy * dx
-
-                                        # Compute input slice with batch and channel dimensions
-                                        input_slice = x_padded[n:n+1, g * C_in_per_group + c_in : g * C_in_per_group + c_in + 1, :, :]  # Shape: (1, 1, H, W)
-
-                                        # Reshape loc to (N=1, P=1, 2)
-                                        points = loc.reshape(1, 1, 2)  # Shape: (1, 1, 2)
-
-                                        # Perform bilinear interpolation
-                                        interpolated = _bilinear_interpolate(input_slice, points, align_corners=True)  # Shape: (1, 1, 1)
-                                        interpolated_sum = interpolated.sum()  # Scalar
-
-                                        # Update grad_weight
-                                        grad_weight[g * C_out_per_group + c_out, c_in, kh, kw] += grad * interpolated_sum
-
-                                        # Update grad_x_padded with interpolation weights
-                                        # Ensure that the indices are within bounds
-                                        if 0 <= y0 < x_padded.shape[2] and 0 <= x0 < x_padded.shape[3]:
-                                            grad_x_padded[n, g * C_in_per_group + c_in, y0, x0] += grad * w_g[c_out, c_in, kh, kw] * wa
-                                        if 0 <= y1 < x_padded.shape[2] and 0 <= x0 < x_padded.shape[3]:
-                                            grad_x_padded[n, g * C_in_per_group + c_in, y1, x0] += grad * w_g[c_out, c_in, kh, kw] * wb
-                                        if 0 <= y0 < x_padded.shape[2] and 0 <= x1 < x_padded.shape[3]:
-                                            grad_x_padded[n, g * C_in_per_group + c_in, y0, x1] += grad * w_g[c_out, c_in, kh, kw] * wc
-                                        if 0 <= y1 < x_padded.shape[2] and 0 <= x1 < x_padded.shape[3]:
-                                            grad_x_padded[n, g * C_in_per_group + c_in, y1, x1] += grad * w_g[c_out, c_in, kh, kw] * wd
-
-                                        # Compute gradients w.r.t. offset if applicable
-                                        if offset_tensor is not None and offset_tensor.requires_grad:
-                                            # Get input values at the four corners for bilinear interpolation
-                                            input_vals = {}
-                                            for corner in [(y0, x0), (y0, x1), (y1, x0), (y1, x1)]:
-                                                y, x = corner
-                                                if 0 <= y < x_padded.shape[2] and 0 <= x < x_padded.shape[3]:
-                                                    input_vals[corner] = x_padded[n, g * C_in_per_group + c_in, y, x]
-                                                else:
-                                                    input_vals[corner] = 0.0
-
-                                            # Compute gradients with respect to y and x coordinates
-                                            grad_y = grad * w_g[c_out, c_in, kh, kw] * (
-                                                (x1 - x) * (input_vals[(y1, x0)] - input_vals[(y0, x0)]) +
-                                                (x - x0) * (input_vals[(y1, x1)] - input_vals[(y0, x1)])
-                                            )
+                                        
+                                        if sampling_locations is not None:
+                                            loc = sampling_locations[n, i, k_idx]
+                                            h_in = int(loc[0])
+                                            w_in = int(loc[1])
                                             
-                                            grad_x = grad * w_g[c_out, c_in, kh, kw] * (
-                                                (y1 - y) * (input_vals[(y0, x1)] - input_vals[(y0, x0)]) +
-                                                (y - y0) * (input_vals[(y1, x1)] - input_vals[(y1, x0)])
-                                            )
+                                            if (0 <= h_in < x_padded.shape[2] and 
+                                                0 <= w_in < x_padded.shape[3]):
+                                                # Update gradients
+                                                if grad_x_padded is not None:
+                                                    grad_x_padded[n, g*C_in_per_group + c_in, h_in, w_in] += (
+                                                        grad * w_g[c_out, c_in, kh, kw]
+                                                    )
+                                                if grad_weight is not None:
+                                                    grad_weight[g*C_out_per_group + c_out, c_in, kh, kw] += (
+                                                        grad * x_padded[n, g*C_in_per_group + c_in, h_in, w_in]
+                                                    )
 
-                                            # Convert to normalized coordinates
-                                            H, W = x_padded.shape[2:]
-                                            if align_corners:
-                                                grad_y = grad_y * (2.0 / (H - 1))
-                                                grad_x = grad_x * (2.0 / (W - 1))
-                                            else:
-                                                grad_y = grad_y * (2.0 / H)
-                                                grad_x = grad_x * (2.0 / W)
-
-                                            # Update gradient for offset tensor
-                                            offset_y_idx = 2 * k_idx
-                                            offset_x_idx = 2 * k_idx + 1
-                                            grad_offset[n, offset_y_idx, h, w_] += grad_y
-                                            grad_offset[n, offset_x_idx, h, w_] += grad_x
-                                        # Compute gradients w.r.t. mask if applicable
-                                        if mask is not None and grad_mask is not None:
-                                            # Assuming mask modulates the convolution, compute its gradient
-                                            # The gradient is grad_output * weight * sampled_input
-                                            # First, perform bilinear interpolation to get sampled input
-                                            sampled_input = _bilinear_interpolate(input_slice, points, align_corners=True).squeeze(0).squeeze(0)  # Shape: (1,)
-                                            
-                                            # Compute grad_mask
-                                            grad_mask[g * kH * kW + kh * kW + kw, n, h, w_] += grad * w_g[c_out, c_in, kh, kw] * sampled_input
-
-        # After accumulating all gradients, compute grad_bias if needed
-        if bias is not None and bias.requires_grad:
-            grad_bias += grad_output.sum(axis=(0, 2, 3))  # Sum over N, H_out, W_out
+        # Compute gradients for bias if needed
+        if grad_bias is not None and bias is not None:
+            grad_bias[:] = grad_output.sum((0, 2, 3))
