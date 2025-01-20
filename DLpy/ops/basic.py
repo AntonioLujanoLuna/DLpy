@@ -1,4 +1,4 @@
-from typing import Dict  # Add this import at the top
+from typing import Dict
 from ..core.function import Function
 from ..core.tensor import Tensor
 import numpy as np
@@ -129,3 +129,34 @@ class Multiply(Function):
             if target_dim == 1 and grad_dim != 1:
                 grad = grad.sum(axis=axis, keepdims=True)
         return grad
+
+class MatMul(Function):
+    """Matrix multiplication operation."""
+    
+    @staticmethod
+    def forward(ctx, a, b):
+        if not isinstance(a, Tensor):
+            a = Tensor(a)
+        if not isinstance(b, Tensor):
+            b = Tensor(b)
+            
+        ctx.save_for_backward(a, b)
+        return Tensor(np.matmul(a.data, b.data))
+        
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+        a, b = ctx.saved_tensors
+        
+        if a.requires_grad:
+            grad_a = np.matmul(grad_output, b.data.T)
+            if id(a) not in grad_dict:
+                grad_dict[id(a)] = grad_a
+            else:
+                grad_dict[id(a)] += grad_a
+                
+        if b.requires_grad:
+            grad_b = np.matmul(a.data.T, grad_output)
+            if id(b) not in grad_dict:
+                grad_dict[id(b)] = grad_b
+            else:
+                grad_dict[id(b)] += grad_b

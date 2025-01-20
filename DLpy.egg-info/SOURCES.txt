@@ -27,6 +27,7 @@ DLpy/nn/layer_norm.py
 DLpy/nn/linear.py
 DLpy/nn/normalization.py
 DLpy/nn/pooling.py
+DLpy/nn/rnn.py
 DLpy/nn/sequential.py
 DLpy/ops/__init__.py
 DLpy/ops/basic.py
@@ -61,4 +62,5 @@ tests/test_norm_layers.py
 tests/test_norm_pool.py
 tests/test_ops.py
 tests/test_optim.py
+tests/test_rnn.py
 tests/test_tensor.py

@@ -12,10 +12,10 @@ from .activations import (
     relu, leaky_relu, elu, gelu, sigmoid, tanh,
     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
 )
-
 from .conv2d import Conv2d 
 from .pooling import MaxPool2d, AvgPool2d
 from .normalization import GroupNorm, InstanceNorm2d
+from .rnn import LSTM, GRU, LSTMCell, GRUCell  # Add this line
 
 __all__ = [
     # Layers
@@ -49,5 +49,11 @@ __all__ = [
 
     # Normalization layers
     'GroupNorm',
-    'InstanceNorm2d'
+    'InstanceNorm2d',
+    
+    # RNN layers
+    'LSTM',
+    'GRU',
+    'LSTMCell',
+    'GRUCell'
 ]

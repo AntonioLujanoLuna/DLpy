@@ -1,4 +1,4 @@
-﻿// Python Files Concatenated on 01/20/2025 18:17:19
+﻿// Python Files Concatenated on 01/20/2025 19:16:47
 // ----------------------------------------
 
 
@@ -1153,10 +1153,10 @@
 0012:     relu, leaky_relu, elu, gelu, sigmoid, tanh,
 0013:     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
 0014: )
-0015: 
-0016: from .conv2d import Conv2d 
-0017: from .pooling import MaxPool2d, AvgPool2d
-0018: from .normalization import GroupNorm, InstanceNorm2d
+0015: from .conv2d import Conv2d 
+0016: from .pooling import MaxPool2d, AvgPool2d
+0017: from .normalization import GroupNorm, InstanceNorm2d
+0018: from .rnn import LSTM, GRU, LSTMCell, GRUCell  # Add this line
 0019: 
 0020: __all__ = [
 0021:     # Layers
@@ -1190,8 +1190,14 @@
 0049: 
 0050:     # Normalization layers
 0051:     'GroupNorm',
-0052:     'InstanceNorm2d'
-0053: ]
+0052:     'InstanceNorm2d',
+0053:     
+0054:     # RNN layers
+0055:     'LSTM',
+0056:     'GRU',
+0057:     'LSTMCell',
+0058:     'GRUCell'
+0059: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\activations.py
 // ----------------------------------------
@@ -2113,6 +2119,396 @@
 0043:     def extra_repr(self) -> str:
 0044:         return f'kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}'
 
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\rnn.py
+// ----------------------------------------
+0001: import numpy as np
+0002: from typing import Optional, Tuple
+0003: from ..core import Module, Tensor
+0004: 
+0005: class LSTM(Module):
+0006:     """
+0007:     Long Short-Term Memory (LSTM) layer.
+0008:     
+0009:     Applies a multi-layer LSTM to an input sequence.
+0010:     
+0011:     Args:
+0012:         input_size: Number of features in input
+0013:         hidden_size: Number of features in hidden state
+0014:         num_layers: Number of recurrent layers
+0015:         bias: If False, doesn't learn bias weights
+0016:         batch_first: If True, input shape is (batch, seq, feature)
+0017:         dropout: Dropout probability between layers (0 means no dropout)
+0018:         bidirectional: If True, becomes bidirectional LSTM
+0019:         
+0020:     Inputs: input, (h_0, c_0)
+0021:         input: tensor of shape (seq_len, batch, input_size) 
+0022:             or (batch, seq_len, input_size) if batch_first=True
+0023:         h_0: initial hidden state (num_layers * num_directions, batch, hidden_size)
+0024:         c_0: initial cell state (num_layers * num_directions, batch, hidden_size)
+0025:         
+0026:     Outputs: output, (h_n, c_n)
+0027:         output: tensor of shape (seq_len, batch, num_directions * hidden_size)
+0028:         h_n: final hidden state
+0029:         c_n: final cell state
+0030:     """
+0031:     def __init__(self, input_size: int, hidden_size: int, num_layers: int = 1,
+0032:                  bias: bool = True, batch_first: bool = False, dropout: float = 0.,
+0033:                  bidirectional: bool = False):
+0034:         super().__init__()
+0035:         if dropout < 0 or dropout > 1:
+0036:             raise ValueError(f"Dropout probability has to be between 0 and 1, but got {dropout}")
+0037:         self.input_size = input_size
+0038:         self.hidden_size = hidden_size
+0039:         self.num_layers = num_layers
+0040:         self.bias = bias
+0041:         self.batch_first = batch_first
+0042:         self.dropout = dropout
+0043:         self.bidirectional = bidirectional
+0044:         num_directions = 2 if bidirectional else 1
+0045:         
+0046:         # Create parameter tensors for each gate (input, forget, cell, output)
+0047:         # for each layer and direction
+0048:         self.cell_list = []
+0049:         for layer in range(num_layers):
+0050:             for direction in range(num_directions):
+0051:                 layer_input_size = input_size if layer == 0 else hidden_size * num_directions
+0052:                 cell = LSTMCell(layer_input_size, hidden_size, bias)
+0053:                 name = f'cell_{layer}_{direction}'
+0054:                 setattr(self, name, cell)
+0055:                 self.cell_list.append(cell)
+0056:                 
+0057:     def forward(self, x: Tensor, hx: Optional[Tuple[Tensor, Tensor]] = None) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+0058:         """Forward pass of LSTM."""
+0059:         # Handle batch_first
+0060:         if self.batch_first:
+0061:             x = Tensor(np.swapaxes(x.data, 0, 1))  # Changed to use swapaxes
+0062:             
+0063:         seq_len, batch_size, _ = x.shape
+0064:         num_directions = 2 if self.bidirectional else 1
+0065:             
+0066:         if hx is None:
+0067:             h_0 = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
+0068:             c_0 = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
+0069:             hx = (h_0, c_0)
+0070:         else:
+0071:             # Validate hidden state dimensions
+0072:             h_0, c_0 = hx
+0073:             expected_shape = (self.num_layers * num_directions, batch_size, self.hidden_size)
+0074:             if h_0.shape != expected_shape or c_0.shape != expected_shape:
+0075:                 raise ValueError(f"Expected hidden size {expected_shape}, got {h_0.shape} and {c_0.shape}")
+0076: 
+0077:         h_n, c_n = hx
+0078:         layer_output = x
+0079:         new_h = []
+0080:         new_c = []
+0081: 
+0082:         # Process each layer
+0083:         for layer in range(self.num_layers):
+0084:             layer_h_list = []
+0085:             h_forward = h_n[layer * num_directions]
+0086:             c_forward = c_n[layer * num_directions]
+0087:             
+0088:             # Forward direction
+0089:             for t in range(seq_len):
+0090:                 h_forward, c_forward = self.cell_list[layer * num_directions](
+0091:                     layer_output[t], (h_forward, c_forward))
+0092:                 layer_h_list.append(h_forward)
+0093:                 
+0094:             if self.bidirectional:
+0095:                 # Backward direction
+0096:                 h_backward = h_n[layer * num_directions + 1]
+0097:                 c_backward = c_n[layer * num_directions + 1]
+0098:                 layer_h_back = []
+0099:                 
+0100:                 for t in range(seq_len - 1, -1, -1):
+0101:                     h_backward, c_backward = self.cell_list[layer * num_directions + 1](
+0102:                         layer_output[t], (h_backward, c_backward))
+0103:                     layer_h_back.append(h_backward)
+0104:                     
+0105:                 # Combine forward and backward outputs
+0106:                 layer_h_back.reverse()
+0107:                 layer_forward = Tensor(np.stack([h.data for h in layer_h_list]))
+0108:                 layer_backward = Tensor(np.stack([h.data for h in layer_h_back]))
+0109:                 layer_output = Tensor(np.concatenate([layer_forward.data, layer_backward.data], axis=-1))
+0110:             else:
+0111:                 layer_output = Tensor(np.stack([h.data for h in layer_h_list]))
+0112:                 
+0113:             # Apply dropout except for last layer
+0114:             if layer < self.num_layers - 1 and self.training and self.dropout > 0:
+0115:                 mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(np.float64)
+0116:                 layer_output = Tensor(layer_output.data * mask / (1 - self.dropout))
+0117:                 
+0118:             new_h.append(h_forward.data)
+0119:             if self.bidirectional:
+0120:                 new_h.append(h_backward.data)
+0121:             new_c.append(c_forward.data)
+0122:             if self.bidirectional:
+0123:                 new_c.append(c_backward.data)
+0124:                 
+0125:         # Stack hidden states and cell states
+0126:         h_n = Tensor(np.stack(new_h))
+0127:         c_n = Tensor(np.stack(new_c))
+0128:         
+0129:         # Restore batch_first if needed
+0130:         if self.batch_first:
+0131:             layer_output = Tensor(np.swapaxes(layer_output.data, 0, 1))
+0132:             
+0133:         return layer_output, (h_n, c_n)
+0134: 
+0135: class GRU(Module):
+0136:     """
+0137:     Gated Recurrent Unit (GRU) layer.
+0138:     
+0139:     Applies a multi-layer GRU to an input sequence.
+0140:     
+0141:     Args:
+0142:         input_size: Number of features in input
+0143:         hidden_size: Number of features in hidden state
+0144:         num_layers: Number of recurrent layers
+0145:         bias: If False, doesn't learn bias weights
+0146:         batch_first: If True, input shape is (batch, seq, feature)
+0147:         dropout: Dropout probability between layers (0 means no dropout)
+0148:         bidirectional: If True, becomes bidirectional GRU
+0149:         
+0150:     Inputs: input, h_0
+0151:         input: tensor of shape (seq_len, batch, input_size)
+0152:             or (batch, seq_len, input_size) if batch_first=True
+0153:         h_0: initial hidden state (num_layers * num_directions, batch, hidden_size)
+0154:         
+0155:     Outputs: output, h_n
+0156:         output: tensor of shape (seq_len, batch, num_directions * hidden_size)
+0157:         h_n: final hidden state
+0158:     """
+0159:     def __init__(self, input_size: int, hidden_size: int, num_layers: int = 1,
+0160:                  bias: bool = True, batch_first: bool = False, dropout: float = 0.,
+0161:                  bidirectional: bool = False):
+0162:         super().__init__()
+0163:         if dropout < 0 or dropout > 1:
+0164:             raise ValueError(f"Dropout probability has to be between 0 and 1, but got {dropout}")
+0165:         self.input_size = input_size
+0166:         self.hidden_size = hidden_size
+0167:         self.num_layers = num_layers
+0168:         self.bias = bias
+0169:         self.batch_first = batch_first
+0170:         self.dropout = dropout
+0171:         self.bidirectional = bidirectional
+0172:         num_directions = 2 if bidirectional else 1
+0173:         
+0174:         # Create parameter tensors for each gate (reset, update, new)
+0175:         # for each layer and direction
+0176:         self.cell_list = []
+0177:         for layer in range(num_layers):
+0178:             for direction in range(num_directions):
+0179:                 layer_input_size = input_size if layer == 0 else hidden_size * num_directions
+0180:                 cell = GRUCell(layer_input_size, hidden_size, bias)
+0181:                 name = f'cell_{layer}_{direction}'
+0182:                 setattr(self, name, cell)
+0183:                 self.cell_list.append(cell)
+0184:                 
+0185:     def forward(self, x: Tensor, hx: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+0186:         """Forward pass of GRU."""
+0187:         # Handle batch_first
+0188:         if self.batch_first:
+0189:             x = Tensor(np.swapaxes(x.data, 0, 1))
+0190:             
+0191:         seq_len, batch_size, _ = x.shape
+0192:         num_directions = 2 if self.bidirectional else 1
+0193:             
+0194:         if hx is None:
+0195:             hx = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
+0196:         else:
+0197:             # Validate hidden state dimensions
+0198:             expected_shape = (self.num_layers * num_directions, batch_size, self.hidden_size)
+0199:             if hx.shape != expected_shape:
+0200:                 raise ValueError(f"Expected hidden size {expected_shape}, got {hx.shape}")
+0201: 
+0202:         layer_output = x
+0203:         new_h = []
+0204:         
+0205:         # Process each layer
+0206:         for layer in range(self.num_layers):
+0207:             layer_h_list = []
+0208:             h_forward = hx[layer * num_directions]
+0209:             
+0210:             # Forward direction
+0211:             for t in range(seq_len):
+0212:                 h_forward = self.cell_list[layer * num_directions](layer_output[t], h_forward)
+0213:                 layer_h_list.append(h_forward)
+0214:                 
+0215:             if self.bidirectional:
+0216:                 # Backward direction
+0217:                 h_backward = hx[layer * num_directions + 1]
+0218:                 layer_h_back = []
+0219:                 
+0220:                 for t in range(seq_len - 1, -1, -1):
+0221:                     h_backward = self.cell_list[layer * num_directions + 1](
+0222:                         layer_output[t], h_backward)
+0223:                     layer_h_back.append(h_backward)
+0224:                     
+0225:                 # Combine forward and backward outputs
+0226:                 layer_h_back.reverse()
+0227:                 layer_forward = Tensor(np.stack([h.data for h in layer_h_list]))
+0228:                 layer_backward = Tensor(np.stack([h.data for h in layer_h_back]))
+0229:                 layer_output = Tensor(np.concatenate([layer_forward.data, layer_backward.data], axis=-1))
+0230:             else:
+0231:                 layer_output = Tensor(np.stack([h.data for h in layer_h_list]))
+0232:                 
+0233:             # Apply dropout except for last layer
+0234:             if layer < self.num_layers - 1 and self.training and self.dropout > 0:
+0235:                 mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(np.float64)
+0236:                 layer_output = Tensor(layer_output.data * mask / (1 - self.dropout))
+0237:                 
+0238:             new_h.append(h_forward.data)
+0239:             if self.bidirectional:
+0240:                 new_h.append(h_backward.data)
+0241:                 
+0242:         # Stack hidden states
+0243:         h_n = Tensor(np.stack(new_h))
+0244:         
+0245:         # Restore batch_first if needed
+0246:         if self.batch_first:
+0247:             layer_output = Tensor(np.swapaxes(layer_output.data, 0, 1))
+0248:             
+0249:         return layer_output, h_n
+0250: 
+0251: class LSTMCell(Module):
+0252:     """
+0253:     A single LSTM cell.
+0254:     
+0255:     Args:
+0256:         input_size: Number of features in input
+0257:         hidden_size: Number of features in hidden state
+0258:         bias: If False, doesn't learn bias weights
+0259:     """
+0260:     def __init__(self, input_size: int, hidden_size: int, bias: bool = True):
+0261:         super().__init__()
+0262:         self.input_size = input_size
+0263:         self.hidden_size = hidden_size
+0264:         
+0265:         # Create weight matrices for the four gates
+0266:         self.weight_ih = Tensor(
+0267:             np.random.randn(4 * hidden_size, input_size) / np.sqrt(input_size),
+0268:             requires_grad=True
+0269:         )
+0270:         self.weight_hh = Tensor(
+0271:             np.random.randn(4 * hidden_size, hidden_size) / np.sqrt(hidden_size),
+0272:             requires_grad=True
+0273:         )
+0274:         
+0275:         if bias:
+0276:             self.bias_ih = Tensor(np.zeros(4 * hidden_size), requires_grad=True)
+0277:             self.bias_hh = Tensor(np.zeros(4 * hidden_size), requires_grad=True)
+0278:         else:
+0279:             self.register_parameter('bias_ih', None)
+0280:             self.register_parameter('bias_hh', None)
+0281:             
+0282:     def forward(self, x: Tensor, 
+0283:                 hx: Optional[Tuple[Tensor, Tensor]] = None) -> Tuple[Tensor, Tensor]:
+0284:         """Forward pass of LSTM cell."""
+0285:         if hx is None:
+0286:             hx = (Tensor(np.zeros((x.shape[0], self.hidden_size))),
+0287:                   Tensor(np.zeros((x.shape[0], self.hidden_size))))
+0288:             
+0289:         h, c = hx
+0290:         
+0291:         # Calculate gates
+0292:         gates = (x @ self.weight_ih.t())
+0293:         if self.bias_ih is not None:
+0294:             gates = gates + self.bias_ih
+0295:             
+0296:         gates = gates + (h @ self.weight_hh.t())
+0297:         if self.bias_hh is not None:
+0298:             gates = gates + self.bias_hh
+0299:             
+0300:         # Split into individual gates
+0301:         chunk_size = gates.shape[-1] // 4
+0302:         i, f, g, o = np.split(gates.data, 4, axis=-1)
+0303:         
+0304:         # Apply gate activations
+0305:         i = 1 / (1 + np.exp(-i))  # input gate
+0306:         f = 1 / (1 + np.exp(-f))  # forget gate
+0307:         g = np.tanh(g)           # cell gate
+0308:         o = 1 / (1 + np.exp(-o))  # output gate
+0309:         
+0310:         # Update cell state and hidden state
+0311:         c_next = f * c.data + i * g
+0312:         h_next = o * np.tanh(c_next)
+0313:         
+0314:         return Tensor(h_next), Tensor(c_next)
+0315: 
+0316: class GRUCell(Module):
+0317:     """
+0318:     A single GRU cell.
+0319:     
+0320:     Args:
+0321:         input_size: Number of features in input
+0322:         hidden_size: Number of features in hidden state
+0323:         bias: If False, doesn't learn bias weights
+0324:     """
+0325:     def __init__(self, input_size: int, hidden_size: int, bias: bool = True):
+0326:         super().__init__()
+0327:         self.input_size = input_size
+0328:         self.hidden_size = hidden_size
+0329:         
+0330:         # Create weight matrices for the three gates (reset, update, new)
+0331:         self.weight_ih = Tensor(
+0332:             np.random.randn(3 * hidden_size, input_size) / np.sqrt(input_size),
+0333:             requires_grad=True
+0334:         )
+0335:         self.weight_hh = Tensor(
+0336:             np.random.randn(3 * hidden_size, hidden_size) / np.sqrt(hidden_size),
+0337:             requires_grad=True
+0338:         )
+0339:         
+0340:         if bias:
+0341:             self.bias_ih = Tensor(np.zeros(3 * hidden_size), requires_grad=True)
+0342:             self.bias_hh = Tensor(np.zeros(3 * hidden_size), requires_grad=True)
+0343:         else:
+0344:             self.register_parameter('bias_ih', None)
+0345:             self.register_parameter('bias_hh', None)
+0346:             
+0347:     def forward(self, x: Tensor, hx: Optional[Tensor] = None) -> Tensor:
+0348:         """
+0349:         Forward pass of GRU cell.
+0350:         
+0351:         Args:
+0352:             x: Input tensor of shape (batch, input_size)
+0353:             hx: Hidden state tensor of shape (batch, hidden_size)
+0354:             
+0355:         Returns:
+0356:             New hidden state tensor of shape (batch, hidden_size)
+0357:         """
+0358:         if hx is None:
+0359:             hx = Tensor(np.zeros((x.shape[0], self.hidden_size)))
+0360:             
+0361:         # Calculate gates
+0362:         gates_x = (x @ self.weight_ih.t())
+0363:         if self.bias_ih is not None:
+0364:             gates_x = gates_x + self.bias_ih
+0365:             
+0366:         gates_h = (hx @ self.weight_hh.t())
+0367:         if self.bias_hh is not None:
+0368:             gates_h = gates_h + self.bias_hh
+0369:             
+0370:         # Split into individual gates
+0371:         chunk_size = gates_x.shape[-1] // 3
+0372:         r_x, z_x, n_x = np.split(gates_x.data, 3, axis=-1)  # reset, update, new
+0373:         r_h, z_h, n_h = np.split(gates_h.data, 3, axis=-1)
+0374:         
+0375:         # Compute gate values
+0376:         r = 1 / (1 + np.exp(-(r_x + r_h)))      # reset gate
+0377:         z = 1 / (1 + np.exp(-(z_x + z_h)))      # update gate
+0378:         n = np.tanh(n_x + r * n_h)              # new gate
+0379:         
+0380:         # Compute new hidden state
+0381:         h_next = (1 - z) * hx.data + z * n
+0382:         
+0383:         return Tensor(h_next)
+0384:         
+0385:     def extra_repr(self) -> str:
+0386:         """Returns a string with extra representation information."""
+0387:         return f'input_size={self.input_size}, hidden_size={self.hidden_size}'
+
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\sequential.py
 // ----------------------------------------
 
@@ -2124,7 +2520,7 @@
 0004: This module contains all the mathematical operations that can be performed on tensors.
 0005: """
 0006: 
-0007: from .basic import Add, Multiply
+0007: from .basic import Add, Multiply, MatMul
 0008: from .reshape import Reshape
 0009: from .power import Power, Divide
 0010: from .elementwise import Log, Exp
@@ -2157,54 +2553,55 @@
 0037:     # Basic operations
 0038:     'Add',
 0039:     'Multiply',
-0040:     'Reshape',
-0041:     
-0042:     # Power operations
-0043:     'Power',
-0044:     'Divide',
-0045:     
-0046:     # Element-wise operations
-0047:     'Log',
-0048:     'Exp',
-0049:     
-0050:     # Reduction operations
-0051:     'Sum',
-0052:     'Mean',
-0053:     'Max',
-0054:     
-0055:     # Matrix operations
-0056:     'Transpose',
-0057:     
-0058:     # Comparison operations
-0059:     'Greater',
-0060:     'GreaterEqual',
-0061:     'Less',
-0062:     'LessEqual',
-0063:     'Equal',
-0064:     'NotEqual',
-0065: 
-0066:     # Loss functions
-0067:     'MSELoss',
-0068:     'CrossEntropyLoss',
-0069:     'BinaryCrossEntropyLoss',
-0070:     'L1Loss',
-0071:     'HuberLoss',
-0072:     'KLDivLoss',
-0073:     'CosineSimilarityLoss',
-0074:     'HingeLoss',
-0075:     'FocalLoss',
-0076: 
-0077:     # CNN operations
-0078:     'Conv2dFunction',
-0079: 
-0080:     # Pooling operations
-0081:     'MaxPool2dFunction',
-0082:     'AvgPool2dFunction'
-0083: ]
+0040:     'MatMul',
+0041:     'Reshape',
+0042:     
+0043:     # Power operations
+0044:     'Power',
+0045:     'Divide',
+0046:     
+0047:     # Element-wise operations
+0048:     'Log',
+0049:     'Exp',
+0050:     
+0051:     # Reduction operations
+0052:     'Sum',
+0053:     'Mean',
+0054:     'Max',
+0055:     
+0056:     # Matrix operations
+0057:     'Transpose',
+0058:     
+0059:     # Comparison operations
+0060:     'Greater',
+0061:     'GreaterEqual',
+0062:     'Less',
+0063:     'LessEqual',
+0064:     'Equal',
+0065:     'NotEqual',
+0066: 
+0067:     # Loss functions
+0068:     'MSELoss',
+0069:     'CrossEntropyLoss',
+0070:     'BinaryCrossEntropyLoss',
+0071:     'L1Loss',
+0072:     'HuberLoss',
+0073:     'KLDivLoss',
+0074:     'CosineSimilarityLoss',
+0075:     'HingeLoss',
+0076:     'FocalLoss',
+0077: 
+0078:     # CNN operations
+0079:     'Conv2dFunction',
+0080: 
+0081:     # Pooling operations
+0082:     'MaxPool2dFunction',
+0083:     'AvgPool2dFunction'
+0084: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\basic.py
 // ----------------------------------------
-0001: from typing import Dict  # Add this import at the top
+0001: from typing import Dict
 0002: from ..core.function import Function
 0003: from ..core.tensor import Tensor
 0004: import numpy as np
@@ -2335,6 +2732,37 @@
 0129:             if target_dim == 1 and grad_dim != 1:
 0130:                 grad = grad.sum(axis=axis, keepdims=True)
 0131:         return grad
+0132: 
+0133: class MatMul(Function):
+0134:     """Matrix multiplication operation."""
+0135:     
+0136:     @staticmethod
+0137:     def forward(ctx, a, b):
+0138:         if not isinstance(a, Tensor):
+0139:             a = Tensor(a)
+0140:         if not isinstance(b, Tensor):
+0141:             b = Tensor(b)
+0142:             
+0143:         ctx.save_for_backward(a, b)
+0144:         return Tensor(np.matmul(a.data, b.data))
+0145:         
+0146:     @staticmethod
+0147:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0148:         a, b = ctx.saved_tensors
+0149:         
+0150:         if a.requires_grad:
+0151:             grad_a = np.matmul(grad_output, b.data.T)
+0152:             if id(a) not in grad_dict:
+0153:                 grad_dict[id(a)] = grad_a
+0154:             else:
+0155:                 grad_dict[id(a)] += grad_a
+0156:                 
+0157:         if b.requires_grad:
+0158:             grad_b = np.matmul(a.data.T, grad_output)
+0159:             if id(b) not in grad_dict:
+0160:                 grad_dict[id(b)] = grad_b
+0161:             else:
+0162:                 grad_dict[id(b)] += grad_b
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\cnn.py
 // ----------------------------------------
@@ -8586,6 +9014,300 @@
 0550:             assert np.all(np.abs(result_with_decay) < np.abs(result_no_decay)), \
 0551:                 f"{type(optimizer_class).__name__} does not correctly apply weight decay"
 
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_rnn.py
+// ----------------------------------------
+0001: import pytest
+0002: import numpy as np
+0003: from DLpy.core import Tensor
+0004: from DLpy.nn import LSTM, GRU, LSTMCell, GRUCell
+0005: 
+0006: class TestLSTMCell:
+0007:     """Tests for the LSTM Cell implementation."""
+0008:     
+0009:     def test_initialization(self):
+0010:         """Test LSTM cell initialization."""
+0011:         input_size = 10
+0012:         hidden_size = 20
+0013:         cell = LSTMCell(input_size, hidden_size)
+0014:         
+0015:         # Check parameter shapes
+0016:         assert cell.weight_ih.shape == (4 * hidden_size, input_size)
+0017:         assert cell.weight_hh.shape == (4 * hidden_size, hidden_size)
+0018:         assert cell.bias_ih.shape == (4 * hidden_size,)
+0019:         assert cell.bias_hh.shape == (4 * hidden_size,)
+0020:         
+0021:         # Test initialization without bias
+0022:         cell_no_bias = LSTMCell(input_size, hidden_size, bias=False)
+0023:         assert cell_no_bias.bias_ih is None
+0024:         assert cell_no_bias.bias_hh is None
+0025:         
+0026:     def test_forward(self):
+0027:         """Test forward pass of LSTM cell."""
+0028:         batch_size = 3
+0029:         input_size = 4
+0030:         hidden_size = 5
+0031:         cell = LSTMCell(input_size, hidden_size)
+0032:         
+0033:         # Test with provided hidden state
+0034:         x = Tensor(np.random.randn(batch_size, input_size))
+0035:         h = Tensor(np.random.randn(batch_size, hidden_size))
+0036:         c = Tensor(np.random.randn(batch_size, hidden_size))
+0037:         
+0038:         h_next, c_next = cell(x, (h, c))
+0039:         
+0040:         assert h_next.shape == (batch_size, hidden_size)
+0041:         assert c_next.shape == (batch_size, hidden_size)
+0042:         
+0043:         # Test with no hidden state
+0044:         h_next, c_next = cell(x)
+0045:         assert h_next.shape == (batch_size, hidden_size)
+0046:         assert c_next.shape == (batch_size, hidden_size)
+0047:         
+0048:     def test_gradient_flow(self):
+0049:         """Test gradient computation in LSTM cell."""
+0050:         cell = LSTMCell(3, 4)
+0051:         x = Tensor(np.random.randn(2, 3), requires_grad=True)
+0052:         h = Tensor(np.random.randn(2, 4), requires_grad=True)
+0053:         c = Tensor(np.random.randn(2, 4), requires_grad=True)
+0054:         
+0055:         h_next, c_next = cell(x, (h, c))
+0056:         loss = h_next.sum() + c_next.sum()
+0057:         loss.backward()
+0058:         
+0059:         assert x.grad is not None
+0060:         assert h.grad is not None
+0061:         assert c.grad is not None
+0062:         assert cell.weight_ih.grad is not None
+0063:         assert cell.weight_hh.grad is not None
+0064: 
+0065: class TestGRUCell:
+0066:     """Tests for the GRU Cell implementation."""
+0067:     
+0068:     def test_initialization(self):
+0069:         """Test GRU cell initialization."""
+0070:         input_size = 10
+0071:         hidden_size = 20
+0072:         cell = GRUCell(input_size, hidden_size)
+0073:         
+0074:         # Check parameter shapes
+0075:         assert cell.weight_ih.shape == (3 * hidden_size, input_size)
+0076:         assert cell.weight_hh.shape == (3 * hidden_size, hidden_size)
+0077:         assert cell.bias_ih.shape == (3 * hidden_size,)
+0078:         assert cell.bias_hh.shape == (3 * hidden_size,)
+0079:         
+0080:         # Test initialization without bias
+0081:         cell_no_bias = GRUCell(input_size, hidden_size, bias=False)
+0082:         assert cell_no_bias.bias_ih is None
+0083:         assert cell_no_bias.bias_hh is None
+0084:         
+0085:     def test_forward(self):
+0086:         """Test forward pass of GRU cell."""
+0087:         batch_size = 3
+0088:         input_size = 4
+0089:         hidden_size = 5
+0090:         cell = GRUCell(input_size, hidden_size)
+0091:         
+0092:         # Test with provided hidden state
+0093:         x = Tensor(np.random.randn(batch_size, input_size))
+0094:         h = Tensor(np.random.randn(batch_size, hidden_size))
+0095:         
+0096:         h_next = cell(x, h)
+0097:         assert h_next.shape == (batch_size, hidden_size)
+0098:         
+0099:         # Test with no hidden state
+0100:         h_next = cell(x)
+0101:         assert h_next.shape == (batch_size, hidden_size)
+0102:         
+0103:     def test_gradient_flow(self):
+0104:         """Test gradient computation in GRU cell."""
+0105:         cell = GRUCell(3, 4)
+0106:         x = Tensor(np.random.randn(2, 3), requires_grad=True)
+0107:         h = Tensor(np.random.randn(2, 4), requires_grad=True)
+0108:         
+0109:         h_next = cell(x, h)
+0110:         loss = h_next.sum()
+0111:         loss.backward()
+0112:         
+0113:         assert x.grad is not None
+0114:         assert h.grad is not None
+0115:         assert cell.weight_ih.grad is not None
+0116:         assert cell.weight_hh.grad is not None
+0117: 
+0118: class TestLSTM:
+0119:     """Tests for the LSTM layer."""
+0120:     
+0121:     def test_initialization(self):
+0122:         """Test LSTM layer initialization."""
+0123:         lstm = LSTM(10, 20, num_layers=2, bidirectional=True)
+0124:         assert len(lstm.cell_list) == 4  # 2 layers * 2 directions
+0125:         
+0126:         lstm_unidirectional = LSTM(10, 20, num_layers=2)
+0127:         assert len(lstm_unidirectional.cell_list) == 2  # 2 layers * 1 direction
+0128:         
+0129:     def test_forward_unidirectional(self):
+0130:         """Test forward pass of unidirectional LSTM."""
+0131:         batch_size = 3
+0132:         seq_length = 4
+0133:         input_size = 5
+0134:         hidden_size = 6
+0135:         
+0136:         lstm = LSTM(input_size, hidden_size, num_layers=2)
+0137:         x = Tensor(np.random.randn(seq_length, batch_size, input_size))
+0138:         
+0139:         output, (h_n, c_n) = lstm(x)
+0140:         
+0141:         assert output.shape == (seq_length, batch_size, hidden_size)
+0142:         assert h_n.shape == (2, batch_size, hidden_size)  # num_layers * batch * hidden
+0143:         assert c_n.shape == (2, batch_size, hidden_size)
+0144:         
+0145:     def test_forward_bidirectional(self):
+0146:         """Test forward pass of bidirectional LSTM."""
+0147:         batch_size = 3
+0148:         seq_length = 4
+0149:         input_size = 5
+0150:         hidden_size = 6
+0151:         
+0152:         lstm = LSTM(input_size, hidden_size, num_layers=2, bidirectional=True)
+0153:         x = Tensor(np.random.randn(seq_length, batch_size, input_size))
+0154:         
+0155:         output, (h_n, c_n) = lstm(x)
+0156:         
+0157:         assert output.shape == (seq_length, batch_size, 2 * hidden_size)
+0158:         assert h_n.shape == (4, batch_size, hidden_size)  # num_layers * 2 * batch * hidden
+0159:         assert c_n.shape == (4, batch_size, hidden_size)
+0160:         
+0161:     def test_batch_first(self):
+0162:         """Test batch_first option."""
+0163:         lstm = LSTM(5, 6, batch_first=True)
+0164:         x = Tensor(np.random.randn(3, 4, 5))  # batch * seq * input
+0165:         
+0166:         output, (h_n, c_n) = lstm(x)
+0167:         assert output.shape == (3, 4, 6)  # batch * seq * hidden
+0168:         
+0169:     def test_dropout(self):
+0170:         """Test dropout between layers."""
+0171:         lstm = LSTM(5, 6, num_layers=2, dropout=0.5)
+0172:         x = Tensor(np.random.randn(4, 3, 5))
+0173:         
+0174:         lstm.train()
+0175:         output1, _ = lstm(x)
+0176:         output2, _ = lstm(x)
+0177:         
+0178:         # Outputs should be different due to dropout
+0179:         assert not np.allclose(output1.data, output2.data)
+0180:         
+0181:         # In eval mode, outputs should be the same
+0182:         lstm.eval()
+0183:         output1, _ = lstm(x)
+0184:         output2, _ = lstm(x)
+0185:         assert np.allclose(output1.data, output2.data)
+0186: 
+0187: class TestGRU:
+0188:     """Tests for the GRU layer."""
+0189:     
+0190:     def test_initialization(self):
+0191:         """Test GRU layer initialization."""
+0192:         gru = GRU(10, 20, num_layers=2, bidirectional=True)
+0193:         assert len(gru.cell_list) == 4  # 2 layers * 2 directions
+0194:         
+0195:         gru_unidirectional = GRU(10, 20, num_layers=2)
+0196:         assert len(gru_unidirectional.cell_list) == 2  # 2 layers * 1 direction
+0197:         
+0198:     def test_forward_unidirectional(self):
+0199:         """Test forward pass of unidirectional GRU."""
+0200:         batch_size = 3
+0201:         seq_length = 4
+0202:         input_size = 5
+0203:         hidden_size = 6
+0204:         
+0205:         gru = GRU(input_size, hidden_size, num_layers=2)
+0206:         x = Tensor(np.random.randn(seq_length, batch_size, input_size))
+0207:         
+0208:         output, h_n = gru(x)
+0209:         
+0210:         assert output.shape == (seq_length, batch_size, hidden_size)
+0211:         assert h_n.shape == (2, batch_size, hidden_size)  # num_layers * batch * hidden
+0212:         
+0213:     def test_forward_bidirectional(self):
+0214:         """Test forward pass of bidirectional GRU."""
+0215:         batch_size = 3
+0216:         seq_length = 4
+0217:         input_size = 5
+0218:         hidden_size = 6
+0219:         
+0220:         gru = GRU(input_size, hidden_size, num_layers=2, bidirectional=True)
+0221:         x = Tensor(np.random.randn(seq_length, batch_size, input_size))
+0222:         
+0223:         output, h_n = gru(x)
+0224:         
+0225:         assert output.shape == (seq_length, batch_size, 2 * hidden_size)
+0226:         assert h_n.shape == (4, batch_size, hidden_size)  # num_layers * 2 * batch * hidden
+0227:         
+0228:     def test_batch_first(self):
+0229:         """Test batch_first option."""
+0230:         gru = GRU(5, 6, batch_first=True)
+0231:         x = Tensor(np.random.randn(3, 4, 5))  # batch * seq * input
+0232:         
+0233:         output, h_n = gru(x)
+0234:         assert output.shape == (3, 4, 6)  # batch * seq * hidden
+0235:         
+0236:     def test_dropout(self):
+0237:         """Test dropout between layers."""
+0238:         gru = GRU(5, 6, num_layers=2, dropout=0.5)
+0239:         x = Tensor(np.random.randn(4, 3, 5))
+0240:         
+0241:         gru.train()
+0242:         output1, _ = gru(x)
+0243:         output2, _ = gru(x)
+0244:         
+0245:         # Outputs should be different due to dropout
+0246:         assert not np.allclose(output1.data, output2.data)
+0247:         
+0248:         # In eval mode, outputs should be the same
+0249:         gru.eval()
+0250:         output1, _ = gru(x)
+0251:         output2, _ = gru(x)
+0252:         assert np.allclose(output1.data, output2.data)
+0253: 
+0254: class TestRNNEdgeCases:
+0255:     """Tests for edge cases in RNN layers."""
+0256:     
+0257:     def test_zero_length_sequence(self):
+0258:         """Test handling of zero-length sequences."""
+0259:         lstm = LSTM(5, 6)
+0260:         gru = GRU(5, 6)
+0261:         
+0262:         x = Tensor(np.random.randn(0, 3, 5))  # seq_len = 0
+0263:         
+0264:         with pytest.raises(ValueError):
+0265:             lstm(x)
+0266:         with pytest.raises(ValueError):
+0267:             gru(x)
+0268:             
+0269:     def test_invalid_hidden_state(self):
+0270:         """Test handling of invalid hidden state dimensions."""
+0271:         lstm = LSTM(5, 6, num_layers=2)
+0272:         gru = GRU(5, 6, num_layers=2)
+0273:         
+0274:         x = Tensor(np.random.randn(4, 3, 5))
+0275:         h_wrong = Tensor(np.random.randn(3, 3, 6))  # Wrong num_layers
+0276:         
+0277:         with pytest.raises(ValueError):
+0278:             lstm(x, (h_wrong, h_wrong))
+0279:         with pytest.raises(ValueError):
+0280:             gru(x, h_wrong)
+0281:             
+0282:     def test_invalid_dropout(self):
+0283:         """Test invalid dropout values."""
+0284:         with pytest.raises(ValueError):
+0285:             LSTM(5, 6, dropout=-0.1)
+0286:         with pytest.raises(ValueError):
+0287:             LSTM(5, 6, dropout=1.1)
+0288:         with pytest.raises(ValueError):
+0289:             GRU(5, 6, dropout=-0.1)
+0290:         with pytest.raises(ValueError):
+0291:             GRU(5, 6, dropout=1.1)
+
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
 // ----------------------------------------
 0001: import pytest
@@ -8682,4 +9404,4 @@
 0092:         assert 'requires_grad=True' in repr(t)
 
 // ----------------------------------------
-// Total Python files found: 59
+// Total Python files found: 61
