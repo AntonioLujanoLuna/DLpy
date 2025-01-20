@@ -1,4 +1,5 @@
-from typing import Iterator, Dict, Any, Optional, Union
+from typing import Iterator, Dict, Any, Optional
+import numpy as np
 from collections import OrderedDict
 from ..core import Tensor
 
@@ -176,6 +177,44 @@ class Module:
     def extra_repr(self) -> str:
         """Set the extra representation of the module."""
         return ''
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Returns a dictionary containing module's state."""
+        state = {}
+        for name, param in self.named_parameters():
+            if param is not None:
+                state[name] = param.data
+        for name, buf in self._buffers.items():
+            if buf is not None:
+                state[name] = buf.data
+        return state
+
+    def load_state_dict(self, state_dict: Dict[str, np.ndarray]) -> None:
+        """
+        Loads module state from state_dict.
+        
+        Args:
+            state_dict: A dictionary containing parameters and buffers
+        """
+        # Load parameters
+        for name, param in self.named_parameters():
+            if name in state_dict:
+                if param.data.shape != state_dict[name].shape:
+                    raise ValueError(
+                        f"Parameter {name} shape mismatch: expected {param.data.shape}, "
+                        f"got {state_dict[name].shape}"
+                    )
+                param.data = state_dict[name]
+                
+        # Load buffers
+        for name, buf in self._buffers.items():
+            if name in state_dict:
+                if buf.data.shape != state_dict[name].shape:
+                    raise ValueError(
+                        f"Buffer {name} shape mismatch: expected {buf.data.shape}, "
+                        f"got {state_dict[name].shape}"
+                    )
+                buf.data = state_dict[name]
 
 def _addindent(s_: str, numSpaces: int) -> str:
     """Helper for indenting multiline strings."""

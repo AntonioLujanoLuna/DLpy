@@ -13,6 +13,7 @@ DLpy/core/autograd.py
 DLpy/core/context.py
 DLpy/core/function.py
 DLpy/core/module.py
+DLpy/core/serialization.py
 DLpy/core/tensor.py
 DLpy/data/__init__.py
 DLpy/data/dataloader.py
@@ -63,4 +64,5 @@ tests/test_norm_pool.py
 tests/test_ops.py
 tests/test_optim.py
 tests/test_rnn.py
+tests/test_serialization.py
 tests/test_tensor.py

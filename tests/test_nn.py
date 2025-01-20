@@ -13,7 +13,7 @@ class TestLinearLayer:
         layer = Linear(in_features, out_features)
         
         # Test weight dimensions
-        assert layer.weight.shape == (in_features, out_features)
+        assert layer.weight.shape == (out_features, in_features)  # Changed to match layer convention
         assert layer.weight.requires_grad
         
         # Test bias dimensions
@@ -24,19 +24,20 @@ class TestLinearLayer:
         # Test layer without bias
         layer_no_bias = Linear(in_features, out_features, bias=False)
         assert layer_no_bias.bias is None
-        
+
     def test_linear_forward(self):
         """Test the forward pass of the linear layer."""
         # Create a simple linear layer with known weights for testing
         layer = Linear(2, 3)
-        layer.weight.data = np.array([[1., 2., 3.], [4., 5., 6.]])
+        # Weight matrix is (out_features, in_features)
+        layer.weight.data = np.array([[1., 4.], [2., 5.], [3., 6.]])  # Transposed from original
         layer.bias.data = np.array([0.1, 0.2, 0.3])
         
         # Create input tensor
         x = Tensor([[1., 2.]])  # Batch size 1, 2 features
         
-        # Compute expected output manually
-        expected_output = np.array([[9.1, 12.2, 15.3]])  # (1×2) @ (2×3) + bias
+        # Compute expected output manually: (1×2) @ (3×2).T + bias = (1×3)
+        expected_output = np.array([[9.1, 12.2, 15.3]])
         
         # Get actual output
         output = layer(x)
@@ -50,7 +51,8 @@ class TestLinearLayer:
         """Test the backward pass and gradient computation of the linear layer."""
         # Create a layer with specific weights for testing
         layer = Linear(2, 1)
-        layer.weight.data = np.array([[1.], [2.]])
+        # Weight matrix is (out_features, in_features)
+        layer.weight.data = np.array([[1., 2.]])  # Shape is (1, 2)
         layer.bias.data = np.array([0.])
         
         # Forward pass
@@ -61,15 +63,15 @@ class TestLinearLayer:
         output.backward(np.array([[1.]]))
         
         # Check input gradients
-        expected_input_grad = np.array([[1., 2.]])  # Gradient w.r.t input
+        expected_input_grad = np.array([[1., 2.]])  # gradient w.r.t input
         assert np.allclose(x.grad, expected_input_grad)
         
         # Check weight gradients
-        expected_weight_grad = np.array([[1.], [2.]])  # Gradient w.r.t weights
+        expected_weight_grad = np.array([[1., 2.]])  # gradient w.r.t weights
         assert np.allclose(layer.weight.grad, expected_weight_grad)
         
         # Check bias gradients
-        expected_bias_grad = np.array([1.])  # Gradient w.r.t bias
+        expected_bias_grad = np.array([1.])  # gradient w.r.t bias
         assert np.allclose(layer.bias.grad, expected_bias_grad)
         
     def test_linear_batch_processing(self):

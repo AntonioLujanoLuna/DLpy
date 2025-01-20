@@ -1,4 +1,4 @@
-﻿// Python Files Concatenated on 01/20/2025 19:16:47
+﻿// Python Files Concatenated on 01/20/2025 19:40:52
 // ----------------------------------------
 
 
@@ -513,193 +513,429 @@
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\core\module.py
 // ----------------------------------------
-0001: from typing import Iterator, Dict, Any, Optional, Union
-0002: from collections import OrderedDict
-0003: from ..core import Tensor
-0004: 
-0005: class Module:
-0006:     """
-0007:     Base class for all neural network modules.
-0008:     
-0009:     Your models should also subclass this class.
-0010:     Modules can also contain other Modules, allowing to nest them in
-0011:     a tree structure.
+0001: from typing import Iterator, Dict, Any, Optional
+0002: import numpy as np
+0003: from collections import OrderedDict
+0004: from ..core import Tensor
+0005: 
+0006: class Module:
+0007:     """
+0008:     Base class for all neural network modules.
+0009:     
+0010:     Your models should also subclass this class.
+0011:     Modules can also contain other Modules, allowing to nest them in
+0012:     a tree structure.
+0013:     """
+0014:     
+0015:     def __init__(self):
+0016:         """Initialize the module."""
+0017:         # First set these directly to avoid triggering __setattr__
+0018:         object.__setattr__(self, 'training', True)
+0019:         object.__setattr__(self, '_parameters', OrderedDict())
+0020:         object.__setattr__(self, '_buffers', OrderedDict())
+0021:         object.__setattr__(self, '_modules', OrderedDict())
+0022:         
+0023:     def register_parameter(self, name: str, param: Optional[Tensor]) -> None:
+0024:         """Add a parameter to the module.
+0025:         
+0026:         Args:
+0027:             name: Name of the parameter
+0028:             param: The parameter tensor to register
+0029:         """
+0030:         if '_parameters' not in self.__dict__:
+0031:             raise TypeError(
+0032:                 "cannot assign parameter before Module.__init__() call"
+0033:             )
+0034:             
+0035:         if param is not None and not isinstance(param, Tensor):
+0036:             raise TypeError(f"Parameter {name} must be a Tensor, not {type(param)}")
+0037:             
+0038:         self._parameters[name] = param
+0039:         
+0040:     def register_buffer(self, name: str, tensor: Optional[Tensor]) -> None:
+0041:         """Add a persistent buffer to the module.
+0042:         
+0043:         Buffers are typically used for running statistics in modules like BatchNorm.
+0044:         
+0045:         Args:
+0046:             name: Name of the buffer
+0047:             tensor: The tensor to register as a buffer
+0048:         """
+0049:         if '_buffers' not in self.__dict__:
+0050:             raise TypeError(
+0051:                 "cannot assign buffer before Module.__init__() call"
+0052:             )
+0053:             
+0054:         if tensor is not None and not isinstance(tensor, Tensor):
+0055:             raise TypeError(f"Buffer {name} must be a Tensor, not {type(tensor)}")
+0056:             
+0057:         self._buffers[name] = tensor
+0058:         
+0059:     def add_module(self, name: str, module: Optional['Module']) -> None:
+0060:         """Add a child module to the current module.
+0061:         
+0062:         Args:
+0063:             name: Name of the child module
+0064:             module: The module to add
+0065:         """
+0066:         if not isinstance(module, (Module, type(None))):
+0067:             raise TypeError(f"{name} is not a Module subclass")
+0068:             
+0069:         if '_modules' not in self.__dict__:
+0070:             raise TypeError(
+0071:                 "cannot assign module before Module.__init__() call"
+0072:             )
+0073:             
+0074:         self._modules[name] = module
+0075:         
+0076:     def __getattr__(self, name: str) -> Any:
+0077:         """Custom getattr that looks through parameters, buffers, and modules."""
+0078:         if '_parameters' in self.__dict__:
+0079:             _parameters = self.__dict__['_parameters']
+0080:             if name in _parameters:
+0081:                 return _parameters[name]
+0082:                 
+0083:         if '_buffers' in self.__dict__:
+0084:             _buffers = self.__dict__['_buffers']
+0085:             if name in _buffers:
+0086:                 return _buffers[name]
+0087:                 
+0088:         if '_modules' in self.__dict__:
+0089:             modules = self.__dict__['_modules']
+0090:             if name in modules:
+0091:                 return modules[name]
+0092:                 
+0093:         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+0094:         
+0095:     def __setattr__(self, name: str, value: Any) -> None:
+0096:         """Custom setattr that handles parameter registration."""
+0097:         # Handle special module attributes first
+0098:         if name in ['training']:
+0099:             object.__setattr__(self, name, value)
+0100:             return
+0101:             
+0102:         if isinstance(value, Tensor):
+0103:             if not hasattr(self, '_parameters'):
+0104:                 raise TypeError(
+0105:                     "cannot assign parameters before Module.__init__() call"
+0106:                 )
+0107:             self.register_parameter(name, value)
+0108:         elif isinstance(value, Module):
+0109:             if not hasattr(self, '_modules'):
+0110:                 raise TypeError(
+0111:                     "cannot assign module before Module.__init__() call"
+0112:                 )
+0113:             self.add_module(name, value)
+0114:         else:
+0115:             object.__setattr__(self, name, value)
+0116:             
+0117:     def parameters(self) -> Iterator[Tensor]:
+0118:         """Returns an iterator over module parameters."""
+0119:         for param in self._parameters.values():
+0120:             if param is not None:
+0121:                 yield param
+0122:         for module in self._modules.values():
+0123:             if module is not None:
+0124:                 yield from module.parameters()
+0125:                 
+0126:     def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
+0127:         """Returns an iterator over module parameters, yielding both the
+0128:         name of the parameter as well as the parameter itself."""
+0129:         for name, param in self._parameters.items():
+0130:             if param is not None:
+0131:                 yield name, param
+0132:         for mname, module in self._modules.items():
+0133:             if module is not None:
+0134:                 for name, param in module.named_parameters():
+0135:                     yield f"{mname}.{name}", param
+0136:                     
+0137:     def train(self, mode: bool = True) -> 'Module':
+0138:         """Sets the module in training mode."""
+0139:         self.training = mode
+0140:         for module in self._modules.values():
+0141:             if module is not None:
+0142:                 module.train(mode)
+0143:         return self
+0144:         
+0145:     def eval(self) -> 'Module':
+0146:         """Sets the module in evaluation mode."""
+0147:         return self.train(False)
+0148:         
+0149:     def __call__(self, *args, **kwargs):
+0150:         return self.forward(*args, **kwargs)
+0151:         
+0152:     def forward(self, *args, **kwargs):
+0153:         """Define the computation performed at every call."""
+0154:         raise NotImplementedError
+0155:         
+0156:     def __repr__(self):
+0157:         """Returns a string representation of the module."""
+0158:         extra_lines = []
+0159:         extra_repr = self.extra_repr()
+0160:         if extra_repr:
+0161:             extra_lines = extra_repr.split('\n')
+0162:             
+0163:         child_lines = []
+0164:         for key, module in self._modules.items():
+0165:             mod_str = repr(module)
+0166:             mod_str = _addindent(mod_str, 2)
+0167:             child_lines.append('(' + key + '): ' + mod_str)
+0168:             
+0169:         lines = extra_lines + child_lines
+0170:         
+0171:         main_str = self.__class__.__name__ + '('
+0172:         if lines:
+0173:             main_str += '\n  ' + '\n  '.join(lines) + '\n'
+0174:         main_str += ')'
+0175:         return main_str
+0176:         
+0177:     def extra_repr(self) -> str:
+0178:         """Set the extra representation of the module."""
+0179:         return ''
+0180: 
+0181:     def state_dict(self) -> Dict[str, Any]:
+0182:         """Returns a dictionary containing module's state."""
+0183:         state = {}
+0184:         for name, param in self.named_parameters():
+0185:             if param is not None:
+0186:                 state[name] = param.data
+0187:         for name, buf in self._buffers.items():
+0188:             if buf is not None:
+0189:                 state[name] = buf.data
+0190:         return state
+0191: 
+0192:     def load_state_dict(self, state_dict: Dict[str, np.ndarray]) -> None:
+0193:         """
+0194:         Loads module state from state_dict.
+0195:         
+0196:         Args:
+0197:             state_dict: A dictionary containing parameters and buffers
+0198:         """
+0199:         # Load parameters
+0200:         for name, param in self.named_parameters():
+0201:             if name in state_dict:
+0202:                 if param.data.shape != state_dict[name].shape:
+0203:                     raise ValueError(
+0204:                         f"Parameter {name} shape mismatch: expected {param.data.shape}, "
+0205:                         f"got {state_dict[name].shape}"
+0206:                     )
+0207:                 param.data = state_dict[name]
+0208:                 
+0209:         # Load buffers
+0210:         for name, buf in self._buffers.items():
+0211:             if name in state_dict:
+0212:                 if buf.data.shape != state_dict[name].shape:
+0213:                     raise ValueError(
+0214:                         f"Buffer {name} shape mismatch: expected {buf.data.shape}, "
+0215:                         f"got {state_dict[name].shape}"
+0216:                     )
+0217:                 buf.data = state_dict[name]
+0218: 
+0219: def _addindent(s_: str, numSpaces: int) -> str:
+0220:     """Helper for indenting multiline strings."""
+0221:     s = s_.split('\n')
+0222:     if len(s) == 1:
+0223:         return s_
+0224:     first = s.pop(0)
+0225:     s = [(numSpaces * ' ') + line for line in s]
+0226:     return '\n'.join([first] + s)
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\core\serialization.py
+// ----------------------------------------
+0001: # DLpy/core/serialization.py
+0002: 
+0003: import pickle
+0004: import numpy as np
+0005: from typing import Dict, Any, Union, BinaryIO
+0006: from pathlib import Path
+0007: import warnings
+0008: import json
+0009: from ..core import Module, Tensor
+0010: 
+0011: class ModelSaver:
 0012:     """
-0013:     
-0014:     def __init__(self):
-0015:         """Initialize the module."""
-0016:         # First set these directly to avoid triggering __setattr__
-0017:         object.__setattr__(self, 'training', True)
-0018:         object.__setattr__(self, '_parameters', OrderedDict())
-0019:         object.__setattr__(self, '_buffers', OrderedDict())
-0020:         object.__setattr__(self, '_modules', OrderedDict())
-0021:         
-0022:     def register_parameter(self, name: str, param: Optional[Tensor]) -> None:
-0023:         """Add a parameter to the module.
-0024:         
-0025:         Args:
-0026:             name: Name of the parameter
-0027:             param: The parameter tensor to register
-0028:         """
-0029:         if '_parameters' not in self.__dict__:
-0030:             raise TypeError(
-0031:                 "cannot assign parameter before Module.__init__() call"
-0032:             )
-0033:             
-0034:         if param is not None and not isinstance(param, Tensor):
-0035:             raise TypeError(f"Parameter {name} must be a Tensor, not {type(param)}")
-0036:             
-0037:         self._parameters[name] = param
-0038:         
-0039:     def register_buffer(self, name: str, tensor: Optional[Tensor]) -> None:
-0040:         """Add a persistent buffer to the module.
-0041:         
-0042:         Buffers are typically used for running statistics in modules like BatchNorm.
-0043:         
-0044:         Args:
-0045:             name: Name of the buffer
-0046:             tensor: The tensor to register as a buffer
-0047:         """
-0048:         if '_buffers' not in self.__dict__:
-0049:             raise TypeError(
-0050:                 "cannot assign buffer before Module.__init__() call"
-0051:             )
-0052:             
-0053:         if tensor is not None and not isinstance(tensor, Tensor):
-0054:             raise TypeError(f"Buffer {name} must be a Tensor, not {type(tensor)}")
-0055:             
-0056:         self._buffers[name] = tensor
-0057:         
-0058:     def add_module(self, name: str, module: Optional['Module']) -> None:
-0059:         """Add a child module to the current module.
-0060:         
-0061:         Args:
-0062:             name: Name of the child module
-0063:             module: The module to add
-0064:         """
-0065:         if not isinstance(module, (Module, type(None))):
-0066:             raise TypeError(f"{name} is not a Module subclass")
-0067:             
-0068:         if '_modules' not in self.__dict__:
-0069:             raise TypeError(
-0070:                 "cannot assign module before Module.__init__() call"
-0071:             )
-0072:             
-0073:         self._modules[name] = module
-0074:         
-0075:     def __getattr__(self, name: str) -> Any:
-0076:         """Custom getattr that looks through parameters, buffers, and modules."""
-0077:         if '_parameters' in self.__dict__:
-0078:             _parameters = self.__dict__['_parameters']
-0079:             if name in _parameters:
-0080:                 return _parameters[name]
-0081:                 
-0082:         if '_buffers' in self.__dict__:
-0083:             _buffers = self.__dict__['_buffers']
-0084:             if name in _buffers:
-0085:                 return _buffers[name]
-0086:                 
-0087:         if '_modules' in self.__dict__:
-0088:             modules = self.__dict__['_modules']
-0089:             if name in modules:
-0090:                 return modules[name]
-0091:                 
-0092:         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+0013:     Handles saving and loading of models and their state dictionaries.
+0014:     
+0015:     Supports:
+0016:     - Complete model saving/loading (architecture + parameters)
+0017:     - State dict only saving/loading (just parameters)
+0018:     - Checkpointing (model state + optimizer state + training state)
+0019:     """
+0020:     
+0021:     @staticmethod
+0022:     def save_model(model: Module, path: Union[str, Path], optimize: bool = True) -> None:
+0023:         """
+0024:         Save complete model (architecture + parameters).
+0025:         
+0026:         Args:
+0027:             model: The model to save
+0028:             path: Path where to save the model
+0029:             optimize: If True, optimize the saved file size
+0030:         """
+0031:         path = Path(path)
+0032:         state = {
+0033:             'model_class': model.__class__.__name__,
+0034:             'model_dict': model.__dict__,
+0035:             'state_dict': ModelSaver.get_state_dict(model)
+0036:         }
+0037:         
+0038:         # Save module hierarchy for reconstruction
+0039:         if hasattr(model, '_modules'):
+0040:             state['modules'] = {
+0041:                 name: module.__class__.__name__ 
+0042:                 for name, module in model._modules.items()
+0043:             }
+0044:             
+0045:         with open(path, 'wb') as f:
+0046:             if optimize:
+0047:                 pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+0048:             else:
+0049:                 pickle.dump(state, f)
+0050:                 
+0051:     @staticmethod
+0052:     def load_model(path: Union[str, Path], custom_classes: Dict[str, type] = None) -> Module:
+0053:         """
+0054:         Load complete model (architecture + parameters).
+0055:         """
+0056:         path = Path(path)
+0057:         with open(path, 'rb') as f:
+0058:             state = pickle.load(f)
+0059:             
+0060:         # Get model class - first try custom classes if provided
+0061:         model_class = None
+0062:         if custom_classes and state['model_class'] in custom_classes:
+0063:             model_class = custom_classes[state['model_class']]
+0064:         
+0065:         if model_class is None:
+0066:             # Try modules in this order: nn module, main module, test module
+0067:             import DLpy.nn as nn
+0068:             model_class = getattr(nn, state['model_class'], None)
+0069:             
+0070:             if model_class is None:
+0071:                 # Try test module
+0072:                 import sys
+0073:                 test_module_names = ['__main__', 'tests.test_serialization']
+0074:                 for module_name in test_module_names:
+0075:                     if module_name in sys.modules:
+0076:                         model_class = getattr(sys.modules[module_name], state['model_class'], None)
+0077:                         if model_class is not None:
+0078:                             break
+0079:                             
+0080:         if model_class is None:
+0081:             raise ValueError(f"Unknown model class: {state['model_class']}")
+0082:             
+0083:         # Create model instance
+0084:         model = model_class()  # Call __init__ to ensure proper initialization
+0085:         
+0086:         # Restore model state
+0087:         for key, value in state['model_dict'].items():
+0088:             if key in model.__dict__:
+0089:                 model.__dict__[key] = value
+0090:                 
+0091:         # Load state dict
+0092:         model.load_state_dict(state['state_dict'])
 0093:         
-0094:     def __setattr__(self, name: str, value: Any) -> None:
-0095:         """Custom setattr that handles parameter registration."""
-0096:         # Handle special module attributes first
-0097:         if name in ['training']:
-0098:             object.__setattr__(self, name, value)
-0099:             return
-0100:             
-0101:         if isinstance(value, Tensor):
-0102:             if not hasattr(self, '_parameters'):
-0103:                 raise TypeError(
-0104:                     "cannot assign parameters before Module.__init__() call"
-0105:                 )
-0106:             self.register_parameter(name, value)
-0107:         elif isinstance(value, Module):
-0108:             if not hasattr(self, '_modules'):
-0109:                 raise TypeError(
-0110:                     "cannot assign module before Module.__init__() call"
-0111:                 )
-0112:             self.add_module(name, value)
-0113:         else:
-0114:             object.__setattr__(self, name, value)
-0115:             
-0116:     def parameters(self) -> Iterator[Tensor]:
-0117:         """Returns an iterator over module parameters."""
-0118:         for param in self._parameters.values():
-0119:             if param is not None:
-0120:                 yield param
-0121:         for module in self._modules.values():
-0122:             if module is not None:
-0123:                 yield from module.parameters()
-0124:                 
-0125:     def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
-0126:         """Returns an iterator over module parameters, yielding both the
-0127:         name of the parameter as well as the parameter itself."""
-0128:         for name, param in self._parameters.items():
-0129:             if param is not None:
-0130:                 yield name, param
-0131:         for mname, module in self._modules.items():
-0132:             if module is not None:
-0133:                 for name, param in module.named_parameters():
-0134:                     yield f"{mname}.{name}", param
-0135:                     
-0136:     def train(self, mode: bool = True) -> 'Module':
-0137:         """Sets the module in training mode."""
-0138:         self.training = mode
-0139:         for module in self._modules.values():
-0140:             if module is not None:
-0141:                 module.train(mode)
-0142:         return self
-0143:         
-0144:     def eval(self) -> 'Module':
-0145:         """Sets the module in evaluation mode."""
-0146:         return self.train(False)
-0147:         
-0148:     def __call__(self, *args, **kwargs):
-0149:         return self.forward(*args, **kwargs)
-0150:         
-0151:     def forward(self, *args, **kwargs):
-0152:         """Define the computation performed at every call."""
-0153:         raise NotImplementedError
-0154:         
-0155:     def __repr__(self):
-0156:         """Returns a string representation of the module."""
-0157:         extra_lines = []
-0158:         extra_repr = self.extra_repr()
-0159:         if extra_repr:
-0160:             extra_lines = extra_repr.split('\n')
-0161:             
-0162:         child_lines = []
-0163:         for key, module in self._modules.items():
-0164:             mod_str = repr(module)
-0165:             mod_str = _addindent(mod_str, 2)
-0166:             child_lines.append('(' + key + '): ' + mod_str)
-0167:             
-0168:         lines = extra_lines + child_lines
-0169:         
-0170:         main_str = self.__class__.__name__ + '('
-0171:         if lines:
-0172:             main_str += '\n  ' + '\n  '.join(lines) + '\n'
-0173:         main_str += ')'
-0174:         return main_str
-0175:         
-0176:     def extra_repr(self) -> str:
-0177:         """Set the extra representation of the module."""
-0178:         return ''
-0179: 
-0180: def _addindent(s_: str, numSpaces: int) -> str:
-0181:     """Helper for indenting multiline strings."""
-0182:     s = s_.split('\n')
-0183:     if len(s) == 1:
-0184:         return s_
-0185:     first = s.pop(0)
-0186:     s = [(numSpaces * ' ') + line for line in s]
-0187:     return '\n'.join([first] + s)
+0094:         return model
+0095:     
+0096:     @staticmethod
+0097:     def save_state_dict(model: Module, path: Union[str, Path]) -> None:
+0098:         """
+0099:         Save only the model's state dictionary (parameters).
+0100:         
+0101:         Args:
+0102:             model: The model whose parameters to save
+0103:             path: Path where to save the state dict
+0104:         """
+0105:         path = Path(path)
+0106:         state_dict = ModelSaver.get_state_dict(model)
+0107:         np.savez(path, **state_dict)
+0108:         
+0109:     @staticmethod
+0110:     def load_state_dict(model: Module, path: Union[str, Path]) -> None:
+0111:         """
+0112:         Load parameters into an existing model.
+0113:         
+0114:         Args:
+0115:             model: The model to load parameters into
+0116:             path: Path to the saved state dict
+0117:         """
+0118:         path = Path(path)
+0119:         if path.suffix != '.npz':
+0120:             path = path.with_suffix('.npz')
+0121:             
+0122:         state_dict = dict(np.load(path))
+0123:         model.load_state_dict(state_dict)
+0124:         
+0125:     @staticmethod
+0126:     def save_checkpoint(path: Union[str, Path],
+0127:                        model: Module,
+0128:                        optimizer: Any = None,
+0129:                        epoch: int = None,
+0130:                        loss: float = None,
+0131:                        additional_data: Dict[str, Any] = None) -> None:
+0132:         """
+0133:         Save a training checkpoint including model, optimizer and training state.
+0134:         
+0135:         Args:
+0136:             path: Path where to save the checkpoint
+0137:             model: The model to checkpoint
+0138:             optimizer: The optimizer to checkpoint (optional)
+0139:             epoch: Current epoch number (optional)
+0140:             loss: Current loss value (optional)
+0141:             additional_data: Additional data to save (optional)
+0142:         """
+0143:         path = Path(path)
+0144:         checkpoint = {
+0145:             'model_state_dict': ModelSaver.get_state_dict(model),
+0146:             'optimizer_state_dict': optimizer.state_dict() if optimizer else None,
+0147:             'epoch': epoch,
+0148:             'loss': loss,
+0149:             'additional_data': additional_data or {}
+0150:         }
+0151:         
+0152:         with open(path, 'wb') as f:
+0153:             pickle.dump(checkpoint, f)
+0154:             
+0155:     @staticmethod
+0156:     def load_checkpoint(path: Union[str, Path],
+0157:                        model: Module,
+0158:                        optimizer: Any = None) -> Dict[str, Any]:
+0159:         """
+0160:         Load a training checkpoint.
+0161:         
+0162:         Args:
+0163:             path: Path to the checkpoint
+0164:             model: The model to load state into
+0165:             optimizer: The optimizer to load state into (optional)
+0166:             
+0167:         Returns:
+0168:             Dictionary containing the non-model/optimizer checkpoint data
+0169:         """
+0170:         path = Path(path)
+0171:         with open(path, 'rb') as f:
+0172:             checkpoint = pickle.load(f)
+0173:             
+0174:         model.load_state_dict(checkpoint['model_state_dict'])
+0175:         if optimizer and checkpoint['optimizer_state_dict']:
+0176:             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+0177:             
+0178:         return {
+0179:             'epoch': checkpoint['epoch'],
+0180:             'loss': checkpoint['loss'],
+0181:             'additional_data': checkpoint['additional_data']
+0182:         }
+0183:         
+0184:     @staticmethod
+0185:     def get_state_dict(model: Module) -> Dict[str, np.ndarray]:
+0186:         """Gets the state dictionary from a model."""
+0187:         state_dict = {}
+0188:         for name, param in model.named_parameters():
+0189:             if param is not None:
+0190:                 state_dict[name] = param.data
+0191:         for name, buffer in model._buffers.items():
+0192:             if buffer is not None:
+0193:                 state_dict[name] = buffer.data
+0194:         return state_dict
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\core\tensor.py
 // ----------------------------------------
@@ -1149,55 +1385,57 @@
 0008: from .batch_norm import BatchNorm1d, BatchNorm2d
 0009: from .layer_norm import LayerNorm
 0010: from .dropout import Dropout, Dropout2d
-0011: from .activations import (
-0012:     relu, leaky_relu, elu, gelu, sigmoid, tanh,
-0013:     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
-0014: )
-0015: from .conv2d import Conv2d 
-0016: from .pooling import MaxPool2d, AvgPool2d
-0017: from .normalization import GroupNorm, InstanceNorm2d
-0018: from .rnn import LSTM, GRU, LSTMCell, GRUCell  # Add this line
-0019: 
-0020: __all__ = [
-0021:     # Layers
-0022:     'Linear',
-0023:     'BatchNorm1d',
-0024:     'BatchNorm2d',
-0025:     'LayerNorm',
-0026:     'Dropout',
-0027:     'Dropout2d',
-0028:     
-0029:     # Activation functions
-0030:     'relu',
-0031:     'leaky_relu',
-0032:     'elu',
-0033:     'gelu',
-0034:     'sigmoid',
-0035:     'tanh',
-0036:     'ReLU',
-0037:     'LeakyReLU',
-0038:     'ELU',
-0039:     'GELU',
-0040:     'Sigmoid',
-0041:     'Tanh',
-0042: 
-0043:     # Convolutional layers
-0044:     'Conv2d',
-0045: 
-0046:     # Pooling layers
-0047:     'MaxPool2d',
-0048:     'AvgPool2d',
-0049: 
-0050:     # Normalization layers
-0051:     'GroupNorm',
-0052:     'InstanceNorm2d',
-0053:     
-0054:     # RNN layers
-0055:     'LSTM',
-0056:     'GRU',
-0057:     'LSTMCell',
-0058:     'GRUCell'
-0059: ]
+0011: from .sequential import Sequential
+0012: from .activations import (
+0013:     relu, leaky_relu, elu, gelu, sigmoid, tanh,
+0014:     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
+0015: )
+0016: from .conv2d import Conv2d 
+0017: from .pooling import MaxPool2d, AvgPool2d
+0018: from .normalization import GroupNorm, InstanceNorm2d
+0019: from .rnn import LSTM, GRU, LSTMCell, GRUCell
+0020: 
+0021: __all__ = [
+0022:     # Layers
+0023:     'Linear',
+0024:     'BatchNorm1d',
+0025:     'BatchNorm2d',
+0026:     'LayerNorm',
+0027:     'Dropout',
+0028:     'Dropout2d',
+0029:     'Sequential',
+0030:     
+0031:     # Activation functions
+0032:     'relu',
+0033:     'leaky_relu',
+0034:     'elu',
+0035:     'gelu',
+0036:     'sigmoid',
+0037:     'tanh',
+0038:     'ReLU',
+0039:     'LeakyReLU',
+0040:     'ELU',
+0041:     'GELU',
+0042:     'Sigmoid',
+0043:     'Tanh',
+0044: 
+0045:     # Convolutional layers
+0046:     'Conv2d',
+0047: 
+0048:     # Pooling layers
+0049:     'MaxPool2d',
+0050:     'AvgPool2d',
+0051: 
+0052:     # Normalization layers
+0053:     'GroupNorm',
+0054:     'InstanceNorm2d',
+0055:     
+0056:     # RNN layers
+0057:     'LSTM',
+0058:     'GRU',
+0059:     'LSTMCell',
+0060:     'GRUCell'
+0061: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\activations.py
 // ----------------------------------------
@@ -1856,81 +2094,65 @@
 0002: import numpy as np
 0003: from ..core import Tensor, Function, Module
 0004: 
-0005: class LinearFunction(Function):
-0006:     @staticmethod
-0007:     def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
-0008:         # Save tensors needed for backward pass
-0009:         ctx.save_for_backward(input, weight, bias)
-0010:         
-0011:         # Compute output: y = xW^T + b
-0012:         output = input.data @ weight.data
-0013:         if bias is not None:
-0014:             output += bias.data
-0015:             
-0016:         return Tensor(output)
-0017:     
-0018:     @staticmethod
-0019:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
-0020:         # Retrieve saved tensors
-0021:         input, weight, bias = ctx.saved_tensors
-0022:         
-0023:         # Compute gradient with respect to input: dx = dout @ W
-0024:         if input.requires_grad:
-0025:             grad_dict[id(input)] = grad_output @ weight.data.T
-0026:             
-0027:         # Compute gradient with respect to weight: dW = x^T @ dout
-0028:         if weight.requires_grad:
-0029:             grad_dict[id(weight)] = input.data.T @ grad_output
-0030:             
-0031:         # Compute gradient with respect to bias: db = sum(dout, dim=0)
-0032:         if bias is not None and bias.requires_grad:
-0033:             grad_dict[id(bias)] = grad_output.sum(axis=0)
-0034: 
-0035: class Linear(Module):
-0036:     """
-0037:     Applies a linear transformation to the incoming data: y = xW^T + b
-0038:     
-0039:     Args:
-0040:         in_features: size of each input sample
-0041:         out_features: size of each output sample
-0042:         bias: If set to False, the layer will not learn an additive bias
-0043:         
-0044:     Shape:
-0045:         - Input: (batch_size, in_features)
-0046:         - Output: (batch_size, out_features)
-0047:         
-0048:     Attributes:
-0049:         weight: the learnable weights of shape (in_features, out_features)
-0050:         bias: the learnable bias of shape (out_features,)
-0051:     """
-0052:     
-0053:     def __init__(self, in_features: int, out_features: int, bias: bool = True):
-0054:         super().__init__()
+0005: class Linear(Module):
+0006:     """
+0007:     Applies a linear transformation to the incoming data: y = xW^T + b
+0008:     
+0009:     Args:
+0010:         in_features: size of each input sample
+0011:         out_features: size of each output sample
+0012:         bias: If set to False, the layer will not learn an additive bias
+0013:     """
+0014:     
+0015:     def __init__(self, in_features: int, out_features: int, bias: bool = True):
+0016:         super().__init__()
+0017:         
+0018:         self.in_features = in_features
+0019:         self.out_features = out_features
+0020:         
+0021:         # Initialize weights using He initialization
+0022:         bound = np.sqrt(2.0 / in_features)
+0023:         weight = Tensor(
+0024:             np.random.uniform(-bound, bound, (out_features, in_features)),
+0025:             requires_grad=True
+0026:         )
+0027:         self.register_parameter('weight', weight)
+0028:         
+0029:         if bias:
+0030:             bias = Tensor(np.zeros(out_features), requires_grad=True)
+0031:             self.register_parameter('bias', bias)
+0032:         else:
+0033:             self.register_parameter('bias', None)
+0034:             
+0035:     def forward(self, input: Tensor) -> Tensor:
+0036:         """Forward pass of the linear layer."""
+0037:         return LinearFunction.apply(input, self.weight, self.bias)
+0038: 
+0039: class LinearFunction(Function):
+0040:     @staticmethod
+0041:     def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
+0042:         # Save tensors needed for backward pass
+0043:         ctx.save_for_backward(input, weight, bias)
+0044:         
+0045:         # Compute output: y = xW^T + b
+0046:         output = input.data @ weight.data.T
+0047:         if bias is not None:
+0048:             output = output + bias.data
+0049:             
+0050:         return Tensor(output)
+0051:     
+0052:     @staticmethod
+0053:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0054:         input, weight, bias = ctx.saved_tensors
 0055:         
-0056:         self.in_features = in_features
-0057:         self.out_features = out_features
-0058:         
-0059:         # Initialize weights using He initialization
-0060:         bound = np.sqrt(2.0 / in_features)
-0061:         weight = Tensor(
-0062:             np.random.uniform(-bound, bound, (in_features, out_features)),
-0063:             requires_grad=True
-0064:         )
-0065:         self.register_parameter('weight', weight)
-0066:         
-0067:         if bias:
-0068:             bias = Tensor(np.zeros(out_features), requires_grad=True)
-0069:             self.register_parameter('bias', bias)
-0070:         else:
-0071:             self.register_parameter('bias', None)
-0072:             
-0073:     def forward(self, input: Tensor) -> Tensor:
-0074:         """Forward pass of the linear layer."""
-0075:         return LinearFunction.apply(input, self.weight, self.bias)
-0076:             
-0077:     def extra_repr(self) -> str:
-0078:         """Extra information to add to the string representation."""
-0079:         return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
+0056:         if input.requires_grad:
+0057:             grad_dict[id(input)] = grad_output @ weight.data
+0058:             
+0059:         if weight.requires_grad:
+0060:             grad_dict[id(weight)] = grad_output.T @ input.data
+0061:             
+0062:         if bias is not None and bias.requires_grad:
+0063:             grad_dict[id(bias)] = grad_output.sum(axis=0)
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\normalization.py
 // ----------------------------------------
@@ -2511,6 +2733,94 @@
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\sequential.py
 // ----------------------------------------
+0001: # DLpy/nn/sequential.py
+0002: 
+0003: from typing import List, Union, Iterator
+0004: from ..core import Module, Tensor
+0005: from collections import OrderedDict
+0006: 
+0007: class Sequential(Module):
+0008:     """
+0009:     A sequential container.
+0010:     Modules will be added to it in the order they are passed in the constructor.
+0011:     Alternatively, an ordered dict of modules can be passed in.
+0012:     
+0013:     Example usage:
+0014:     >>> net = Sequential(
+0015:     >>>     Linear(10, 5),
+0016:     >>>     ReLU(),
+0017:     >>>     Linear(5, 1)
+0018:     >>> )
+0019:     """
+0020:     
+0021:     def __init__(self, *args):
+0022:         super().__init__()
+0023:         if len(args) == 1 and isinstance(args[0], OrderedDict):
+0024:             for key, module in args[0].items():
+0025:                 self.add_module(key, module)
+0026:         else:
+0027:             for idx, module in enumerate(args):
+0028:                 self.add_module(str(idx), module)
+0029:                 
+0030:     def forward(self, x: Tensor) -> Tensor:
+0031:         """Forward pass through all modules in sequence."""
+0032:         for module in self._modules.values():
+0033:             x = module(x)
+0034:         return x
+0035:         
+0036:     def __getitem__(self, idx: Union[slice, int]) -> Union['Sequential', Module]:
+0037:         """Get a module or slice of modules."""
+0038:         if isinstance(idx, slice):
+0039:             return Sequential(OrderedDict(list(self._modules.items())[idx]))
+0040:         else:
+0041:             return list(self._modules.values())[idx]
+0042:             
+0043:     def __len__(self) -> int:
+0044:         """Return number of modules."""
+0045:         return len(self._modules)
+0046:         
+0047:     def __iter__(self) -> Iterator[Module]:
+0048:         """Iterate over modules."""
+0049:         return iter(self._modules.values())
+0050:         
+0051:     def append(self, module: Module) -> None:
+0052:         """Add a module to the end."""
+0053:         self.add_module(str(len(self)), module)
+0054:         
+0055:     def insert(self, index: int, module: Module) -> None:
+0056:         """Insert a module at specified index."""
+0057:         # Shift existing modules
+0058:         for i in range(len(self) - 1, index - 1, -1):
+0059:             if str(i) in self._modules:
+0060:                 self._modules[str(i + 1)] = self._modules[str(i)]
+0061:                 del self._modules[str(i)]
+0062:                 
+0063:         # Insert new module
+0064:         self.add_module(str(index), module)
+0065:         
+0066:     def extend(self, modules: List[Module]) -> None:
+0067:         """Add multiple modules to the end."""
+0068:         for module in modules:
+0069:             self.append(module)
+0070:             
+0071:     def pop(self, index: int = -1) -> Module:
+0072:         """Remove and return module at index."""
+0073:         if index < 0:
+0074:             index = len(self) + index
+0075:             
+0076:         if not 0 <= index < len(self):
+0077:             raise IndexError("Index out of range")
+0078:             
+0079:         module = self[index]
+0080:         del self._modules[str(index)]
+0081:         
+0082:         # Shift remaining modules
+0083:         for i in range(index + 1, len(self) + 1):
+0084:             if str(i) in self._modules:
+0085:                 self._modules[str(i - 1)] = self._modules[str(i)]
+0086:                 del self._modules[str(i)]
+0087:                 
+0088:         return module
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\__init__.py
 // ----------------------------------------
@@ -9308,6 +9618,247 @@
 0290:         with pytest.raises(ValueError):
 0291:             GRU(5, 6, dropout=1.1)
 
+// File: C:\Users\aluja\Desktop\DLpy\tests\test_serialization.py
+// ----------------------------------------
+0001: import pytest
+0002: import numpy as np
+0003: from pathlib import Path
+0004: import tempfile
+0005: import os
+0006: 
+0007: from DLpy.core import Module, Tensor
+0008: from DLpy.nn import Linear, ReLU
+0009: from DLpy.core.serialization import ModelSaver
+0010: from DLpy.optim import Adam
+0011: 
+0012: class SimpleModel(Module):
+0013:     """Simple test model."""
+0014:     def __init__(self):
+0015:         super().__init__()
+0016:         # Initialize layers
+0017:         self.fc1 = Linear(10, 5)
+0018:         self.fc2 = Linear(5, 1)
+0019:         
+0020:         # Manual initialization to ensure different weights
+0021:         np.random.seed()  # Reset seed for each instance
+0022:         bound1 = np.sqrt(2.0 / 10)  # He initialization
+0023:         bound2 = np.sqrt(2.0 / 5)  
+0024:         self.fc1.weight.data = np.random.uniform(-bound1, bound1, (5, 10))
+0025:         self.fc2.weight.data = np.random.uniform(-bound2, bound2, (1, 5))
+0026:         self.fc1.bias.data = np.random.uniform(-0.1, 0.1, (5,))
+0027:         self.fc2.bias.data = np.random.uniform(-0.1, 0.1, (1,))
+0028:         
+0029:     def forward(self, x):
+0030:         x = self.fc1(x)
+0031:         x = np.maximum(0, x.data)  # ReLU
+0032:         return self.fc2(Tensor(x))
+0033: 
+0034: class TestModelSaver:
+0035:     """Tests for ModelSaver functionality."""
+0036:     
+0037:     @pytest.fixture
+0038:     def model(self):
+0039:         """Create a simple model for testing."""
+0040:         return SimpleModel()
+0041:     
+0042:     @pytest.fixture
+0043:     def temp_dir(self):
+0044:         """Create a temporary directory for test files."""
+0045:         with tempfile.TemporaryDirectory() as tmp_dir:
+0046:             yield Path(tmp_dir)
+0047:             
+0048:     def test_save_load_model(self, model, temp_dir):
+0049:         """Test saving and loading complete model."""
+0050:         save_path = temp_dir / "model.pkl"
+0051:         
+0052:         # Save model
+0053:         ModelSaver.save_model(model, save_path)
+0054:         assert save_path.exists()
+0055:         
+0056:         # Load model
+0057:         loaded_model = ModelSaver.load_model(save_path)
+0058:         
+0059:         # Verify model structure
+0060:         assert isinstance(loaded_model, SimpleModel)
+0061:         assert hasattr(loaded_model, 'fc1')
+0062:         assert hasattr(loaded_model, 'fc2')  # Changed from 'relu' to 'fc2'
+0063:         
+0064:         # Verify parameters
+0065:         for (n1, p1), (n2, p2) in zip(model.named_parameters(), 
+0066:                                     loaded_model.named_parameters()):
+0067:             assert n1 == n2
+0068:             assert np.array_equal(p1.data, p2.data)
+0069:             
+0070:     def test_save_load_state_dict(self, model, temp_dir):
+0071:         """Test saving and loading state dictionary."""
+0072:         save_path = temp_dir / "state.npz"
+0073:         
+0074:         # Initialize a second model with different parameters
+0075:         model2 = SimpleModel()
+0076:         
+0077:         # Verify models have different parameters
+0078:         for p1, p2 in zip(model.parameters(), model2.parameters()):
+0079:             assert not np.array_equal(p1.data, p2.data)
+0080:             
+0081:         # Save state dict from first model
+0082:         ModelSaver.save_state_dict(model, save_path)
+0083:         assert save_path.exists()
+0084:         
+0085:         # Load state dict into second model
+0086:         ModelSaver.load_state_dict(model2, save_path)
+0087:         
+0088:         # Verify parameters are now the same
+0089:         for p1, p2 in zip(model.parameters(), model2.parameters()):
+0090:             assert np.array_equal(p1.data, p2.data)
+0091:             
+0092:     def test_checkpoint_save_load(self, model, temp_dir):
+0093:         """Test saving and loading checkpoints."""
+0094:         save_path = temp_dir / "checkpoint.pkl"
+0095:         
+0096:         # Create optimizer and some training state
+0097:         optimizer = Adam(model.parameters())
+0098:         epoch = 10
+0099:         loss = 0.5
+0100:         additional_data = {'learning_rate': 0.001}
+0101:         
+0102:         # Save checkpoint
+0103:         ModelSaver.save_checkpoint(
+0104:             save_path,
+0105:             model=model,
+0106:             optimizer=optimizer,
+0107:             epoch=epoch,
+0108:             loss=loss,
+0109:             additional_data=additional_data
+0110:         )
+0111:         assert save_path.exists()
+0112:         
+0113:         # Create new model and optimizer
+0114:         new_model = SimpleModel()
+0115:         new_optimizer = Adam(new_model.parameters())
+0116:         
+0117:         # Load checkpoint
+0118:         checkpoint_data = ModelSaver.load_checkpoint(
+0119:             save_path,
+0120:             model=new_model,
+0121:             optimizer=new_optimizer
+0122:         )
+0123:         
+0124:         # Verify model parameters
+0125:         for p1, p2 in zip(model.parameters(), new_model.parameters()):
+0126:             assert np.array_equal(p1.data, p2.data)
+0127:             
+0128:         # Verify checkpoint data
+0129:         assert checkpoint_data['epoch'] == epoch
+0130:         assert checkpoint_data['loss'] == loss
+0131:         assert checkpoint_data['additional_data'] == additional_data
+0132:         
+0133:     def test_custom_model_save_load(self, temp_dir):
+0134:         """Test saving and loading model with custom architecture."""
+0135:         class CustomModel(Module):
+0136:             def __init__(self):
+0137:                 super().__init__()
+0138:                 self.custom_param = Tensor([1.0, 2.0], requires_grad=True)
+0139:                 
+0140:         model = CustomModel()
+0141:         save_path = temp_dir / "custom_model.pkl"
+0142:         
+0143:         # Save model
+0144:         ModelSaver.save_model(model, save_path)
+0145:         
+0146:         # Load model with custom class mapping
+0147:         loaded_model = ModelSaver.load_model(
+0148:             save_path,
+0149:             custom_classes={'CustomModel': CustomModel}
+0150:         )
+0151:         
+0152:         assert isinstance(loaded_model, CustomModel)
+0153:         assert np.array_equal(loaded_model.custom_param.data, model.custom_param.data)
+0154:             
+0155:     def test_invalid_paths(self, model):
+0156:         """Test error handling for invalid paths."""
+0157:         # Non-existent directory
+0158:         with pytest.raises(OSError):
+0159:             ModelSaver.save_model(model, "/nonexistent/path/model.pkl")
+0160:             
+0161:         # Invalid file path
+0162:         with pytest.raises(OSError):
+0163:             ModelSaver.load_model("/nonexistent/model.pkl")
+0164:             
+0165:     def test_incompatible_state_dict(self, model, temp_dir):
+0166:         """Test loading incompatible state dict."""
+0167:         save_path = temp_dir / "state.npz"
+0168:         
+0169:         # Create different model
+0170:         different_model = SimpleModel()
+0171:         different_model.fc1 = Linear(5, 2)  # Different architecture
+0172:         
+0173:         # Save state dict from first model
+0174:         ModelSaver.save_state_dict(model, save_path)
+0175:         
+0176:         # Loading should raise error due to incompatible architecture
+0177:         with pytest.raises(ValueError):
+0178:             ModelSaver.load_state_dict(different_model, save_path)
+0179:             
+0180:     def test_buffer_saving_loading(self, temp_dir):
+0181:         """Test saving and loading model with buffers."""
+0182:         class ModelWithBuffer(Module):
+0183:             def __init__(self):
+0184:                 super().__init__()
+0185:                 self.register_buffer('running_mean', Tensor([0.0, 0.0]))
+0186:                 self.register_buffer('running_var', Tensor([1.0, 1.0]))
+0187:                 
+0188:         model = ModelWithBuffer()
+0189:         save_path = temp_dir / "model_with_buffer.pkl"
+0190:         
+0191:         # Save model
+0192:         ModelSaver.save_model(model, save_path)
+0193:         
+0194:         # Load model
+0195:         loaded_model = ModelSaver.load_model(
+0196:             save_path,
+0197:             custom_classes={'ModelWithBuffer': ModelWithBuffer}
+0198:         )
+0199:         
+0200:         # Verify buffers
+0201:         assert np.array_equal(loaded_model.running_mean.data, model.running_mean.data)
+0202:         assert np.array_equal(loaded_model.running_var.data, model.running_var.data)
+0203:         
+0204:     def test_optimizer_state_save_load(self, model, temp_dir):
+0205:         """Test saving and loading optimizer state."""
+0206:         save_path = temp_dir / "checkpoint.pkl"
+0207:         
+0208:         # Create optimizer and perform an update
+0209:         optimizer = Adam(model.parameters())
+0210:         x = Tensor(np.random.randn(1, 10))
+0211:         y = Tensor([[1.0]])
+0212:         
+0213:         output = model(x)
+0214:         loss = ((output - y) ** 2).mean()
+0215:         optimizer.zero_grad()
+0216:         loss.backward()
+0217:         optimizer.step()
+0218:         
+0219:         # Save checkpoint
+0220:         ModelSaver.save_checkpoint(save_path, model, optimizer)
+0221:         
+0222:         # Create new model and optimizer
+0223:         new_model = SimpleModel()
+0224:         new_optimizer = Adam(new_model.parameters())
+0225:         
+0226:         # Load checkpoint
+0227:         ModelSaver.load_checkpoint(save_path, new_model, new_optimizer)
+0228:         
+0229:         # Verify optimizer state
+0230:         assert optimizer.state.keys() == new_optimizer.state.keys()
+0231:         for key in optimizer.state:
+0232:             old_state = optimizer.state[key]
+0233:             new_state = new_optimizer.state[key]
+0234:             for k in old_state:
+0235:                 if isinstance(old_state[k], np.ndarray):
+0236:                     assert np.array_equal(old_state[k], new_state[k])
+0237:                 else:
+0238:                     assert old_state[k] == new_state[k]
+
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
 // ----------------------------------------
 0001: import pytest
@@ -9404,4 +9955,4 @@
 0092:         assert 'requires_grad=True' in repr(t)
 
 // ----------------------------------------
-// Total Python files found: 61
+// Total Python files found: 63

@@ -8,6 +8,7 @@ from .linear import Linear
 from .batch_norm import BatchNorm1d, BatchNorm2d
 from .layer_norm import LayerNorm
 from .dropout import Dropout, Dropout2d
+from .sequential import Sequential
 from .activations import (
     relu, leaky_relu, elu, gelu, sigmoid, tanh,
     ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
@@ -15,7 +16,7 @@ from .activations import (
 from .conv2d import Conv2d 
 from .pooling import MaxPool2d, AvgPool2d
 from .normalization import GroupNorm, InstanceNorm2d
-from .rnn import LSTM, GRU, LSTMCell, GRUCell  # Add this line
+from .rnn import LSTM, GRU, LSTMCell, GRUCell
 
 __all__ = [
     # Layers
@@ -25,6 +26,7 @@ __all__ = [
     'LayerNorm',
     'Dropout',
     'Dropout2d',
+    'Sequential',
     
     # Activation functions
     'relu',
