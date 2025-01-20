@@ -1,4 +1,4 @@
-﻿// Python Files Concatenated on 01/19/2025 17:42:01
+﻿// Python Files Concatenated on 01/20/2025 12:51:09
 // ----------------------------------------
 
 
@@ -1691,1142 +1691,1204 @@
 0017:     groups: int,
 0018:     mode: str = ConvMode.STANDARD,
 0019:     offset: Optional[Tensor] = None,
-0020:     weight: Optional[Tensor] = None, # Added weight parameter
+0020:     weight: Optional[Tensor] = None,
 0021:     mask: Optional[Tensor] = None
 0022: ) -> None:
 0023:     """Validates convolution parameters."""
 0024:     N, C_in, H, W = x_shape
 0025:     C_out, C_in_per_group, kH, kW = weight_shape
 0026: 
-0027:     if C_in % groups != 0:
-0028:         raise ValueError(f"Input channels ({C_in}) must be divisible by groups ({groups})")
-0029:         
-0030:     if C_out % groups != 0:
-0031:         raise ValueError(f"Output channels ({C_out}) must be divisible by groups ({groups})")
-0032:         
-0033:     if C_in_per_group != C_in // groups:
-0034:         raise ValueError(f"Expected {C_in // groups} input channels per group, got {C_in_per_group}")
-0035:         
-0036:     if mode not in [ConvMode.STANDARD, ConvMode.TRANSPOSED, ConvMode.DEFORMABLE]:
-0037:         raise ValueError(f"Invalid convolution mode: {mode}")
-0038:         
-0039:     if mode == ConvMode.DEFORMABLE:
-0040:         # Check for offset either in direct parameter or weight.offset
-0041:         offset_tensor = offset
-0042:         if offset_tensor is None and weight is not None:
-0043:             offset_tensor = getattr(weight, 'offset', None)
-0044:             
-0045:         if offset_tensor is None:
-0046:             raise ValueError("Deformable convolution requires offset parameter")
-0047:         
-0048:         # Calculate output size
-0049:         H_out = (H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0] + 1
-0050:         W_out = (W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1] + 1
-0051:         
-0052:         # Check offset tensor shape
-0053:         expected_offset_shape = (N, 2 * kH * kW, H_out, W_out)
-0054:         if offset_tensor.shape != expected_offset_shape:
-0055:             raise ValueError(f"Expected offset shape {expected_offset_shape}, got {offset_tensor.shape}")
-0056:             
-0057:         # Check mask tensor shape if provided
-0058:         if mask is not None:
-0059:             expected_mask_shape = (N, kH * kW, H_out, W_out)
-0060:             if mask.shape != expected_mask_shape:
-0061:                 raise ValueError(f"Expected mask shape {expected_mask_shape}, got {mask.shape}")
-0062: 
-0063: 
-0064: def _pad_input(x: np.ndarray, padding: Tuple[int, int]) -> np.ndarray:
-0065:     """
-0066:     Pads input tensor with zeros.
-0067:     
-0068:     Args:
-0069:         x: Input tensor
-0070:         padding: (padding_height, padding_width)
-0071:     """
-0072:     if padding[0] == 0 and padding[1] == 0:
-0073:         return x
-0074:     pad_width = ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1]))
-0075:     return np.pad(x, pad_width, mode='constant', constant_values=0)
-0076: 
-0077: def _get_output_shape(input_shape: Tuple[int, ...], kernel_size: Tuple[int, int],
-0078:                     stride: Tuple[int, int], padding: Tuple[int, int],
-0079:                     dilation: Tuple[int, int], mode: str = ConvMode.STANDARD) -> Tuple[int, int]:
-0080:     """
-0081:     Calculates output shape for different convolution types.
-0082:     """
-0083:     if mode == ConvMode.STANDARD:
-0084:         H = ((input_shape[2] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) 
-0085:              // stride[0] + 1)
-0086:         W = ((input_shape[3] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) 
-0087:              // stride[1] + 1)
-0088:     elif mode == ConvMode.TRANSPOSED:
-0089:         H = (input_shape[2] - 1) * stride[0] - 2 * padding[0] + dilation[0] * (kernel_size[0] - 1) + 1
-0090:         W = (input_shape[3] - 1) * stride[1] - 2 * padding[1] + dilation[1] * (kernel_size[1] - 1) + 1
-0091:     else:  # Deformable follows standard conv shape
-0092:         H = ((input_shape[2] + 2 * padding[0] - kernel_size[0]) // stride[0] + 1)
-0093:         W = ((input_shape[3] + 2 * padding[1] - kernel_size[1]) // stride[1] + 1)
-0094:     return H, W
-0095: 
-0096: def _get_deformable_offsets(offset_tensor: np.ndarray, kernel_size: Tuple[int, int],
-0097:                          input_shape: Tuple[int, ...]) -> np.ndarray:
-0098:     """
-0099:     Computes sampling locations for deformable convolution.
-0100:     
-0101:     Args:
-0102:         offset_tensor: Offset values of shape (N, 2*kH*kW, H_out, W_out)
-0103:         kernel_size: Size of the convolving kernel (kH, kW)
-0104:         input_shape: Shape of input tensor (N, C, H, W)
-0105:         
-0106:     Returns:
-0107:         Sampling locations of shape (N, H_out*W_out, kH*kW, 2)
-0108:     """
-0109:     N, C, H, W = input_shape
-0110:     kH, kW = kernel_size
-0111:     H_out, W_out = offset_tensor.shape[2:]
-0112:     
-0113:     # Convert memoryview to numpy array if needed
-0114:     if isinstance(offset_tensor, memoryview):
-0115:         offset_tensor = np.array(offset_tensor)
-0116:     
-0117:     # Generate base sampling grid for each output position
-0118:     base_h = np.arange(kH)
-0119:     base_w = np.arange(kW)
-0120:     mesh_h, mesh_w = np.meshgrid(base_h, base_w, indexing='ij')
-0121:     base_grid = np.stack([mesh_h, mesh_w], axis=-1)  # (kH, kW, 2)
-0122:     
-0123:     # Reshape for broadcasting
-0124:     kHW = kH * kW
-0125:     base_grid = base_grid.reshape(-1, 2).T  # (2, kH*kW)
-0126:     base_grid = base_grid[None, None, :, :]  # (1, 1, 2, kH*kW)
-0127:     
-0128:     # Reshape offset tensor to (N, H_out*W_out, 2, kH*kW)
-0129:     offset_tensor = offset_tensor.reshape(N, 2, kHW, H_out, W_out)
-0130:     offset_tensor = offset_tensor.transpose(0, 3, 4, 1, 2)  # (N, H_out, W_out, 2, kH*kW)
-0131:     offset_tensor = offset_tensor.reshape(N, H_out * W_out, 2, kHW)
-0132:     
-0133:     # Broadcast base grid to match offset tensor shape
-0134:     base_grid = np.broadcast_to(base_grid, (N, H_out * W_out, 2, kHW))
-0135:     
-0136:     # Add offsets to base grid
-0137:     sampling_locations = base_grid + offset_tensor
-0138:     
-0139:     # Ensure output is in correct format (N, H_out*W_out, kH*kW, 2)
-0140:     return sampling_locations.transpose(0, 1, 3, 2)
-0141: 
-0142: def _bilinear_interpolate(input: np.ndarray, points: np.ndarray, align_corners: bool = True) -> np.ndarray:
-0143:     """
-0144:     Performs bilinear interpolation on the input tensor at specified points.
-0145:     
-0146:     Args:
-0147:         input: Input tensor (N, C, H, W)
-0148:         points: Points to sample (N, P, 2) in normalized coordinates [-1, 1]
-0149:         align_corners: Whether to align corners in interpolation
-0150:         
-0151:     Returns:
-0152:         Interpolated values (N, C, P)
-0153:     """
-0154:     N, C, H, W = input.shape
-0155:     
-0156:     # Ensure points is correct shape (N, P, 2)
-0157:     if points.ndim == 4:
-0158:         points = points.reshape(points.shape[0], -1, 2)
-0159:     
-0160:     _, P, _ = points.shape
-0161:     
-0162:     # Convert normalized coordinates to pixel coordinates
-0163:     if align_corners:
-0164:         x = (points[..., 0] + 1) * (W - 1) / 2
-0165:         y = (points[..., 1] + 1) * (H - 1) / 2
-0166:     else:
-0167:         x = ((points[..., 0] + 1) * W - 1) / 2
-0168:         y = ((points[..., 1] + 1) * H - 1) / 2
+0027:     # Basic validations for all modes
+0028:     if mode not in [ConvMode.STANDARD, ConvMode.TRANSPOSED, ConvMode.DEFORMABLE]:
+0029:         raise ValueError(f"Invalid convolution mode: {mode}")
+0030: 
+0031:     # Validate groups configuration
+0032:     if C_in % groups != 0:
+0033:         raise ValueError(f"Input channels ({C_in}) must be divisible by groups ({groups})")
+0034:     if C_out % groups != 0:
+0035:         raise ValueError(f"Output channels ({C_out}) must be divisible by groups ({groups})")
+0036: 
+0037:     # Validate kernel dimensions
+0038:     if kH <= 0 or kW <= 0:
+0039:         raise ValueError(f"Kernel dimensions must be positive, got ({kH}, {kW})")
+0040: 
+0041:     # Validate stride and dilation
+0042:     if any(s <= 0 for s in stride):
+0043:         raise ValueError(f"Stride values must be positive, got {stride}")
+0044:     if any(d <= 0 for d in dilation):
+0045:         raise ValueError(f"Dilation values must be positive, got {dilation}")
+0046:     
+0047:     # Validate padding
+0048:     if any(p < 0 for p in padding):
+0049:         raise ValueError(f"Padding values must be non-negative, got {padding}")
+0050: 
+0051:     if mode == ConvMode.TRANSPOSED:
+0052:         # For transposed conv:
+0053:         # - x shape is (N, C_in, H, W)
+0054:         # - weight shape should be (C_out, C_in, kH, kW)
+0055:         # - C_in from x should match C_in_per_group * groups from weight
+0056:         if C_in_per_group != C_in // groups:
+0057:             raise ValueError(
+0058:                 f"For transposed conv, expected {C_in // groups} input channels per group, "
+0059:                 f"got {C_in_per_group}"
+0060:             )
+0061:             
+0062:         # Calculate and validate output size
+0063:         H_out = (H - 1) * stride[0] - 2 * padding[0] + kH
+0064:         W_out = (W - 1) * stride[1] - 2 * padding[1] + kW
+0065:         if H_out <= 0 or W_out <= 0:
+0066:             raise ValueError(
+0067:                 f"Transposed conv output size would be negative or zero: ({H_out}, {W_out})"
+0068:             )
+0069:     
+0070:     else:  # Standard and deformable validation
+0071:         # Validate channels per group
+0072:         if C_in_per_group != C_in // groups:
+0073:             raise ValueError(f"Expected {C_in // groups} input channels per group, got {C_in_per_group}")
+0074:         
+0075:         # Calculate and validate output size
+0076:         H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0077:         W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0078:         if H_out <= 0 or W_out <= 0:
+0079:             raise ValueError(
+0080:                 f"Conv output size would be negative or zero: ({H_out}, {W_out})"
+0081:             )
+0082: 
+0083:     if mode == ConvMode.DEFORMABLE:
+0084:         # Validate offset tensor presence and shape
+0085:         if offset is None and weight is not None:
+0086:             offset = getattr(weight, 'offset', None)
+0087:             
+0088:         if offset is None:
+0089:             raise ValueError("Deformable convolution requires offset parameter")
+0090:         
+0091:         # Calculate output size for offset validation
+0092:         H_out = (H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0] + 1
+0093:         W_out = (W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1] + 1
+0094:         
+0095:         # Validate offset tensor shape
+0096:         expected_offset_shape = (N, 2 * kH * kW, H_out, W_out)
+0097:         if offset.shape != expected_offset_shape:
+0098:             raise ValueError(f"Expected offset shape {expected_offset_shape}, got {offset.shape}")
+0099:             
+0100:         # Validate mask tensor if present
+0101:         if mask is not None:
+0102:             expected_mask_shape = (N, kH * kW, H_out, W_out)
+0103:             if mask.shape != expected_mask_shape:
+0104:                 raise ValueError(f"Expected mask shape {expected_mask_shape}, got {mask.shape}")
+0105: 
+0106: def _pad_input(x: np.ndarray, padding: Tuple[int, int]) -> np.ndarray:
+0107:     """
+0108:     Pads input tensor with zeros.
+0109:     
+0110:     Args:
+0111:         x: Input tensor
+0112:         padding: (padding_height, padding_width)
+0113:     """
+0114:     if padding[0] == 0 and padding[1] == 0:
+0115:         return x
+0116:     pad_width = ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1]))
+0117:     return np.pad(x, pad_width, mode='constant', constant_values=0)
+0118: 
+0119: def _get_output_shape(input_shape: Tuple[int, ...], kernel_size: Tuple[int, int],
+0120:                     stride: Tuple[int, int], padding: Tuple[int, int],
+0121:                     dilation: Tuple[int, int], mode: str = ConvMode.STANDARD,
+0122:                     output_padding: Tuple[int, int] = (0, 0)) -> Tuple[int, int]:
+0123:     """
+0124:     Calculates output shape for different convolution types.
+0125:     
+0126:     Args:
+0127:         input_shape: Shape of input tensor (N, C, H, W)
+0128:         kernel_size: Size of convolution kernel (kH, kW)
+0129:         stride: Stride of convolution (sH, sW)
+0130:         padding: Zero-padding size (pH, pW)
+0131:         dilation: Dilation rate (dH, dW)
+0132:         mode: Convolution mode (standard, transposed, or deformable)
+0133:         output_padding: Additional size added to output shape (only for transposed conv)
+0134:         
+0135:     Returns:
+0136:         Tuple of output height and width (H_out, W_out)
+0137:     """
+0138:     if mode == ConvMode.STANDARD:
+0139:         H = ((input_shape[2] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) 
+0140:              // stride[0] + 1)
+0141:         W = ((input_shape[3] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) 
+0142:              // stride[1] + 1)
+0143:     elif mode == ConvMode.TRANSPOSED:
+0144:         H = (input_shape[2] - 1) * stride[0] - 2 * padding[0] + kernel_size[0] + output_padding[0]
+0145:         W = (input_shape[3] - 1) * stride[1] - 2 * padding[1] + kernel_size[1] + output_padding[1]
+0146:     else:  # Deformable follows standard conv shape
+0147:         H = ((input_shape[2] + 2 * padding[0] - kernel_size[0]) // stride[0] + 1)
+0148:         W = ((input_shape[3] + 2 * padding[1] - kernel_size[1]) // stride[1] + 1)
+0149:     return H, W
+0150: 
+0151: def _get_deformable_offsets(offset_data: np.ndarray, 
+0152:                          kernel_size: Tuple[int, int],
+0153:                          input_shape: Tuple[int, ...],
+0154:                          dilation: Tuple[int, int] = (1, 1)) -> np.ndarray:
+0155:     """
+0156:     Computes sampling locations for deformable convolution.
+0157:     
+0158:     Args:
+0159:         offset_data: Offset tensor of shape (N, 2*kH*kW, H_out, W_out)
+0160:         kernel_size: Tuple of (kH, kW)
+0161:         input_shape: Shape of input tensor (N, C, H, W)
+0162:         dilation: Dilation rate
+0163:         
+0164:     Returns:
+0165:         Sampling locations of shape (N, H_out*W_out, kH*kW, 2)
+0166:     """
+0167:     N, _, H_out, W_out = offset_data.shape
+0168:     kH, kW = kernel_size
 0169:     
-0170:     # Get corner indices
-0171:     x0 = np.floor(x).astype(np.int32)
-0172:     x1 = x0 + 1
-0173:     y0 = np.floor(y).astype(np.int32)
-0174:     y1 = y0 + 1
-0175:     
-0176:     # Clip to image boundaries
-0177:     x0 = np.clip(x0, 0, W - 1)
-0178:     x1 = np.clip(x1, 0, W - 1)
-0179:     y0 = np.clip(y0, 0, H - 1)
-0180:     y1 = np.clip(y1, 0, H - 1)
+0170:     # Generate base grid for the kernel
+0171:     h_range = np.arange(kH) * dilation[0]
+0172:     w_range = np.arange(kW) * dilation[1]
+0173:     h_grid, w_grid = np.meshgrid(h_range, w_range, indexing='ij')
+0174:     kernel_grid = np.stack([h_grid, w_grid], axis=-1)  # (kH, kW, 2)
+0175:     kernel_grid = kernel_grid.reshape(-1, 2)  # (kH*kW, 2)
+0176:     
+0177:     # Reshape offsets
+0178:     offset = offset_data.reshape(N, 2, kH*kW, H_out, W_out)
+0179:     offset = offset.transpose(0, 3, 4, 2, 1)  # (N, H_out, W_out, kH*kW, 2)
+0180:     offset = offset.reshape(N, H_out*W_out, kH*kW, 2)
 0181:     
-0182:     # Calculate interpolation weights
-0183:     wa = (x1 - x) * (y1 - y)
-0184:     wb = (x1 - x) * (y - y0)
-0185:     wc = (x - x0) * (y1 - y)
-0186:     wd = (x - x0) * (y - y0)
-0187:     
-0188:     # Reshape weights for broadcasting
-0189:     wa = wa[..., None]
-0190:     wb = wb[..., None]
-0191:     wc = wc[..., None]
-0192:     wd = wd[..., None]
-0193:     
-0194:     # Gather corner values and compute weighted sum
-0195:     output = np.zeros((N, C, P))
-0196:     for n in range(N):
-0197:         output[n] = (wa[n] * input[n, :, y0[n], x0[n]] +
-0198:                     wb[n] * input[n, :, y1[n], x0[n]] +
-0199:                     wc[n] * input[n, :, y0[n], x1[n]] +
-0200:                     wd[n] * input[n, :, y1[n], x1[n]])
+0182:     # Add base grid to offsets
+0183:     kernel_grid = np.expand_dims(np.expand_dims(kernel_grid, 0), 0)  # (1, 1, kH*kW, 2)
+0184:     sampling_locations = kernel_grid + offset
+0185:     
+0186:     return sampling_locations
+0187: 
+0188: def _bilinear_interpolate(input: np.ndarray, points: np.ndarray, align_corners: bool = True) -> np.ndarray:
+0189:     """
+0190:     Performs bilinear interpolation on the input tensor at specified points.
+0191:     
+0192:     Args:
+0193:         input: Input tensor (N, C, H, W)
+0194:         points: Points to sample (N, P, 2) in normalized coordinates [-1, 1]
+0195:         align_corners: Whether to align corners in interpolation
+0196:         
+0197:     Returns:
+0198:         Interpolated values (N, C, P)
+0199:     """
+0200:     N, C, H, W = input.shape
 0201:     
-0202:     return output
-0203: 
-0204: def _im2col_dilated(x: np.ndarray, kernel_size: Tuple[int, int],
-0205:                     stride: Tuple[int, int], dilation: Tuple[int, int],
-0206:                     mode: str = ConvMode.STANDARD,
-0207:                     sampling_locations: Optional[np.ndarray] = None) -> np.ndarray:
-0208:     """
-0209:     Rearranges dilated image blocks into columns with support for different convolution types.
-0210:     """
-0211:     N, C, H, W = x.shape
-0212:     kH, kW = kernel_size
-0213:     dH, dW = dilation
-0214:     
-0215:     # Calculate output size based on mode
-0216:     out_h, out_w = _get_output_shape((N, C, H, W), kernel_size, stride, (0, 0), dilation, mode)
-0217:     
-0218:     # Initialize output array
-0219:     cols = np.zeros((C * kH * kW, N * out_h * out_w))
-0220:     
-0221:     if mode == ConvMode.DEFORMABLE and sampling_locations is not None:
-0222:         for n in range(N):
-0223:             for h_out in range(out_h):
-0224:                 for w_out in range(out_w):
-0225:                     # Reshape to (1, kH*kW, 2) for bilinear interpolation
-0226:                     loc = sampling_locations[n, h_out*out_w + w_out].reshape(1, -1, 2)
-0227:                     
-0228:                     # Sample using bilinear interpolation
-0229:                     sampled_values = _bilinear_interpolate(
-0230:                         x[n:n+1],
-0231:                         loc
-0232:                     )
-0233:                     
-0234:                     # Store in cols array
-0235:                     idx = n * out_h * out_w + h_out * out_w + w_out
-0236:                     cols[:, idx] = sampled_values.reshape(-1)
-0237:     else:
-0238:         # Standard or transposed convolution
-0239:         for h_out in range(out_h):
-0240:             for w_out in range(out_w):
-0241:                 for c in range(C):
-0242:                     for i in range(kH):
-0243:                         for j in range(kW):
-0244:                             if mode == ConvMode.STANDARD:
-0245:                                 h_in = h_out * stride[0] + i * dH
-0246:                                 w_in = w_out * stride[1] + j * dW
-0247:                             else:  # TRANSPOSED
-0248:                                 h_in = h_out * dH + i * stride[0]
-0249:                                 w_in = w_out * dW + j * stride[1]
-0250:                             
-0251:                             col_idx = (c * kH * kW + i * kW + j)
-0252:                             row_idx = h_out * out_w + w_out
-0253:                             
-0254:                             for n in range(N):
-0255:                                 if 0 <= h_in < H and 0 <= w_in < W:
-0256:                                     cols[col_idx, n * out_h * out_w + row_idx] = x[n, c, h_in, w_in]
-0257:                                     
-0258:     return cols
-0259: 
-0260: def _compute_conv_output_shape(input_size: int, kernel_size: int, stride: int,
-0261:                              padding: int, dilation: int) -> int:
-0262:     """Computes output dimension for a single axis."""
-0263:     numerator = input_size + 2 * padding - dilation * (kernel_size - 1) - 1
-0264:     return numerator // stride + 1
-0265: 
-0266: def _compute_conv_grad_input_padding(grad_output_size: int, input_size: int,
-0267:                                    kernel_size: int, stride: int, padding: int,
-0268:                                    dilation: int) -> Tuple[int, int]:
-0269:     """Computes padding needed for gradient computation."""
-0270:     grad_input_padding = kernel_size - 1 - padding
-0271:     return grad_input_padding
-0272: 
-0273: def _compute_output_padding(input_size: int, output_size: int, kernel_size: int,
-0274:                           stride: int, padding: int, dilation: int) -> int:
-0275:     """Computes additional padding needed for transposed convolution."""
-0276:     expected_output = (input_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1
-0277:     return output_size - expected_output
-0278: 
-0279: def _unfold(input_tensor: np.ndarray,
-0280:            kernel_size: Tuple[int, ...],
-0281:            dilation: Tuple[int, ...],
-0282:            padding: Tuple[int, ...],
-0283:            stride: Tuple[int, ...]) -> np.ndarray:
-0284:     """Extracts sliding local blocks from input tensor."""
-0285:     N, C, H, W = input_tensor.shape
-0286:     kH, kW = kernel_size
-0287:     
-0288:     # Apply padding if needed
-0289:     if padding[0] > 0 or padding[1] > 0:
-0290:         input_tensor = np.pad(input_tensor,
-0291:                           ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])),
-0292:                           mode='constant')
-0293:     
-0294:     # Calculate output dimensions
-0295:     H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
-0296:     W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
-0297:     
-0298:     # Initialize output array with correct shape
-0299:     output = np.zeros((C * kH * kW, N * H_out * W_out))
-0300:     
-0301:     # Extract patches
-0302:     for h in range(H_out):
-0303:         for w in range(W_out):
-0304:             for i in range(kH):
-0305:                 for j in range(kW):
-0306:                     h_start = h * stride[0] + i * dilation[0]
-0307:                     w_start = w * stride[1] + j * dilation[1]
-0308:                     
-0309:                     # Extract patch for all channels and batches
-0310:                     patch = input_tensor[:, :, h_start:h_start+1, w_start:w_start+1]
-0311:                     
-0312:                     # Place in output array
-0313:                     row_idx = (i * kW + j) * C + np.arange(C)
-0314:                     col_idx = h * W_out + w + np.arange(N) * H_out * W_out
-0315:                     output[row_idx[:, None], col_idx] = patch.reshape(N, C).T
-0316:     
-0317:     return output
-0318: 
-0319: def _fold(input: np.ndarray,
-0320:          output_size: Tuple[int, ...],
-0321:          kernel_size: Tuple[int, ...],
-0322:          dilation: Tuple[int, ...],
-0323:          padding: Tuple[int, ...],
-0324:          stride: Tuple[int, ...]) -> np.ndarray:
-0325:     """Combines an array of sliding local blocks into a large tensor."""
-0326:     H, W = output_size
-0327:     kH, kW = kernel_size
-0328:     C = input.shape[0] // (kH * kW)
-0329:     N = input.shape[1] // ((H + 2 * padding[0] - kH + 1) * (W + 2 * padding[1] - kW + 1))
-0330:     
-0331:     # Initialize output tensor
-0332:     output = np.zeros((N, C, H + 2 * padding[0], W + 2 * padding[1]))
-0333:     divisor = np.zeros_like(output)  # For averaging overlapping values
-0334:     
-0335:     # Calculate output dimensions
-0336:     H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
-0337:     W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
-0338:     
-0339:     # Fold patches back
-0340:     for h in range(H_out):
-0341:         for w in range(W_out):
-0342:             for i in range(kH):
-0343:                 for j in range(kW):
-0344:                     h_start = h * stride[0] + i * dilation[0]
-0345:                     w_start = w * stride[1] + j * dilation[1]
-0346:                     
-0347:                     row_idx = (i * kW + j) * C + np.arange(C)
-0348:                     col_idx = h * W_out + w + np.arange(N) * H_out * W_out
-0349:                     
-0350:                     patch = input[row_idx[:, None], col_idx].T.reshape(N, C, 1, 1)
-0351:                     output[:, :, h_start:h_start+1, w_start:w_start+1] += patch
-0352:                     divisor[:, :, h_start:h_start+1, w_start:w_start+1] += 1
-0353:     
-0354:     # Average overlapping values
-0355:     output = np.divide(output, divisor, where=divisor != 0)
-0356:     
-0357:     # Remove padding if necessary
-0358:     if padding[0] > 0 or padding[1] > 0:
-0359:         output = output[:, :, padding[0]:-padding[0] if padding[0] > 0 else None,
-0360:                        padding[1]:-padding[1] if padding[1] > 0 else None]
-0361:     
-0362:     return output
-0363: 
-0364: def _dilate(input: np.ndarray, dilation: Tuple[int, ...]) -> np.ndarray:
-0365:     """
-0366:     Dilates the input tensor by inserting zeros between elements.
-0367:     
-0368:     Args:
-0369:         input: Input tensor
-0370:         dilation: Dilation factors for each dimension
-0371:         
-0372:     Returns:
-0373:         Dilated tensor
-0374:     """
-0375:     if all(d == 1 for d in dilation):
-0376:         return input
-0377: 
-0378:     N, C, H, W = input.shape
-0379:     dH, dW = dilation
-0380:     
-0381:     H_dilated = H + (H - 1) * (dH - 1)
-0382:     W_dilated = W + (W - 1) * (dW - 1)
-0383:     
-0384:     output = np.zeros((N, C, H_dilated, W_dilated))
-0385:     output[:, :, ::dH, ::dW] = input
-0386:     
-0387:     return output
-0388: 
-0389: def _bilinear_interpolate(input: np.ndarray,
-0390:                        points: np.ndarray,
-0391:                        align_corners: bool = True) -> np.ndarray:
-0392:     """
-0393:     Performs bilinear interpolation on the input tensor at specified points.
-0394:     
-0395:     Args:
-0396:         input: Input tensor (N, C, H, W)
-0397:         points: Points to sample (N, P, 2) in normalized coordinates [-1, 1]
-0398:         align_corners: Whether to align corners in interpolation
-0399:         
-0400:     Returns:
-0401:         Interpolated values (N, C, P)
-0402:     """ 
-0403:     N, C, H, W = input.shape
-0404:     _, P, _ = points.shape
-0405: 
-0406:     # Convert normalized coordinates to pixel coordinates
-0407:     if align_corners:
-0408:         x = (points[..., 0] + 1) * (W - 1) / 2
-0409:         y = (points[..., 1] + 1) * (H - 1) / 2
-0410:     else:
-0411:         x = ((points[..., 0] + 1) * W - 1) / 2
-0412:         y = ((points[..., 1] + 1) * H - 1) / 2
-0413: 
-0414:     # Get corner indices
-0415:     x0 = np.floor(x).astype(np.int32)
-0416:     x1 = x0 + 1
-0417:     y0 = np.floor(y).astype(np.int32)
-0418:     y1 = y0 + 1
-0419: 
-0420:     # Clip to image boundaries
-0421:     x0 = np.clip(x0, 0, W - 1)
-0422:     x1 = np.clip(x1, 0, W - 1)
-0423:     y0 = np.clip(y0, 0, H - 1)
-0424:     y1 = np.clip(y1, 0, H - 1)
-0425: 
-0426:     # Calculate interpolation weights
-0427:     wa = (x1 - x) * (y1 - y)
-0428:     wb = (x1 - x) * (y - y0)
-0429:     wc = (x - x0) * (y1 - y)
-0430:     wd = (x - x0) * (y - y0)
-0431: 
-0432:     # Gather corner values
-0433:     Ia = np.zeros((N, C, P))
-0434:     Ib = np.zeros((N, C, P))
-0435:     Ic = np.zeros((N, C, P))
-0436:     Id = np.zeros((N, C, P))
-0437: 
-0438:     for n in range(N):
-0439:         for p in range(P):
-0440:             Ia[n, :, p] = input[n, :, y0[n, p], x0[n, p]]
-0441:             Ib[n, :, p] = input[n, :, y1[n, p], x0[n, p]]
-0442:             Ic[n, :, p] = input[n, :, y0[n, p], x1[n, p]]
-0443:             Id[n, :, p] = input[n, :, y1[n, p], x1[n, p]]
-0444: 
-0445:     # Reshape weights for broadcasting
-0446:     wa = wa.reshape(N, 1, P)
-0447:     wb = wb.reshape(N, 1, P)
-0448:     wc = wc.reshape(N, 1, P)
-0449:     wd = wd.reshape(N, 1, P)
-0450: 
-0451:     # Interpolate
-0452:     out = wa * Ia + wb * Ib + wc * Ic + wd * Id
-0453:     return out
-0454: 
-0455: def _bilinear_interpolate_gradient(grad_output: np.ndarray,
-0456:                                 points: np.ndarray,
-0457:                                 input_size: Tuple[int, ...],
-0458:                                 input_tensor: np.ndarray,
-0459:                                 align_corners: bool = True) -> Tuple[np.ndarray, np.ndarray]:
-0460:     """
-0461:     Computes gradients for bilinear interpolation.
+0202:     # Ensure points is correct shape (N, P, 2)
+0203:     if points.ndim == 4:
+0204:         points = points.reshape(points.shape[0], -1, 2)
+0205:     
+0206:     _, P, _ = points.shape
+0207:     
+0208:     # Convert normalized coordinates to pixel coordinates
+0209:     if align_corners:
+0210:         x = (points[..., 0] + 1) * (W - 1) / 2
+0211:         y = (points[..., 1] + 1) * (H - 1) / 2
+0212:     else:
+0213:         x = ((points[..., 0] + 1) * W - 1) / 2
+0214:         y = ((points[..., 1] + 1) * H - 1) / 2
+0215:     
+0216:     # Get corner indices
+0217:     x0 = np.floor(x).astype(np.int32)
+0218:     x1 = x0 + 1
+0219:     y0 = np.floor(y).astype(np.int32)
+0220:     y1 = y0 + 1
+0221:     
+0222:     # Clip to image boundaries
+0223:     x0 = np.clip(x0, 0, W - 1)
+0224:     x1 = np.clip(x1, 0, W - 1)
+0225:     y0 = np.clip(y0, 0, H - 1)
+0226:     y1 = np.clip(y1, 0, H - 1)
+0227:     
+0228:     # Calculate interpolation weights
+0229:     wa = (x1 - x) * (y1 - y)
+0230:     wb = (x1 - x) * (y - y0)
+0231:     wc = (x - x0) * (y1 - y)
+0232:     wd = (x - x0) * (y - y0)
+0233:     
+0234:     # Reshape weights for broadcasting
+0235:     wa = wa[..., None]
+0236:     wb = wb[..., None]
+0237:     wc = wc[..., None]
+0238:     wd = wd[..., None]
+0239:     
+0240:     # Gather corner values and compute weighted sum
+0241:     output = np.zeros((N, C, P))
+0242:     for n in range(N):
+0243:         output[n] = (wa[n] * input[n, :, y0[n], x0[n]] +
+0244:                     wb[n] * input[n, :, y1[n], x0[n]] +
+0245:                     wc[n] * input[n, :, y0[n], x1[n]] +
+0246:                     wd[n] * input[n, :, y1[n], x1[n]])
+0247:     
+0248:     return output
+0249: 
+0250: def _im2col_dilated(x: np.ndarray, 
+0251:                     kernel_size: Tuple[int, int],
+0252:                     stride: Tuple[int, int], 
+0253:                     dilation: Tuple[int, int],
+0254:                     padding: Tuple[int, int],
+0255:                     mode: str = ConvMode.STANDARD,
+0256:                     sampling_locations: Optional[np.ndarray] = None) -> np.ndarray:
+0257:     """Rearranges dilated image blocks into columns."""
+0258:     N, C, H, W = x.shape
+0259:     kH, kW = kernel_size
+0260:     
+0261:     # Calculate output dimensions
+0262:     H_out = ((H - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0263:     W_out = ((W - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0264:     
+0265:     # Initialize output array
+0266:     # For standard convolution:
+0267:     # - Each column represents a dot product of the kernel with a specific output position
+0268:     # - Number of rows = C * kH * kW (all values needed for one output value)
+0269:     # - Number of columns = N * H_out * W_out (total number of output values)
+0270:     cols = np.zeros((C * kH * kW, N * H_out * W_out))
+0271:     
+0272:     # Process each input position in the kernel
+0273:     for c in range(C):
+0274:         for kh in range(kH):
+0275:             for kw in range(kW):
+0276:                 h_start = np.arange(H_out) * stride[0]
+0277:                 w_start = np.arange(W_out) * stride[1]
+0278:                 
+0279:                 h_offset = kh * dilation[0]
+0280:                 w_offset = kw * dilation[1]
+0281:                 
+0282:                 h_pos, w_pos = np.meshgrid(h_start + h_offset, w_start + w_offset, indexing='ij')
+0283:                 h_pos = h_pos.reshape(-1)
+0284:                 w_pos = w_pos.reshape(-1)
+0285:                 
+0286:                 row_idx = c * kH * kW + kh * kW + kw
+0287:                 for n in range(N):
+0288:                     col_idx = n * H_out * W_out + np.arange(H_out * W_out)
+0289:                     cols[row_idx, col_idx] = x[n, c, h_pos, w_pos]
+0290:     
+0291:     print(f"im2col output shape: {cols.shape}")
+0292:     print(f"Expected reshape: C*kH*kW={C*kH*kW}, N={N}, H_out={H_out}, W_out={W_out}")
+0293:     return cols
+0294: 
+0295: def _get_output_size(input_shape: Tuple[int, ...], 
+0296:                     kernel_size: Tuple[int, int],
+0297:                     stride: Tuple[int, int], 
+0298:                     padding: Tuple[int, int],
+0299:                     dilation: Tuple[int, int],
+0300:                     mode: str) -> Tuple[int, int]:
+0301:     """Calculate output dimensions for different convolution modes."""
+0302:     _, _, H, W = input_shape
+0303:     kH, kW = kernel_size
+0304: 
+0305:     if mode == ConvMode.TRANSPOSED:
+0306:         H_out = (H - 1) * stride[0] - 2 * padding[0] + kH
+0307:         W_out = (W - 1) * stride[1] - 2 * padding[1] + kW
+0308:     else:
+0309:         H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0310:         W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0311: 
+0312:     return H_out, W_out
+0313: 
+0314: def _col2im_dilated(cols: np.ndarray, output_size: Tuple[int, ...],
+0315:                     kernel_size: Tuple[int, int], stride: Tuple[int, int],
+0316:                     dilation: Tuple[int, int], mode: str = ConvMode.STANDARD) -> np.ndarray:
+0317:     """Convert columns back to dilated image."""
+0318:     N, C, H, W = output_size
+0319:     kH, kW = kernel_size
+0320:     
+0321:     # Calculate output dimensions based on mode
+0322:     if mode == ConvMode.TRANSPOSED:
+0323:         H_out = H * stride[0]
+0324:         W_out = W * stride[1]
+0325:     else:
+0326:         H_out = ((H - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0327:         W_out = ((W - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0328:     
+0329:     output = np.zeros(output_size)
+0330:     weights = np.zeros(output_size)  # For averaging overlapping values
+0331:     
+0332:     if mode == ConvMode.TRANSPOSED:
+0333:         for h in range(H):
+0334:             for w in range(W):
+0335:                 for c in range(C):
+0336:                     for kh in range(kH):
+0337:                         for kw in range(kW):
+0338:                             h_out = h * stride[0] + kh
+0339:                             w_out = w * stride[1] + kw
+0340:                             
+0341:                             if h_out < H_out and w_out < W_out:
+0342:                                 col_idx = c * kH * kW + kh * kW + kw
+0343:                                 row_idx = h * W + w
+0344:                                 
+0345:                                 for n in range(N):
+0346:                                     output[n, c, h_out, w_out] += cols[col_idx, n * H * W + row_idx]
+0347:                                     weights[n, c, h_out, w_out] += 1
+0348:     else:
+0349:         for h_out in range(H_out):
+0350:             for w_out in range(W_out):
+0351:                 for c in range(C):
+0352:                     for i in range(kH):
+0353:                         for j in range(kW):
+0354:                             h_in = h_out * stride[0] + i * dilation[0]
+0355:                             w_in = w_out * stride[1] + j * dilation[1]
+0356:                             
+0357:                             if 0 <= h_in < H and 0 <= w_in < W:
+0358:                                 col_idx = c * kH * kW + i * kW + j
+0359:                                 row_idx = h_out * W_out + w_out
+0360:                                 
+0361:                                 for n in range(N):
+0362:                                     output[n, c, h_in, w_in] += cols[col_idx, n * H_out * W_out + row_idx]
+0363:                                     weights[n, c, h_in, w_in] += 1
+0364:     
+0365:     # Average overlapping values
+0366:     np.divide(output, weights, out=output, where=weights != 0)
+0367:     return output
+0368: 
+0369: def _compute_conv_output_shape(input_size: int, kernel_size: int, stride: int,
+0370:                              padding: int, dilation: int) -> int:
+0371:     """Computes output dimension for a single axis."""
+0372:     numerator = input_size + 2 * padding - dilation * (kernel_size - 1) - 1
+0373:     return numerator // stride + 1
+0374: 
+0375: def _compute_conv_grad_input_padding(grad_output_size: int, input_size: int,
+0376:                                    kernel_size: int, stride: int, padding: int,
+0377:                                    dilation: int) -> Tuple[int, int]:
+0378:     """Computes padding needed for gradient computation."""
+0379:     grad_input_padding = kernel_size - 1 - padding
+0380:     return grad_input_padding
+0381: 
+0382: def _compute_output_padding(input_size: int, output_size: int, kernel_size: int,
+0383:                           stride: int, padding: int, dilation: int) -> int:
+0384:     """Computes additional padding needed for transposed convolution."""
+0385:     expected_output = (input_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1
+0386:     return output_size - expected_output
+0387: 
+0388: def _unfold(input_tensor: np.ndarray,
+0389:            kernel_size: Tuple[int, ...],
+0390:            dilation: Tuple[int, ...],
+0391:            padding: Tuple[int, ...],
+0392:            stride: Tuple[int, ...]) -> np.ndarray:
+0393:     """Extracts sliding local blocks from input tensor."""
+0394:     N, C, H, W = input_tensor.shape
+0395:     kH, kW = kernel_size
+0396:     
+0397:     # Apply padding if needed
+0398:     if padding[0] > 0 or padding[1] > 0:
+0399:         input_tensor = np.pad(input_tensor,
+0400:                           ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])),
+0401:                           mode='constant')
+0402:     
+0403:     # Calculate output dimensions
+0404:     H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0405:     W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0406:     
+0407:     # Initialize output array with correct shape
+0408:     output = np.zeros((C * kH * kW, N * H_out * W_out))
+0409:     
+0410:     # Extract patches
+0411:     for h in range(H_out):
+0412:         for w in range(W_out):
+0413:             for i in range(kH):
+0414:                 for j in range(kW):
+0415:                     h_start = h * stride[0] + i * dilation[0]
+0416:                     w_start = w * stride[1] + j * dilation[1]
+0417:                     
+0418:                     # Extract patch for all channels and batches
+0419:                     patch = input_tensor[:, :, h_start:h_start+1, w_start:w_start+1]
+0420:                     
+0421:                     # Place in output array
+0422:                     row_idx = (i * kW + j) * C + np.arange(C)
+0423:                     col_idx = h * W_out + w + np.arange(N) * H_out * W_out
+0424:                     output[row_idx[:, None], col_idx] = patch.reshape(N, C).T
+0425:     
+0426:     return output
+0427: 
+0428: def _fold(input: np.ndarray,
+0429:          output_size: Tuple[int, ...],
+0430:          kernel_size: Tuple[int, ...],
+0431:          dilation: Tuple[int, ...],
+0432:          padding: Tuple[int, ...],
+0433:          stride: Tuple[int, ...]) -> np.ndarray:
+0434:     """Combines an array of sliding local blocks into a large tensor."""
+0435:     H, W = output_size
+0436:     kH, kW = kernel_size
+0437:     C = input.shape[0] // (kH * kW)
+0438:     N = input.shape[1] // ((H + 2 * padding[0] - kH + 1) * (W + 2 * padding[1] - kW + 1))
+0439:     
+0440:     # Initialize output tensor
+0441:     output = np.zeros((N, C, H + 2 * padding[0], W + 2 * padding[1]))
+0442:     divisor = np.zeros_like(output)  # For averaging overlapping values
+0443:     
+0444:     # Calculate output dimensions
+0445:     H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
+0446:     W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
+0447:     
+0448:     # Fold patches back
+0449:     for h in range(H_out):
+0450:         for w in range(W_out):
+0451:             for i in range(kH):
+0452:                 for j in range(kW):
+0453:                     h_start = h * stride[0] + i * dilation[0]
+0454:                     w_start = w * stride[1] + j * dilation[1]
+0455:                     
+0456:                     row_idx = (i * kW + j) * C + np.arange(C)
+0457:                     col_idx = h * W_out + w + np.arange(N) * H_out * W_out
+0458:                     
+0459:                     patch = input[row_idx[:, None], col_idx].T.reshape(N, C, 1, 1)
+0460:                     output[:, :, h_start:h_start+1, w_start:w_start+1] += patch
+0461:                     divisor[:, :, h_start:h_start+1, w_start:w_start+1] += 1
 0462:     
-0463:     Args:
-0464:         grad_output: Gradient of loss with respect to interpolated values (can be any shape)
-0465:         points: Points that were sampled (N, P, 2) in normalized coordinates [-1, 1]
-0466:         input_size: Size of the input tensor (H, W)
-0467:         input_tensor: The input tensor being sampled from (N, C, H, W)
-0468:         align_corners: Whether corners were aligned in interpolation
-0469:         
-0470:     Returns:
-0471:         Tuple of:
-0472:             - grad_input: Gradient with respect to input tensor (N, C, H, W)
-0473:             - grad_points: Gradient with respect to sampling points (N, P, 2)
-0474:             
-0475:     Raises:
-0476:         ValueError: If input shapes are incompatible
-0477:     """
-0478:     # Ensure points is properly shaped first
-0479:     if points.ndim == 2:
-0480:         points = points.reshape(1, *points.shape)
-0481:     
-0482:     # Get number of points from points tensor
-0483:     N, P, _ = points.shape
-0484:     
-0485:     # Ensure grad_output is properly shaped (N, C, P) to match points
-0486:     if grad_output.ndim == 1:
-0487:         grad_output = grad_output.reshape(1, 1, -1)
-0488:     elif grad_output.ndim == 2:
-0489:         grad_output = grad_output.reshape(1, -1, 1)
-0490:         
-0491:     # Broadcast grad_output to match number of points if necessary
-0492:     if grad_output.shape[2] == 1:
-0493:         grad_output = np.broadcast_to(grad_output, (grad_output.shape[0], grad_output.shape[1], P))
-0494:     elif grad_output.shape[2] != P:
-0495:         raise ValueError(f"Gradient shape {grad_output.shape} cannot be broadcast to number of points {P}")
-0496:         
-0497:     C = grad_output.shape[1]
-0498:     H, W = input_size
-0499: 
-0500:     # Validate input_tensor shape
-0501:     if input_tensor.shape[2:] != input_size:
-0502:         raise ValueError(f"Input tensor spatial dimensions {input_tensor.shape[2:]} "
-0503:                         f"don't match input_size {input_size}")
-0504:     
-0505:     # Convert normalized coordinates to pixel coordinates
-0506:     if align_corners:
-0507:         x = (points[..., 0] + 1) * (W - 1) / 2
-0508:         y = (points[..., 1] + 1) * (H - 1) / 2
-0509:     else:
-0510:         x = ((points[..., 0] + 1) * W - 1) / 2
-0511:         y = ((points[..., 1] + 1) * H - 1) / 2
-0512:     
-0513:     # Get corner indices
-0514:     x0 = np.floor(x).astype(np.int32)
-0515:     x1 = x0 + 1
-0516:     y0 = np.floor(y).astype(np.int32)
-0517:     y1 = y0 + 1
-0518:     
-0519:     # Clip to image boundaries
-0520:     x0 = np.clip(x0, 0, W - 1)
-0521:     x1 = np.clip(x1, 0, W - 1)
-0522:     y0 = np.clip(y0, 0, H - 1)
-0523:     y1 = np.clip(y1, 0, H - 1)
-0524:     
-0525:     # Compute weights for bilinear interpolation
-0526:     wa = (x1 - x) * (y1 - y)
-0527:     wb = (x1 - x) * (y - y0)
-0528:     wc = (x - x0) * (y1 - y)
-0529:     wd = (x - x0) * (y - y0)
-0530:     
-0531:     # Reshape weights for broadcasting with channel dimension
-0532:     wa = wa[..., None]  # Shape: (N, P, 1)
-0533:     wb = wb[..., None]
-0534:     wc = wc[..., None]
-0535:     wd = wd[..., None]
-0536:     
-0537:     # Initialize gradients
-0538:     grad_input = np.zeros((N, C, H, W))
-0539:     grad_points = np.zeros_like(points)  # Shape: (N, P, 2)
-0540:     
-0541:     # Compute gradients with respect to input
-0542:     for n in range(N):
-0543:         for c in range(C):
-0544:             grad_chan = grad_output[n, c]  # Shape: (P,)
-0545:             for p in range(P):
-0546:                 grad = grad_chan[p]
-0547:                 grad_input[n, c, y0[n, p], x0[n, p]] += grad * wa[n, p, 0]
-0548:                 grad_input[n, c, y1[n, p], x0[n, p]] += grad * wb[n, p, 0]
-0549:                 grad_input[n, c, y0[n, p], x1[n, p]] += grad * wc[n, p, 0]
-0550:                 grad_input[n, c, y1[n, p], x1[n, p]] += grad * wd[n, p, 0]
-0551:     
-0552:     # Compute scaling factors for coordinate gradients
-0553:     if align_corners:
-0554:         dx = (W - 1) / 2
-0555:         dy = (H - 1) / 2
-0556:     else:
-0557:         dx = W / 2
-0558:         dy = H / 2
-0559:     
-0560:     # Compute gradients with respect to sampling points
-0561:     for n in range(N):
-0562:         for p in range(P):
-0563:             grad = grad_output[n, :, p].sum()  # Sum over channels
-0564:             
-0565:             # Gradient with respect to x
-0566:             gx = grad * (
-0567:                 (y1[n, p] - y[n, p]) * (
-0568:                     input_tensor[n, :, y0[n, p], x1[n, p]] - 
-0569:                     input_tensor[n, :, y0[n, p], x0[n, p]]
-0570:                 ).sum() +
-0571:                 (y[n, p] - y0[n, p]) * (
-0572:                     input_tensor[n, :, y1[n, p], x1[n, p]] - 
-0573:                     input_tensor[n, :, y1[n, p], x0[n, p]]
-0574:                 ).sum()
-0575:             ) * dx
-0576:             
-0577:             # Gradient with respect to y
-0578:             gy = grad * (
-0579:                 (x1[n, p] - x[n, p]) * (
-0580:                     input_tensor[n, :, y1[n, p], x0[n, p]] - 
-0581:                     input_tensor[n, :, y0[n, p], x0[n, p]]
-0582:                 ).sum() +
-0583:                 (x[n, p] - x0[n, p]) * (
-0584:                     input_tensor[n, :, y1[n, p], x1[n, p]] - 
-0585:                     input_tensor[n, :, y0[n, p], x1[n, p]]
-0586:                 ).sum()
-0587:             ) * dy
-0588:             
-0589:             grad_points[n, p] = [gx, gy]
+0463:     # Average overlapping values
+0464:     output = np.divide(output, divisor, where=divisor != 0)
+0465:     
+0466:     # Remove padding if necessary
+0467:     if padding[0] > 0 or padding[1] > 0:
+0468:         output = output[:, :, padding[0]:-padding[0] if padding[0] > 0 else None,
+0469:                        padding[1]:-padding[1] if padding[1] > 0 else None]
+0470:     
+0471:     return output
+0472: 
+0473: def _dilate(input: np.ndarray, dilation: Tuple[int, ...]) -> np.ndarray:
+0474:     """
+0475:     Dilates the input tensor by inserting zeros between elements.
+0476:     
+0477:     Args:
+0478:         input: Input tensor
+0479:         dilation: Dilation factors for each dimension
+0480:         
+0481:     Returns:
+0482:         Dilated tensor
+0483:     """
+0484:     if all(d == 1 for d in dilation):
+0485:         return input
+0486: 
+0487:     N, C, H, W = input.shape
+0488:     dH, dW = dilation
+0489:     
+0490:     H_dilated = H + (H - 1) * (dH - 1)
+0491:     W_dilated = W + (W - 1) * (dW - 1)
+0492:     
+0493:     output = np.zeros((N, C, H_dilated, W_dilated))
+0494:     output[:, :, ::dH, ::dW] = input
+0495:     
+0496:     return output
+0497: 
+0498: def _bilinear_interpolate(input: np.ndarray,
+0499:                        points: np.ndarray,
+0500:                        align_corners: bool = True) -> np.ndarray:
+0501:     """
+0502:     Performs bilinear interpolation on the input tensor at specified points.
+0503:     
+0504:     Args:
+0505:         input: Input tensor (N, C, H, W)
+0506:         points: Points to sample (N, P, 2) in normalized coordinates [-1, 1]
+0507:         align_corners: Whether to align corners in interpolation
+0508:         
+0509:     Returns:
+0510:         Interpolated values (N, C, P)
+0511:     """ 
+0512:     N, C, H, W = input.shape
+0513:     _, P, _ = points.shape
+0514: 
+0515:     # Convert normalized coordinates to pixel coordinates
+0516:     if align_corners:
+0517:         x = (points[..., 0] + 1) * (W - 1) / 2
+0518:         y = (points[..., 1] + 1) * (H - 1) / 2
+0519:     else:
+0520:         x = ((points[..., 0] + 1) * W - 1) / 2
+0521:         y = ((points[..., 1] + 1) * H - 1) / 2
+0522: 
+0523:     # Get corner indices
+0524:     x0 = np.floor(x).astype(np.int32)
+0525:     x1 = x0 + 1
+0526:     y0 = np.floor(y).astype(np.int32)
+0527:     y1 = y0 + 1
+0528: 
+0529:     # Clip to image boundaries
+0530:     x0 = np.clip(x0, 0, W - 1)
+0531:     x1 = np.clip(x1, 0, W - 1)
+0532:     y0 = np.clip(y0, 0, H - 1)
+0533:     y1 = np.clip(y1, 0, H - 1)
+0534: 
+0535:     # Calculate interpolation weights
+0536:     wa = (x1 - x) * (y1 - y)
+0537:     wb = (x1 - x) * (y - y0)
+0538:     wc = (x - x0) * (y1 - y)
+0539:     wd = (x - x0) * (y - y0)
+0540: 
+0541:     # Gather corner values
+0542:     Ia = np.zeros((N, C, P))
+0543:     Ib = np.zeros((N, C, P))
+0544:     Ic = np.zeros((N, C, P))
+0545:     Id = np.zeros((N, C, P))
+0546: 
+0547:     for n in range(N):
+0548:         for p in range(P):
+0549:             Ia[n, :, p] = input[n, :, y0[n, p], x0[n, p]]
+0550:             Ib[n, :, p] = input[n, :, y1[n, p], x0[n, p]]
+0551:             Ic[n, :, p] = input[n, :, y0[n, p], x1[n, p]]
+0552:             Id[n, :, p] = input[n, :, y1[n, p], x1[n, p]]
+0553: 
+0554:     # Reshape weights for broadcasting
+0555:     wa = wa.reshape(N, 1, P)
+0556:     wb = wb.reshape(N, 1, P)
+0557:     wc = wc.reshape(N, 1, P)
+0558:     wd = wd.reshape(N, 1, P)
+0559: 
+0560:     # Interpolate
+0561:     out = wa * Ia + wb * Ib + wc * Ic + wd * Id
+0562:     return out
+0563: 
+0564: def _bilinear_interpolate_gradient(grad_output: np.ndarray,
+0565:                                 points: np.ndarray,
+0566:                                 input_size: Tuple[int, ...],
+0567:                                 input_tensor: np.ndarray,
+0568:                                 align_corners: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+0569:     """
+0570:     Computes gradients for bilinear interpolation.
+0571:     
+0572:     Args:
+0573:         grad_output: Gradient of loss with respect to interpolated values (can be any shape)
+0574:         points: Points that were sampled (N, P, 2) in normalized coordinates [-1, 1]
+0575:         input_size: Size of the input tensor (H, W)
+0576:         input_tensor: The input tensor being sampled from (N, C, H, W)
+0577:         align_corners: Whether corners were aligned in interpolation
+0578:         
+0579:     Returns:
+0580:         Tuple of:
+0581:             - grad_input: Gradient with respect to input tensor (N, C, H, W)
+0582:             - grad_points: Gradient with respect to sampling points (N, P, 2)
+0583:             
+0584:     Raises:
+0585:         ValueError: If input shapes are incompatible
+0586:     """
+0587:     # Ensure points is properly shaped first
+0588:     if points.ndim == 2:
+0589:         points = points.reshape(1, *points.shape)
 0590:     
-0591:     return grad_input, grad_points
-0592: 
-0593: def _generate_grid(batch_size: int, height: int, width: int,
-0594:                  align_corners: bool = True) -> np.ndarray:
-0595:     """
-0596:     Generates a coordinate grid for grid sampling.
-0597:     
-0598:     Args:
-0599:         batch_size: Number of samples in batch
-0600:         height: Height of the grid
-0601:         width: Width of the grid
-0602:         align_corners: Whether to align corners
-0603:         
-0604:     Returns:
-0605:         Grid tensor of shape (N, H, W, 2) with normalized coordinates
-0606:     """
-0607:     if align_corners:
-0608:         x = np.linspace(-1, 1, width)
-0609:         y = np.linspace(-1, 1, height)
-0610:     else:
-0611:         x = np.linspace(-1 + (1/width), 1 - (1/width), width)
-0612:         y = np.linspace(-1 + (1/height), 1 - (1/height), height)
-0613: 
-0614:     x_coords, y_coords = np.meshgrid(x, y)
-0615:     grid = np.stack([x_coords, y_coords], axis=-1)
-0616:     grid = np.tile(grid[None], (batch_size, 1, 1, 1))
-0617:     
-0618:     return grid
-0619: 
-0620: def _deform_grid(grid: np.ndarray, offset: np.ndarray) -> np.ndarray:
-0621:     """
-0622:     Deforms a regular grid using offset values.
-0623:     
-0624:     Args:
-0625:         grid: Regular coordinate grid (N, H, W, 2)
-0626:         offset: Offset values for deformation (N, 2, H, W)
-0627:         
-0628:     Returns:
-0629:         Deformed grid (N, H, W, 2)
-0630:     """
-0631:     N, H, W, _ = grid.shape
-0632:     
-0633:     # Reshape offset to match grid shape
-0634:     offset = offset.transpose(0, 2, 3, 1)
-0635:     
-0636:     # Add offset to grid
-0637:     deformed_grid = grid + offset
-0638:     
-0639:     # Clamp values to [-1, 1] to ensure valid sampling
-0640:     return np.clip(deformed_grid, -1, 1)
-0641: 
-0642: def _modulated_deform_grid(grid: np.ndarray, offset: np.ndarray, 
-0643:                         mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-0644:     """
-0645:     Deforms a regular grid using offset values and modulation mask.
-0646:     Used in Deformable ConvNets v2.
-0647:     
-0648:     Args:
-0649:         grid: Regular coordinate grid (N, H, W, 2)
-0650:         offset: Offset values for deformation (N, 2, H, W)
-0651:         mask: Modulation mask (N, 1, H, W)
-0652:         
-0653:     Returns:
-0654:         Tuple of deformed grid and modulation mask
-0655:     """
-0656:     # Deform grid
-0657:     deformed_grid = _deform_grid(grid, offset)
-0658:     
-0659:     # Reshape mask to match sampling points
-0660:     mask = mask.transpose(0, 2, 3, 1)
-0661:     
-0662:     return deformed_grid, mask
-0663: 
-0664: def _compute_indices_weights(points: np.ndarray, size: Tuple[int, int]) -> Tuple[np.ndarray, ...]:
-0665:     """
-0666:     Computes indices and weights for bilinear interpolation.
-0667:     
-0668:     Args:
-0669:         points: Sampling points (N, H, W, 2)
-0670:         size: Size of the input feature map (H, W)
-0671:         
-0672:     Returns:
-0673:         Tuple of indices and weights for bilinear interpolation
-0674:     """
-0675:     H, W = size
-0676:     
-0677:     # Convert points to pixel coordinates
-0678:     x = (points[..., 0] + 1) * (W - 1) / 2
-0679:     y = (points[..., 1] + 1) * (H - 1) / 2
-0680:     
-0681:     # Get corner indices
-0682:     x0 = np.floor(x).astype(np.int32)
-0683:     x1 = x0 + 1
-0684:     y0 = np.floor(y).astype(np.int32)
-0685:     y1 = y0 + 1
-0686:     
-0687:     # Clip to image boundaries
-0688:     x0 = np.clip(x0, 0, W - 1)
-0689:     x1 = np.clip(x1, 0, W - 1)
-0690:     y0 = np.clip(y0, 0, H - 1)
-0691:     y1 = np.clip(y1, 0, H - 1)
-0692:     
-0693:     # Compute weights
-0694:     wa = (x1 - x) * (y1 - y)
-0695:     wb = (x1 - x) * (y - y0)
-0696:     wc = (x - x0) * (y1 - y)
-0697:     wd = (x - x0) * (y - y0)
-0698:     
-0699:     return (x0, x1, y0, y1), (wa, wb, wc, wd)
-0700: 
-0701: def _apply_deform_conv(input: np.ndarray, weight: np.ndarray, offset: np.ndarray,
-0702:                     stride: Tuple[int, int], padding: Tuple[int, int],
-0703:                     dilation: Tuple[int, int], mask: Optional[np.ndarray] = None) -> np.ndarray:
+0591:     # Get number of points from points tensor
+0592:     N, P, _ = points.shape
+0593:     
+0594:     # Ensure grad_output is properly shaped (N, C, P) to match points
+0595:     if grad_output.ndim == 1:
+0596:         grad_output = grad_output.reshape(1, 1, -1)
+0597:     elif grad_output.ndim == 2:
+0598:         grad_output = grad_output.reshape(1, -1, 1)
+0599:         
+0600:     # Broadcast grad_output to match number of points if necessary
+0601:     if grad_output.shape[2] == 1:
+0602:         grad_output = np.broadcast_to(grad_output, (grad_output.shape[0], grad_output.shape[1], P))
+0603:     elif grad_output.shape[2] != P:
+0604:         raise ValueError(f"Gradient shape {grad_output.shape} cannot be broadcast to number of points {P}")
+0605:         
+0606:     C = grad_output.shape[1]
+0607:     H, W = input_size
+0608: 
+0609:     # Validate input_tensor shape
+0610:     if input_tensor.shape[2:] != input_size:
+0611:         raise ValueError(f"Input tensor spatial dimensions {input_tensor.shape[2:]} "
+0612:                         f"don't match input_size {input_size}")
+0613:     
+0614:     # Convert normalized coordinates to pixel coordinates
+0615:     if align_corners:
+0616:         x = (points[..., 0] + 1) * (W - 1) / 2
+0617:         y = (points[..., 1] + 1) * (H - 1) / 2
+0618:     else:
+0619:         x = ((points[..., 0] + 1) * W - 1) / 2
+0620:         y = ((points[..., 1] + 1) * H - 1) / 2
+0621:     
+0622:     # Get corner indices
+0623:     x0 = np.floor(x).astype(np.int32)
+0624:     x1 = x0 + 1
+0625:     y0 = np.floor(y).astype(np.int32)
+0626:     y1 = y0 + 1
+0627:     
+0628:     # Clip to image boundaries
+0629:     x0 = np.clip(x0, 0, W - 1)
+0630:     x1 = np.clip(x1, 0, W - 1)
+0631:     y0 = np.clip(y0, 0, H - 1)
+0632:     y1 = np.clip(y1, 0, H - 1)
+0633:     
+0634:     # Compute weights for bilinear interpolation
+0635:     wa = (x1 - x) * (y1 - y)
+0636:     wb = (x1 - x) * (y - y0)
+0637:     wc = (x - x0) * (y1 - y)
+0638:     wd = (x - x0) * (y - y0)
+0639:     
+0640:     # Reshape weights for broadcasting with channel dimension
+0641:     wa = wa[..., None]  # Shape: (N, P, 1)
+0642:     wb = wb[..., None]
+0643:     wc = wc[..., None]
+0644:     wd = wd[..., None]
+0645:     
+0646:     # Initialize gradients
+0647:     grad_input = np.zeros((N, C, H, W))
+0648:     grad_points = np.zeros_like(points)  # Shape: (N, P, 2)
+0649:     
+0650:     # Compute gradients with respect to input
+0651:     for n in range(N):
+0652:         for c in range(C):
+0653:             grad_chan = grad_output[n, c]  # Shape: (P,)
+0654:             for p in range(P):
+0655:                 grad = grad_chan[p]
+0656:                 grad_input[n, c, y0[n, p], x0[n, p]] += grad * wa[n, p, 0]
+0657:                 grad_input[n, c, y1[n, p], x0[n, p]] += grad * wb[n, p, 0]
+0658:                 grad_input[n, c, y0[n, p], x1[n, p]] += grad * wc[n, p, 0]
+0659:                 grad_input[n, c, y1[n, p], x1[n, p]] += grad * wd[n, p, 0]
+0660:     
+0661:     # Compute scaling factors for coordinate gradients
+0662:     if align_corners:
+0663:         dx = (W - 1) / 2
+0664:         dy = (H - 1) / 2
+0665:     else:
+0666:         dx = W / 2
+0667:         dy = H / 2
+0668:     
+0669:     # Compute gradients with respect to sampling points
+0670:     for n in range(N):
+0671:         for p in range(P):
+0672:             grad = grad_output[n, :, p].sum()  # Sum over channels
+0673:             
+0674:             # Gradient with respect to x
+0675:             gx = grad * (
+0676:                 (y1[n, p] - y[n, p]) * (
+0677:                     input_tensor[n, :, y0[n, p], x1[n, p]] - 
+0678:                     input_tensor[n, :, y0[n, p], x0[n, p]]
+0679:                 ).sum() +
+0680:                 (y[n, p] - y0[n, p]) * (
+0681:                     input_tensor[n, :, y1[n, p], x1[n, p]] - 
+0682:                     input_tensor[n, :, y1[n, p], x0[n, p]]
+0683:                 ).sum()
+0684:             ) * dx
+0685:             
+0686:             # Gradient with respect to y
+0687:             gy = grad * (
+0688:                 (x1[n, p] - x[n, p]) * (
+0689:                     input_tensor[n, :, y1[n, p], x0[n, p]] - 
+0690:                     input_tensor[n, :, y0[n, p], x0[n, p]]
+0691:                 ).sum() +
+0692:                 (x[n, p] - x0[n, p]) * (
+0693:                     input_tensor[n, :, y1[n, p], x1[n, p]] - 
+0694:                     input_tensor[n, :, y0[n, p], x1[n, p]]
+0695:                 ).sum()
+0696:             ) * dy
+0697:             
+0698:             grad_points[n, p] = [gx, gy]
+0699:     
+0700:     return grad_input, grad_points
+0701: 
+0702: def _generate_grid(batch_size: int, height: int, width: int,
+0703:                  align_corners: bool = True) -> np.ndarray:
 0704:     """
-0705:     Applies deformable convolution operation.
+0705:     Generates a coordinate grid for grid sampling.
 0706:     
 0707:     Args:
-0708:         input: Input feature map (N, C_in, H, W)
-0709:         weight: Convolution weights (C_out, C_in, kH, kW)
-0710:         offset: Sampling offsets (N, 2*kH*kW, H_out, W_out)
-0711:         stride: Convolution stride
-0712:         padding: Zero-padding size
-0713:         dilation: Dilation rate
-0714:         mask: Optional modulation mask for v2 (N, kH*kW, H_out, W_out)
-0715:         
-0716:     Returns:
-0717:         Output feature map (N, C_out, H_out, W_out)
-0718:     """
-0719:     N, C_in, H, W = input.shape
-0720:     C_out, _, kH, kW = weight.shape
-0721:     H_out = (H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0] + 1
-0722:     W_out = (W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1] + 1
-0723:     
-0724:     # Generate sampling grid
-0725:     grid = _generate_grid(N, H_out, W_out)
+0708:         batch_size: Number of samples in batch
+0709:         height: Height of the grid
+0710:         width: Width of the grid
+0711:         align_corners: Whether to align corners
+0712:         
+0713:     Returns:
+0714:         Grid tensor of shape (N, H, W, 2) with normalized coordinates
+0715:     """
+0716:     if align_corners:
+0717:         x = np.linspace(-1, 1, width)
+0718:         y = np.linspace(-1, 1, height)
+0719:     else:
+0720:         x = np.linspace(-1 + (1/width), 1 - (1/width), width)
+0721:         y = np.linspace(-1 + (1/height), 1 - (1/height), height)
+0722: 
+0723:     x_coords, y_coords = np.meshgrid(x, y)
+0724:     grid = np.stack([x_coords, y_coords], axis=-1)
+0725:     grid = np.tile(grid[None], (batch_size, 1, 1, 1))
 0726:     
-0727:     # Deform grid using offsets
-0728:     if mask is not None:
-0729:         deformed_grid, modulation = _modulated_deform_grid(grid, offset, mask)
-0730:     else:
-0731:         deformed_grid = _deform_grid(grid, offset)
-0732:         modulation = None
-0733:     
-0734:     # Get sampling indices and weights
-0735:     indices, weights = _compute_indices_weights(deformed_grid, (H, W))
-0736:     x0, x1, y0, y1 = indices
-0737:     wa, wb, wc, wd = weights
-0738:     
-0739:     # Initialize output
-0740:     output = np.zeros((N, C_out, H_out, W_out))
+0727:     return grid
+0728: 
+0729: def _deform_grid(grid: np.ndarray, offset: np.ndarray) -> np.ndarray:
+0730:     """
+0731:     Deforms a regular grid using offset values.
+0732:     
+0733:     Args:
+0734:         grid: Regular coordinate grid (N, H, W, 2)
+0735:         offset: Offset values for deformation (N, 2, H, W)
+0736:         
+0737:     Returns:
+0738:         Deformed grid (N, H, W, 2)
+0739:     """
+0740:     N, H, W, _ = grid.shape
 0741:     
-0742:     # Apply convolution with deformed sampling
-0743:     for i in range(kH):
-0744:         for j in range(kW):
-0745:             # Get values from input feature map
-0746:             values = (wa[..., None] * input[:, :, y0, x0] +
-0747:                      wb[..., None] * input[:, :, y1, x0] +
-0748:                      wc[..., None] * input[:, :, y0, x1] +
-0749:                      wd[..., None] * input[:, :, y1, x1])
-0750:                      
-0751:             # Apply modulation if available
-0752:             if modulation is not None:
-0753:                 values = values * modulation[:, i*kW + j, ..., None]
-0754:                 
-0755:             # Accumulate weighted values
-0756:             for cout in range(C_out):
-0757:                 output[:, cout] += np.sum(values * weight[cout, :, i, j], axis=1)
-0758:     
-0759:     return output
-0760:         
-0761: class Conv2dFunction(Function):
-0762:     """
-0763:     Implements 2D convolution with support for:
-0764:     - Asymmetric kernels
-0765:     - Different strides for height and width
-0766:     - Different padding for height and width
-0767:     - Different dilation rates for height and width
-0768:     - Transposed convolution
-0769:     - Deformable convolution
-0770:     - Grouped convolution
-0771:     """
-0772:     @staticmethod
-0773:     def forward(ctx: Context, x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
-0774:             stride: Tuple[int, int] = (1, 1), padding: Tuple[int, int] = (0, 0),
-0775:             dilation: Tuple[int, int] = (1, 1), groups: int = 1,
-0776:             mode: str = ConvMode.STANDARD, offset: Optional[Tensor] = None,
-0777:             mask: Optional[Tensor] = None) -> Tensor:
-0778:         """Forward pass of flexible 2D convolution."""
-0779:         # Validate parameters
-0780:         _validate_conv_params(x.shape, weight.shape, stride, padding, dilation, groups, 
-0781:                             mode, offset, weight, mask)
-0782:         
-0783:         # Get required offset tensor and compute sampling locations for deformable conv
-0784:         if mode == ConvMode.DEFORMABLE:
-0785:             offset_tensor = offset if offset is not None else getattr(weight, 'offset', None)
-0786:             sampling_locations = _get_deformable_offsets(
-0787:                 offset_tensor.data,
-0788:                 weight.shape[2:],
-0789:                 x.shape
-0790:             )
-0791:             # Ensure sampling_locations has correct shape for _im2col_dilated
-0792:             N, HW, kHW, _ = sampling_locations.shape
-0793:             H_out = W_out = int(np.sqrt(HW))  # Assuming square output
-0794:             sampling_locations = sampling_locations.reshape(N, H_out * W_out, kHW, 2)
-0795:         else:
-0796:             sampling_locations = None
-0797:             offset_tensor = None  # Explicitly set to None if not deformable
-0798:         
-0799:         # Save tensors and info for backward pass
-0800:         if mode == ConvMode.DEFORMABLE:
-0801:             ctx.save_for_backward(x, weight, bias, offset_tensor)
-0802:         else:
-0803:             ctx.save_for_backward(x, weight, bias)
-0804:             
-0805:         ctx.save_arguments(stride=stride, padding=padding, dilation=dilation, 
-0806:                         groups=groups, mode=mode, sampling_locations=sampling_locations)
-0807:         
-0808:         # Process each group
-0809:         x_padded = _pad_input(x.data, padding)
-0810:         C_in_per_group = x.shape[1] // groups
-0811:         C_out_per_group = weight.shape[0] // groups
-0812:         H_out, W_out = _get_output_shape(x.shape, weight.shape[2:], stride, padding, dilation, mode)
-0813:         output = np.zeros((x.shape[0], weight.shape[0], H_out, W_out))
-0814:         
-0815:         for g in range(groups):
-0816:             x_g = x_padded[:, g*C_in_per_group:(g+1)*C_in_per_group]
-0817:             w_g = weight.data[g*C_out_per_group:(g+1)*C_out_per_group]
-0818:             
-0819:             # Convert input patches to columns
-0820:             x_cols = _im2col_dilated(x_g, weight.shape[2:], stride, dilation, mode, 
-0821:                                 sampling_locations)
-0822:             
-0823:             # Reshape weight for matrix multiplication
-0824:             w_reshaped = w_g.reshape(C_out_per_group, -1)
-0825:             
-0826:             # Perform convolution
-0827:             out = w_reshaped @ x_cols
-0828:             
-0829:             # Reshape output
-0830:             output[:, g*C_out_per_group:(g+1)*C_out_per_group] = out.reshape(
-0831:                 C_out_per_group, x.shape[0], *output.shape[2:]
-0832:             ).transpose(1, 0, 2, 3)
-0833:         
-0834:         # Add bias if present
-0835:         if bias is not None:
-0836:             output += bias.data.reshape(1, -1, 1, 1)
-0837:             
-0838:         return Tensor(output)
-0839:         
-0840:     @staticmethod
-0841:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
-0842:         """
-0843:         Backward pass of 2D convolution.
-0844:         
-0845:         Computes gradients for:
-0846:         - Input tensor (x)
-0847:         - Weight tensor (w)
-0848:         - Bias (if present)
-0849:         - Offsets (for deformable convolution)
-0850:         
-0851:         Handles different convolution modes:
-0852:         - Standard convolution
-0853:         - Transposed convolution
-0854:         - Deformable convolution
-0855:         """
-0856:         # Retrieve saved tensors and arguments
-0857:         saved_tensors = ctx.saved_tensors
-0858:         num_saved = len(saved_tensors)
-0859: 
-0860:         # Initialize mask_tensor to None
-0861:         mask_tensor = None
-0862: 
-0863:         if num_saved == 4:  # Deformable case without mask
-0864:             x, weight, bias, offset_tensor = saved_tensors
-0865:         elif num_saved == 5:  # Deformable case with mask (if supported)
-0866:             x, weight, bias, offset_tensor, mask_tensor = saved_tensors
-0867:         else:  # Standard or other modes
-0868:             x, weight, bias = saved_tensors
-0869:             offset_tensor = None
-0870: 
-0871:         # Retrieve saved arguments
-0872:         stride = ctx.saved_arguments['stride']
-0873:         padding = ctx.saved_arguments['padding']
-0874:         dilation = ctx.saved_arguments['dilation']
-0875:         groups = ctx.saved_arguments['groups']
-0876:         mode = ctx.saved_arguments['mode']
-0877:         sampling_locations = ctx.saved_arguments.get('sampling_locations', None)
-0878: 
-0879:         # Retrieve mask if present
-0880:         mask = ctx.saved_arguments.get('mask', None)
-0881:         if mask_tensor is not None:
-0882:             mask = mask_tensor.data
-0883: 
-0884:         # Determine dimensions
-0885:         N, C_in, H, W = x.shape
-0886:         C_out, _, kH, kW = weight.shape
-0887:         C_in_per_group = C_in // groups
-0888:         C_out_per_group = C_out // groups
-0889:         H_out, W_out = _get_output_shape(x.shape, weight.shape[2:], stride, padding, dilation, mode)
-0890: 
-0891:         # Apply padding based on convolution mode
-0892:         if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
-0893:             x_padded = _pad_input(x.data, padding)
-0894:         elif mode == ConvMode.TRANSPOSED:
-0895:             grad_output_padded = _pad_input(grad_output, padding)
-0896: 
-0897:         # Initialize gradients if required
-0898:         if x.requires_grad:
-0899:             if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
-0900:                 grad_x_padded = np.zeros_like(x_padded)
-0901:             elif mode == ConvMode.TRANSPOSED:
-0902:                 grad_x = np.zeros_like(x.data)
-0903:         if weight.requires_grad:
-0904:             grad_weight = np.zeros_like(weight.data)
-0905:         if bias is not None and bias.requires_grad:
-0906:             grad_bias = np.zeros_like(bias.data)
-0907:         if mode == ConvMode.DEFORMABLE and offset_tensor is not None and offset_tensor.requires_grad:
-0908:             grad_offset = np.zeros_like(offset_tensor.data)
-0909:         if mask is not None and mode == ConvMode.DEFORMABLE and mask_tensor is not None and mask_tensor.requires_grad:
-0910:             grad_mask = np.zeros_like(mask_tensor.data)
-0911:         else:
-0912:             grad_mask = None  # Initialize grad_mask to None if mask is not provided
-0913: 
-0914:         # Delegate backward computation based on mode
-0915:         if mode == ConvMode.STANDARD:
-0916:             Conv2dFunction._backward_standard(
-0917:                 grad_output, grad_x_padded, grad_weight, grad_bias,
-0918:                 x_padded, weight, bias, stride, padding, dilation, groups,
-0919:                 N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-0920:             )
-0921:         elif mode == ConvMode.TRANSPOSED:
-0922:             Conv2dFunction._backward_transposed(
-0923:                 grad_output_padded, grad_x, grad_weight, grad_bias,
-0924:                 x, weight, bias, stride, padding, dilation, groups,
-0925:                 N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-0926:             )
-0927:         elif mode == ConvMode.DEFORMABLE:
-0928:             Conv2dFunction._backward_deformable(
-0929:                 grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
-0930:                 x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups, sampling_locations,
-0931:                 N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-0932:             )
-0933: 
-0934:         # Assign gradients to grad_dict
-0935:         if x.requires_grad:
-0936:             if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
-0937:                 if mode == ConvMode.STANDARD:
-0938:                     # Remove padding from grad_x_padded if necessary
-0939:                     if padding[0] > 0 or padding[1] > 0:
-0940:                         grad_x = grad_x_padded[:, :,
-0941:                                             padding[0]:grad_x_padded.shape[2]-padding[0],
-0942:                                             padding[1]:grad_x_padded.shape[3]-padding[1]]
-0943:                     else:
-0944:                         grad_x = grad_x_padded
-0945:                 elif mode == ConvMode.DEFORMABLE:
-0946:                     # Directly assign grad_x_padded to grad_x for deformable convolution
-0947:                     grad_x = grad_x_padded
-0948:                 grad_dict[id(x)] = grad_x
-0949:             elif mode == ConvMode.TRANSPOSED:
-0950:                 grad_dict[id(x)] = grad_x
-0951: 
-0952:         if weight.requires_grad:
-0953:             grad_dict[id(weight)] = grad_weight
+0742:     # Reshape offset to match grid shape
+0743:     offset = offset.transpose(0, 2, 3, 1)
+0744:     
+0745:     # Add offset to grid
+0746:     deformed_grid = grid + offset
+0747:     
+0748:     # Clamp values to [-1, 1] to ensure valid sampling
+0749:     return np.clip(deformed_grid, -1, 1)
+0750: 
+0751: def _modulated_deform_grid(grid: np.ndarray, offset: np.ndarray, 
+0752:                         mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+0753:     """
+0754:     Deforms a regular grid using offset values and modulation mask.
+0755:     Used in Deformable ConvNets v2.
+0756:     
+0757:     Args:
+0758:         grid: Regular coordinate grid (N, H, W, 2)
+0759:         offset: Offset values for deformation (N, 2, H, W)
+0760:         mask: Modulation mask (N, 1, H, W)
+0761:         
+0762:     Returns:
+0763:         Tuple of deformed grid and modulation mask
+0764:     """
+0765:     # Deform grid
+0766:     deformed_grid = _deform_grid(grid, offset)
+0767:     
+0768:     # Reshape mask to match sampling points
+0769:     mask = mask.transpose(0, 2, 3, 1)
+0770:     
+0771:     return deformed_grid, mask
+0772: 
+0773: def _compute_indices_weights(points: np.ndarray, size: Tuple[int, int]) -> Tuple[np.ndarray, ...]:
+0774:     """
+0775:     Computes indices and weights for bilinear interpolation.
+0776:     
+0777:     Args:
+0778:         points: Sampling points (N, H, W, 2)
+0779:         size: Size of the input feature map (H, W)
+0780:         
+0781:     Returns:
+0782:         Tuple of indices and weights for bilinear interpolation
+0783:     """
+0784:     H, W = size
+0785:     
+0786:     # Convert points to pixel coordinates
+0787:     x = (points[..., 0] + 1) * (W - 1) / 2
+0788:     y = (points[..., 1] + 1) * (H - 1) / 2
+0789:     
+0790:     # Get corner indices
+0791:     x0 = np.floor(x).astype(np.int32)
+0792:     x1 = x0 + 1
+0793:     y0 = np.floor(y).astype(np.int32)
+0794:     y1 = y0 + 1
+0795:     
+0796:     # Clip to image boundaries
+0797:     x0 = np.clip(x0, 0, W - 1)
+0798:     x1 = np.clip(x1, 0, W - 1)
+0799:     y0 = np.clip(y0, 0, H - 1)
+0800:     y1 = np.clip(y1, 0, H - 1)
+0801:     
+0802:     # Compute weights
+0803:     wa = (x1 - x) * (y1 - y)
+0804:     wb = (x1 - x) * (y - y0)
+0805:     wc = (x - x0) * (y1 - y)
+0806:     wd = (x - x0) * (y - y0)
+0807:     
+0808:     return (x0, x1, y0, y1), (wa, wb, wc, wd)
+0809: 
+0810: def _apply_deform_conv(input: np.ndarray, weight: np.ndarray, offset: np.ndarray,
+0811:                     stride: Tuple[int, int], padding: Tuple[int, int],
+0812:                     dilation: Tuple[int, int], mask: Optional[np.ndarray] = None) -> np.ndarray:
+0813:     """
+0814:     Applies deformable convolution operation.
+0815:     
+0816:     Args:
+0817:         input: Input feature map (N, C_in, H, W)
+0818:         weight: Convolution weights (C_out, C_in, kH, kW)
+0819:         offset: Sampling offsets (N, 2*kH*kW, H_out, W_out)
+0820:         stride: Convolution stride
+0821:         padding: Zero-padding size
+0822:         dilation: Dilation rate
+0823:         mask: Optional modulation mask for v2 (N, kH*kW, H_out, W_out)
+0824:         
+0825:     Returns:
+0826:         Output feature map (N, C_out, H_out, W_out)
+0827:     """
+0828:     N, C_in, H, W = input.shape
+0829:     C_out, _, kH, kW = weight.shape
+0830:     H_out = (H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0] + 1
+0831:     W_out = (W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1] + 1
+0832:     
+0833:     # Generate sampling grid
+0834:     grid = _generate_grid(N, H_out, W_out)
+0835:     
+0836:     # Deform grid using offsets
+0837:     if mask is not None:
+0838:         deformed_grid, modulation = _modulated_deform_grid(grid, offset, mask)
+0839:     else:
+0840:         deformed_grid = _deform_grid(grid, offset)
+0841:         modulation = None
+0842:     
+0843:     # Get sampling indices and weights
+0844:     indices, weights = _compute_indices_weights(deformed_grid, (H, W))
+0845:     x0, x1, y0, y1 = indices
+0846:     wa, wb, wc, wd = weights
+0847:     
+0848:     # Initialize output
+0849:     output = np.zeros((N, C_out, H_out, W_out))
+0850:     
+0851:     # Apply convolution with deformed sampling
+0852:     for i in range(kH):
+0853:         for j in range(kW):
+0854:             # Get values from input feature map
+0855:             values = (wa[..., None] * input[:, :, y0, x0] +
+0856:                      wb[..., None] * input[:, :, y1, x0] +
+0857:                      wc[..., None] * input[:, :, y0, x1] +
+0858:                      wd[..., None] * input[:, :, y1, x1])
+0859:                      
+0860:             # Apply modulation if available
+0861:             if modulation is not None:
+0862:                 values = values * modulation[:, i*kW + j, ..., None]
+0863:                 
+0864:             # Accumulate weighted values
+0865:             for cout in range(C_out):
+0866:                 output[:, cout] += np.sum(values * weight[cout, :, i, j], axis=1)
+0867:     
+0868:     return output
+0869:         
+0870: class Conv2dFunction(Function):
+0871:     @staticmethod
+0872:     def forward(ctx: Context, x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
+0873:             stride: Tuple[int, int] = (1, 1), padding: Tuple[int, int] = (0, 0),
+0874:             dilation: Tuple[int, int] = (1, 1), groups: int = 1,
+0875:             mode: str = ConvMode.STANDARD, offset: Optional[Tensor] = None,
+0876:             mask: Optional[Tensor] = None, output_padding: Tuple[int, int] = (0, 0)) -> Tensor:
+0877:         """Forward pass of flexible 2D convolution."""
+0878:         # Validate parameters
+0879:         _validate_conv_params(x.shape, weight.shape, stride, padding, dilation, groups,
+0880:                             mode, offset, weight, mask)
+0881:         
+0882:         # Save tensors and info for backward pass
+0883:         if mode == ConvMode.DEFORMABLE:
+0884:             ctx.save_for_backward(x, weight, bias, offset)
+0885:         else:
+0886:             ctx.save_for_backward(x, weight, bias)
+0887:             
+0888:         ctx.save_arguments(stride=stride, padding=padding, dilation=dilation,
+0889:                         groups=groups, mode=mode, sampling_locations=None,
+0890:                         output_padding=output_padding)
+0891: 
+0892:         if mode == ConvMode.TRANSPOSED:
+0893:             # Get shapes
+0894:             batch_size, C_in, H_in, W_in = x.shape
+0895:             C_out, C_in_per_group, kH, kW = weight.shape
+0896:             C_in_per_group = C_in // groups
+0897:             C_out_per_group = C_out // groups
+0898: 
+0899:             # Calculate output dimensions
+0900:             H_out = (H_in - 1) * stride[0] - 2 * padding[0] + kH + output_padding[0]
+0901:             W_out = (W_in - 1) * stride[1] - 2 * padding[1] + kW + output_padding[1]
+0902: 
+0903:             # Initialize output tensor
+0904:             output = np.zeros((batch_size, C_out, H_out, W_out))
+0905: 
+0906:             # Process each group
+0907:             for g in range(groups):
+0908:                 # Get input and weight for current group
+0909:                 x_g = x.data[:, g*C_in_per_group:(g+1)*C_in_per_group]
+0910:                 w_g = weight.data[g*C_out_per_group:(g+1)*C_out_per_group]
+0911:                 
+0912:                 # Flip kernel for transposed convolution
+0913:                 w_g = np.flip(np.flip(w_g, 2), 3).transpose(1, 0, 2, 3)
+0914:                 
+0915:                 # Create the output tensor for this group
+0916:                 output_g = np.zeros((batch_size, C_out_per_group, H_out, W_out))
+0917:                 
+0918:                 # Process each input element
+0919:                 for n in range(batch_size):
+0920:                     for h in range(H_in):
+0921:                         for w in range(W_in):
+0922:                             # Get input value for all channels
+0923:                             x_val = x_g[n, :, h, w]  # Shape: (C_in_per_group,)
+0924:                             
+0925:                             # Calculate output position
+0926:                             h_start = h * stride[0] - padding[0]
+0927:                             w_start = w * stride[1] - padding[1]
+0928:                             
+0929:                             # Apply kernel at this position
+0930:                             for c_out in range(C_out_per_group):
+0931:                                 for c_in in range(C_in_per_group):
+0932:                                     for kh in range(kH):
+0933:                                         for kw in range(kW):
+0934:                                             h_out = h_start + kh
+0935:                                             w_out = w_start + kw
+0936:                                             
+0937:                                             if (0 <= h_out < H_out and 0 <= w_out < W_out):
+0938:                                                 output_g[n, c_out, h_out, w_out] += (
+0939:                                                     x_val[c_in] * w_g[c_in, c_out, kh, kw]
+0940:                                                 )
+0941:                 
+0942:                 # Add this group's output to the final output
+0943:                 output[:, g*C_out_per_group:(g+1)*C_out_per_group] = output_g
+0944: 
+0945:             if bias is not None:
+0946:                 output += bias.data.reshape(1, -1, 1, 1)
+0947: 
+0948:             return Tensor(output)
+0949:         else:
+0950:             # Rest of the code for standard/deformable convolution remains the same
+0951:             x_padded = _pad_input(x.data, padding)
+0952:             C_in_per_group = x.shape[1] // groups
+0953:             C_out_per_group = weight.shape[0] // groups
 0954: 
-0955:         if bias is not None and bias.requires_grad:
-0956:             grad_dict[id(bias)] = grad_bias
-0957: 
-0958:         if mode == ConvMode.DEFORMABLE and offset_tensor is not None and offset_tensor.requires_grad:
-0959:             grad_dict[id(offset_tensor)] = grad_offset
-0960: 
-0961:         if mask is not None and mode == ConvMode.DEFORMABLE and mask_tensor is not None and mask_tensor.requires_grad:
-0962:             grad_dict[id(mask_tensor)] = grad_mask
-0963: 
-0964:     @staticmethod
-0965:     def _backward_standard(
-0966:         grad_output, grad_x_padded, grad_weight, grad_bias,
-0967:         x_padded, weight, bias, stride, padding, dilation, groups,
-0968:         N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-0969:     ):
-0970:         """
-0971:         Backward pass for standard convolution.
-0972:         """
-0973:         for g in range(groups):
-0974:             # Slice weights and grad_output for the current group
-0975:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
-0976:             grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]
+0955:             H_out = ((x.shape[2] + 2 * padding[0] - dilation[0] * (weight.shape[2] - 1) - 1)
+0956:                     // stride[0] + 1)
+0957:             W_out = ((x.shape[3] + 2 * padding[1] - dilation[1] * (weight.shape[3] - 1) - 1)
+0958:                     // stride[1] + 1)
+0959: 
+0960:             output = np.zeros((x.shape[0], weight.shape[0], H_out, W_out))
+0961: 
+0962:             for g in range(groups):
+0963:                 x_g = x_padded[:, g*C_in_per_group:(g+1)*C_in_per_group]
+0964:                 w_g = weight.data[g*C_out_per_group:(g+1)*C_out_per_group]
+0965: 
+0966:                 x_cols = _im2col_dilated(x_g, weight.shape[2:], stride, dilation, padding,
+0967:                         mode=mode, sampling_locations=None)
+0968:                 w_reshaped = w_g.reshape(C_out_per_group, -1)
+0969:                 out = w_reshaped @ x_cols
+0970: 
+0971:                 out = out.reshape(C_out_per_group, H_out * W_out, x.shape[0])
+0972:                 out = out.transpose(2, 0, 1).reshape(x.shape[0], C_out_per_group, H_out, W_out)
+0973:                 output[:, g*C_out_per_group:(g+1)*C_out_per_group] = out
+0974: 
+0975:             if bias is not None:
+0976:                 output += bias.data.reshape(1, -1, 1, 1)
 0977: 
-0978:             # Reshape weights and grad_output for matrix multiplication
-0979:             w_reshaped = w_g.reshape(C_out_per_group, -1).T  # Shape: (C_in_per_group * kH * kW, C_out_per_group)
-0980:             grad_out_reshaped = grad_out_g.reshape(N, C_out_per_group, -1).transpose(1, 0, 2).reshape(C_out_per_group, -1)  # Shape: (C_out_per_group, N * H_out * W_out)
-0981: 
-0982:             # Compute gradient columns
-0983:             grad_cols = w_reshaped @ grad_out_reshaped  # Shape: (C_in_per_group * kH * kW, N * H_out * W_out)
-0984: 
-0985:             # Convert columns back to image
-0986:             grad_x_g = _col2im_dilated(
-0987:                 grad_cols,
-0988:                 x_padded[:, g * C_in_per_group:(g + 1) * C_in_per_group].shape,
-0989:                 weight.shape[2:],
-0990:                 stride,
-0991:                 dilation
-0992:             )
-0993:             grad_x_padded[:, g * C_in_per_group:(g + 1) * C_in_per_group] += grad_x_g
-0994: 
-0995:             # Compute gradient for weights
-0996:             x_cols = _im2col_dilated(
-0997:                 x_padded[:, g * C_in_per_group:(g + 1) * C_in_per_group],
-0998:                 weight.shape[2:], stride, dilation, ConvMode.STANDARD, sampling_locations=None
-0999:             )
-1000:             for n in range(N):
-1001:                 grad_out_n = grad_out_g[n].reshape(C_out_per_group, -1)  # Shape: (C_out_per_group, H_out * W_out)
-1002:                 grad_weight[g * C_out_per_group:(g + 1) * C_out_per_group] += \
-1003:                     (grad_out_n @ x_cols[:, n * H_out * W_out:(n + 1) * H_out * W_out].T).reshape(
-1004:                         C_out_per_group, C_in_per_group, kH, kW
-1005:                     )
-1006: 
-1007:         # Compute gradient for bias
-1008:         if bias is not None:
-1009:             grad_bias += grad_output.sum(axis=(0, 2, 3))
-1010: 
-1011:     @staticmethod
-1012:     def _backward_transposed(
-1013:         grad_output_padded, grad_x, grad_weight, grad_bias,
-1014:         x, weight, bias, stride, padding, dilation, groups,
-1015:         N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-1016:     ):
-1017:         """
-1018:         Backward pass for transposed convolution.
-1019:         """
-1020:         for g in range(groups):
-1021:             # Slice weights and grad_output for the current group
-1022:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
-1023:             grad_out_g = grad_output_padded[:, g * C_out_per_group:(g + 1) * C_out_per_group]
-1024: 
-1025:             # Reshape weights for gradient computation
-1026:             w_flipped = np.flip(np.flip(w_g, 2), 3).transpose(1, 0, 2, 3)  # Flip kernel
-1027:             w_reshaped = w_flipped.reshape(-1, C_out_per_group)  # Shape: (C_in_per_group * kH * kW, C_out_per_group)
-1028: 
-1029:             # Compute gradient columns with swapped stride and dilation
-1030:             grad_cols = _im2col_dilated(
-1031:                 grad_out_g,
-1032:                 weight.shape[2:],
-1033:                 dilation,  # Use dilation as stride
-1034:                 stride,    # Use stride as dilation
-1035:                 ConvMode.STANDARD
-1036:             )
-1037: 
-1038:             # Compute gradient for input
-1039:             grad_x[:, g * C_in_per_group:(g + 1) * C_in_per_group] += \
-1040:                 (w_reshaped @ grad_cols).reshape(N, C_in_per_group, *x.shape[2:])
-1041: 
-1042:             # Compute gradient for weights
-1043:             x_original = x.data[:, g * C_in_per_group:(g + 1) * C_in_per_group]
-1044:             x_cols = _im2col_dilated(
-1045:                 x_original,
-1046:                 weight.shape[2:], stride, dilation, ConvMode.STANDARD, sampling_locations=None
-1047:             )
-1048:             for n in range(N):
-1049:                 grad_out_n = grad_out_g[n].reshape(C_out_per_group, -1)  # Shape: (C_out_per_group, H_out * W_out)
-1050:                 grad_weight[g * C_out_per_group:(g + 1) * C_out_per_group] += \
-1051:                     (grad_out_n @ x_cols[:, n * H_out * W_out:(n + 1) * H_out * W_out].T).reshape(
-1052:                         C_out_per_group, C_in_per_group, kH, kW
-1053:                     )
-1054: 
-1055:         # Compute gradient for bias
-1056:         if bias is not None:
-1057:             grad_bias += grad_output_padded.sum(axis=(0, 2, 3))
-1058: 
-1059:     @staticmethod
-1060:     def _backward_deformable(
-1061:         grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
-1062:         x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups, sampling_locations,
-1063:         N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
-1064:     ):
-1065:         """
-1066:         Backward pass for deformable convolution.
-1067:         """
-1068:         for g in range(groups):
-1069:             # Slice weights and grad_output for the current group
-1070:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]  # Shape: (C_out_per_group, C_in_per_group, kH, kW)
-1071:             grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]  # Shape: (N, C_out_per_group, H_out, W_out)
-1072: 
-1073:             for n in range(N):
-1074:                 for h in range(H_out):
-1075:                     for w_ in range(W_out):
-1076:                         # Flat index for the current spatial location
-1077:                         i = h * W_out + w_
-1078: 
-1079:                         # Extract grad_out for current (n, g, h, w_)
-1080:                         grad_out_slice = grad_out_g[n, :, h, w_]  # Shape: (C_out_per_group,)
-1081: 
-1082:                         for c_out in range(C_out_per_group):
-1083:                             # Get the gradient for the current output channel
-1084:                             grad = grad_out_slice[c_out]  # Scalar
-1085: 
-1086:                             for c_in in range(C_in_per_group):
-1087:                                 for kh in range(kH):
-1088:                                     for kw in range(kW):
-1089:                                         # Index for the kernel position
-1090:                                         k_idx = kh * kW + kw
-1091: 
-1092:                                         # Get the corresponding sampling location
-1093:                                         loc = sampling_locations[n, i, k_idx, :]  # Shape: (2,)
-1094:                                         y, x = loc  # y and x are the sampling locations in input space
-1095: 
-1096:                                         # Compute integer coordinates
-1097:                                         y0 = int(np.floor(y))
-1098:                                         x0 = int(np.floor(x))
-1099:                                         y1 = y0 + 1
-1100:                                         x1 = x0 + 1
-1101: 
-1102:                                         # Compute fractional parts
-1103:                                         dy = y - y0
-1104:                                         dx = x - x0
-1105: 
-1106:                                         # Compute interpolation weights
-1107:                                         wa = (1 - dy) * (1 - dx)
-1108:                                         wb = dy * (1 - dx)
-1109:                                         wc = (1 - dy) * dx
-1110:                                         wd = dy * dx
-1111: 
-1112:                                         # Compute input slice with batch and channel dimensions
-1113:                                         input_slice = x_padded[n:n+1, g * C_in_per_group + c_in : g * C_in_per_group + c_in + 1, :, :]  # Shape: (1, 1, H, W)
+0978:             return Tensor(output)
+0979:     
+0980:     @staticmethod
+0981:     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+0982:         """Backward pass of 2D convolution."""
+0983:         # Retrieve saved tensors and arguments
+0984:         saved_tensors = ctx.saved_tensors
+0985:         num_saved = len(saved_tensors)
+0986:         
+0987:         # Initialize variables
+0988:         offset_tensor = None
+0989:         mask = None
+0990:         grad_offset = None
+0991:         grad_mask = None
+0992:         
+0993:         # Get saved tensors based on mode
+0994:         if num_saved == 4:  # Deformable case
+0995:             x, weight, bias, offset_tensor = saved_tensors
+0996:         else:  # Standard/transposed case
+0997:             x, weight, bias = saved_tensors
+0998:             
+0999:         # Get saved arguments
+1000:         stride = ctx.saved_arguments['stride']
+1001:         padding = ctx.saved_arguments['padding']
+1002:         dilation = ctx.saved_arguments['dilation']
+1003:         groups = ctx.saved_arguments['groups']
+1004:         mode = ctx.saved_arguments['mode']
+1005:         sampling_locations = ctx.saved_arguments.get('sampling_locations', None)
+1006:         
+1007:         # Calculate dimensions
+1008:         N, C_in, H, W = x.shape
+1009:         C_out, _, kH, kW = weight.shape
+1010:         C_in_per_group = C_in // groups
+1011:         C_out_per_group = C_out // groups
+1012:         H_out, W_out = _get_output_shape(x.shape, weight.shape[2:], stride, padding, dilation, mode)
+1013:         
+1014:         # Initialize gradients based on requires_grad flags
+1015:         grad_x = None
+1016:         grad_x_padded = None
+1017:         grad_weight = None
+1018:         grad_bias = None
+1019:         
+1020:         if x.requires_grad:
+1021:             if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
+1022:                 x_padded = _pad_input(x.data, padding)
+1023:                 grad_x_padded = np.zeros_like(x_padded)
+1024:             else:  # Transposed
+1025:                 grad_x = np.zeros_like(x.data)
+1026:                 
+1027:         if weight.requires_grad:
+1028:             grad_weight = np.zeros_like(weight.data)
+1029:             
+1030:         if bias is not None and bias.requires_grad:
+1031:             grad_bias = np.zeros_like(bias.data)
+1032:             
+1033:         if mode == ConvMode.DEFORMABLE:
+1034:             if offset_tensor is not None and offset_tensor.requires_grad:
+1035:                 grad_offset = np.zeros_like(offset_tensor.data)
+1036:                 
+1037:         # Compute gradients based on mode
+1038:         if mode == ConvMode.STANDARD:
+1039:             Conv2dFunction._backward_standard(
+1040:                 grad_output, grad_x_padded, grad_weight, grad_bias,
+1041:                 x_padded, weight, bias, stride, padding, dilation, groups,
+1042:                 N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
+1043:             )
+1044:         elif mode == ConvMode.TRANSPOSED:
+1045:             Conv2dFunction._backward_transposed(
+1046:                 grad_output, grad_x, grad_weight, grad_bias,
+1047:                 x, weight, bias, stride, padding, dilation, groups,
+1048:                 N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
+1049:             )
+1050:         elif mode == ConvMode.DEFORMABLE:
+1051:             Conv2dFunction._backward_deformable(
+1052:                 grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
+1053:                 x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups,
+1054:                 sampling_locations, N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
+1055:             )
+1056:             
+1057:         # Assign gradients to grad_dict
+1058:         if x.requires_grad:
+1059:             if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
+1060:                 if padding[0] > 0 or padding[1] > 0:
+1061:                     grad_x = grad_x_padded[:, :, 
+1062:                                        padding[0]:grad_x_padded.shape[2]-padding[0],
+1063:                                        padding[1]:grad_x_padded.shape[3]-padding[1]]
+1064:                 else:
+1065:                     grad_x = grad_x_padded
+1066:             grad_dict[id(x)] = grad_x
+1067:             
+1068:         if weight.requires_grad:
+1069:             grad_dict[id(weight)] = grad_weight
+1070:             
+1071:         if bias is not None and bias.requires_grad:
+1072:             grad_dict[id(bias)] = grad_bias
+1073:             
+1074:         if offset_tensor is not None and offset_tensor.requires_grad:
+1075:             grad_dict[id(offset_tensor)] = grad_offset
+1076: 
+1077:     @staticmethod
+1078:     def _backward_standard(grad_output, grad_x_padded, grad_weight, grad_bias,
+1079:                         x_padded, weight, bias, stride, padding, dilation, groups,
+1080:                         N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out):
+1081:         """Backward pass for standard convolution."""
+1082:         for g in range(groups):
+1083:             # Get weight and grad_output for current group
+1084:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
+1085:             grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]
+1086:             
+1087:             # Convert grad_output to columns
+1088:             grad_out_col = grad_out_g.transpose(1, 0, 2, 3).reshape(C_out_per_group, -1)
+1089:             
+1090:             # Get input columns
+1091:             x_cols = _im2col_dilated(
+1092:                 x_padded[:, g * C_in_per_group:(g + 1) * C_in_per_group],
+1093:                 (kH, kW), stride, dilation, padding, ConvMode.STANDARD
+1094:             )
+1095:             
+1096:             # Compute weight gradients
+1097:             grad_weight[g * C_out_per_group:(g + 1) * C_out_per_group] = \
+1098:                 (grad_out_col @ x_cols.T).reshape(C_out_per_group, C_in_per_group, kH, kW)
+1099:             
+1100:             # Compute input gradients
+1101:             w_reshaped = w_g.reshape(C_out_per_group, -1).T
+1102:             grad_cols = w_reshaped @ grad_out_col
+1103:             
+1104:             # Reshape grad_cols to match the expected shape
+1105:             grad_cols = grad_cols.reshape(-1, N * H_out * W_out)
+1106:             
+1107:             # Convert columns back to image format
+1108:             grad_x_padded[:, g * C_in_per_group:(g + 1) * C_in_per_group] += \
+1109:                 _col2im_dilated(grad_cols, x_padded.shape, (kH, kW), stride, dilation)
+1110:         
+1111:         # Compute bias gradients if needed
+1112:         if bias is not None and grad_bias is not None:
+1113:             grad_bias[:] = grad_output.sum(axis=(0, 2, 3))
 1114: 
-1115:                                         # Reshape loc to (N=1, P=1, 2)
-1116:                                         points = loc.reshape(1, 1, 2)  # Shape: (1, 1, 2)
-1117: 
-1118:                                         # Perform bilinear interpolation
-1119:                                         interpolated = _bilinear_interpolate(input_slice, points, align_corners=True)  # Shape: (1, 1, 1)
-1120:                                         interpolated_sum = interpolated.sum()  # Scalar
-1121: 
-1122:                                         # Update grad_weight
-1123:                                         grad_weight[g * C_out_per_group + c_out, c_in, kh, kw] += grad * interpolated_sum
-1124: 
-1125:                                         # Update grad_x_padded with interpolation weights
-1126:                                         # Ensure that the indices are within bounds
-1127:                                         if 0 <= y0 < x_padded.shape[2] and 0 <= x0 < x_padded.shape[3]:
-1128:                                             grad_x_padded[n, g * C_in_per_group + c_in, y0, x0] += grad * w_g[c_out, c_in, kh, kw] * wa
-1129:                                         if 0 <= y1 < x_padded.shape[2] and 0 <= x0 < x_padded.shape[3]:
-1130:                                             grad_x_padded[n, g * C_in_per_group + c_in, y1, x0] += grad * w_g[c_out, c_in, kh, kw] * wb
-1131:                                         if 0 <= y0 < x_padded.shape[2] and 0 <= x1 < x_padded.shape[3]:
-1132:                                             grad_x_padded[n, g * C_in_per_group + c_in, y0, x1] += grad * w_g[c_out, c_in, kh, kw] * wc
-1133:                                         if 0 <= y1 < x_padded.shape[2] and 0 <= x1 < x_padded.shape[3]:
-1134:                                             grad_x_padded[n, g * C_in_per_group + c_in, y1, x1] += grad * w_g[c_out, c_in, kh, kw] * wd
-1135: 
-1136:                                         # Compute gradients w.r.t. offset if applicable
-1137:                                         if offset_tensor.requires_grad:
-1138:                                             # Placeholder for actual gradient computation w.r.t. offset
-1139:                                             # This requires computing derivatives based on how offsets affect sampling locations
-1140:                                             # For simplicity, this implementation does not compute these gradients
-1141:                                             pass  # Replace with actual gradient computation for offsets
-1142: 
-1143:                                         # Compute gradients w.r.t. mask if applicable
-1144:                                         if mask is not None and grad_mask is not None:
-1145:                                             # Assuming mask modulates the convolution, compute its gradient
-1146:                                             # The gradient is grad_output * weight * sampled_input
-1147:                                             # First, perform bilinear interpolation to get sampled input
-1148:                                             sampled_input = _bilinear_interpolate(input_slice, points, align_corners=True).squeeze(0).squeeze(0)  # Shape: (1,)
-1149:                                             
-1150:                                             # Compute grad_mask
-1151:                                             grad_mask[g * kH * kW + kh * kW + kw, n, h, w_] += grad * w_g[c_out, c_in, kh, kw] * sampled_input
-1152: 
-1153:         # After accumulating all gradients, compute grad_bias if needed
-1154:         if bias is not None and bias.requires_grad:
-1155:             grad_bias += grad_output.sum(axis=(0, 2, 3))  # Sum over N, H_out, W_out
+1115:     @staticmethod
+1116:     def _backward_transposed(
+1117:         grad_output_padded, grad_x, grad_weight, grad_bias,
+1118:         x, weight, bias, stride, padding, dilation, groups,
+1119:         N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out
+1120:     ):
+1121:         """
+1122:         Backward pass for transposed convolution.
+1123:         """
+1124:         for g in range(groups):
+1125:             # Slice weights and grad_output for the current group
+1126:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
+1127:             grad_out_g = grad_output_padded[:, g * C_out_per_group:(g + 1) * C_out_per_group]
+1128: 
+1129:             # Reshape weights for gradient computation
+1130:             w_flipped = np.flip(np.flip(w_g, 2), 3).transpose(1, 0, 2, 3)  # Flip kernel
+1131:             w_reshaped = w_flipped.reshape(-1, C_out_per_group)  # Shape: (C_in_per_group * kH * kW, C_out_per_group)
+1132: 
+1133:             # Compute gradient columns with swapped stride and dilation
+1134:             grad_cols = _im2col_dilated(
+1135:                 grad_out_g,
+1136:                 weight.shape[2:],
+1137:                 dilation,  # Use dilation as stride
+1138:                 stride,    # Use stride as dilation
+1139:                 ConvMode.STANDARD
+1140:             )
+1141: 
+1142:             # Compute gradient for input
+1143:             grad_x[:, g * C_in_per_group:(g + 1) * C_in_per_group] += \
+1144:                 (w_reshaped @ grad_cols).reshape(N, C_in_per_group, *x.shape[2:])
+1145: 
+1146:             # Compute gradient for weights
+1147:             x_original = x.data[:, g * C_in_per_group:(g + 1) * C_in_per_group]
+1148:             x_cols = _im2col_dilated(
+1149:                 x_original,
+1150:                 weight.shape[2:], stride, dilation, ConvMode.STANDARD, sampling_locations=None
+1151:             )
+1152:             for n in range(N):
+1153:                 grad_out_n = grad_out_g[n].reshape(C_out_per_group, -1)  # Shape: (C_out_per_group, H_out * W_out)
+1154:                 grad_weight[g * C_out_per_group:(g + 1) * C_out_per_group] += \
+1155:                     (grad_out_n @ x_cols[:, n * H_out * W_out:(n + 1) * H_out * W_out].T).reshape(
+1156:                         C_out_per_group, C_in_per_group, kH, kW
+1157:                     )
+1158: 
+1159:         # Compute gradient for bias
+1160:         if bias is not None:
+1161:             grad_bias += grad_output_padded.sum(axis=(0, 2, 3))
+1162: 
+1163:     @staticmethod
+1164:     def _backward_deformable(grad_output, grad_x_padded, grad_weight, grad_bias, grad_offset, grad_mask,
+1165:                         x_padded, weight, bias, offset_tensor, mask, stride, padding, dilation, groups,
+1166:                         sampling_locations, N, C_in_per_group, C_out_per_group, kH, kW, H_out, W_out,
+1167:                         align_corners=True):
+1168:         """Backward pass for deformable convolution."""
+1169:         
+1170:         if sampling_locations is None and offset_tensor is not None:
+1171:             # If sampling_locations weren't provided but we have offset tensor, compute them
+1172:             sampling_locations = _get_deformable_offsets(
+1173:                 offset_tensor.data,
+1174:                 (kH, kW),
+1175:                 x_padded.shape,
+1176:                 dilation
+1177:             )
+1178:         
+1179:         # Now proceed with backward pass using sampling_locations
+1180:         for g in range(groups):
+1181:             w_g = weight.data[g * C_out_per_group:(g + 1) * C_out_per_group]
+1182:             grad_out_g = grad_output[:, g * C_out_per_group:(g + 1) * C_out_per_group]
+1183: 
+1184:             for n in range(N):
+1185:                 for h in range(H_out):
+1186:                     for w_ in range(W_out):
+1187:                         i = h * W_out + w_
+1188:                         grad_out_slice = grad_out_g[n, :, h, w_]
+1189: 
+1190:                         for c_out in range(C_out_per_group):
+1191:                             grad = grad_out_slice[c_out]
+1192: 
+1193:                             for c_in in range(C_in_per_group):
+1194:                                 for kh in range(kH):
+1195:                                     for kw in range(kW):
+1196:                                         k_idx = kh * kW + kw
+1197:                                         
+1198:                                         if sampling_locations is not None:
+1199:                                             loc = sampling_locations[n, i, k_idx]
+1200:                                             h_in = int(loc[0])
+1201:                                             w_in = int(loc[1])
+1202:                                             
+1203:                                             if (0 <= h_in < x_padded.shape[2] and 
+1204:                                                 0 <= w_in < x_padded.shape[3]):
+1205:                                                 # Update gradients
+1206:                                                 if grad_x_padded is not None:
+1207:                                                     grad_x_padded[n, g*C_in_per_group + c_in, h_in, w_in] += (
+1208:                                                         grad * w_g[c_out, c_in, kh, kw]
+1209:                                                     )
+1210:                                                 if grad_weight is not None:
+1211:                                                     grad_weight[g*C_out_per_group + c_out, c_in, kh, kw] += (
+1212:                                                         grad * x_padded[n, g*C_in_per_group + c_in, h_in, w_in]
+1213:                                                     )
+1214: 
+1215:         # Compute gradients for bias if needed
+1216:         if grad_bias is not None and bias is not None:
+1217:             grad_bias[:] = grad_output.sum((0, 2, 3))
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\elementwise.py
 // ----------------------------------------
@@ -3707,14 +3769,117 @@
 0009: from .adam import Adam
 0010: from .rmsprop import RMSprop
 0011: from .adagrad import AdaGrad
-0012: 
-0013: __all__ = [
-0014:     'Optimizer',
-0015:     'SGD',
-0016:     'Adam',
-0017:     'RMSprop',
-0018:     'AdaGrad'
-0019: ]
+0012: from .adadelta import AdaDelta
+0013: from .adamax import AdaMax
+0014: 
+0015: __all__ = [
+0016:     'Optimizer',
+0017:     'SGD',
+0018:     'Adam',
+0019:     'RMSprop',
+0020:     'AdaGrad',
+0021:     'AdaDelta',
+0022:     'AdaMax'
+0023: ]
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adadelta.py
+// ----------------------------------------
+0001: import numpy as np
+0002: from typing import Dict, Iterator, Optional
+0003: from .optimizer import Optimizer
+0004: from ..core import Tensor
+0005: 
+0006: class AdaDelta(Optimizer):
+0007:     """
+0008:     Implements AdaDelta algorithm.
+0009:     
+0010:     AdaDelta is a more robust extension of AdaGrad that adapts learning rates based on a 
+0011:     moving window of gradient updates, instead of accumulating all past squared gradients.
+0012:     The main advantage is that it doesn't need an initial learning rate.
+0013:     
+0014:     Args:
+0015:         params: Iterable of parameters to optimize
+0016:         rho (float): Coefficient for computing a running average of squared gradients (default: 0.9)
+0017:         eps (float): Term added to denominator to improve numerical stability (default: 1e-6)
+0018:         weight_decay (float): Weight decay (L2 penalty) (default: 0)
+0019:     """
+0020:     
+0021:     def __init__(self, params, rho: float = 0.9, eps: float = 1e-6, weight_decay: float = 0):
+0022:         if not 0.0 <= rho <= 1.0:
+0023:             raise ValueError(f"Invalid rho value: {rho}")
+0024:         if not 0.0 <= eps:
+0025:             raise ValueError(f"Invalid epsilon value: {eps}")
+0026:         if not 0.0 <= weight_decay:
+0027:             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+0028:         
+0029:         defaults = dict(rho=rho, eps=eps, weight_decay=weight_decay)
+0030:         super().__init__(params, defaults)
+0031: 
+0032:         # Initialize state for each parameter
+0033:         for group in self._params:
+0034:             state = self.state[id(group)]
+0035:             state['step'] = 0
+0036:             state['square_avg'] = np.zeros_like(group.data, dtype=np.float64)  # E[g^2]
+0037:             state['acc_delta'] = np.zeros_like(group.data, dtype=np.float64)   # E[Δx^2]
+0038: 
+0039:     def step(self) -> None:
+0040:         """
+0041:         Performs a single optimization step.
+0042:         
+0043:         For each parameter:
+0044:         1. Compute running average of squared gradients
+0045:         2. Compute parameter update using accumulated squared updates
+0046:         3. Update running average of squared updates
+0047:         4. Apply update to parameters
+0048:         """
+0049:         for p in self._params:
+0050:             if p.grad is None:
+0051:                 continue
+0052:             
+0053:             grad = p.grad
+0054:             state = self.state[id(p)]
+0055: 
+0056:             # Apply weight decay if specified
+0057:             if self.defaults['weight_decay'] != 0:
+0058:                 grad = grad + self.defaults['weight_decay'] * p.data
+0059: 
+0060:             state['step'] += 1
+0061: 
+0062:             # Get parameters
+0063:             rho = self.defaults['rho']
+0064:             eps = self.defaults['eps']
+0065: 
+0066:             # Update running average of squared gradients
+0067:             square_avg = state['square_avg']
+0068:             acc_delta = state['acc_delta']
+0069:             
+0070:             # Update square_avg using numpy operations
+0071:             square_avg = rho * square_avg + (1 - rho) * grad * grad
+0072:             state['square_avg'] = square_avg
+0073:             
+0074:             # Compute update
+0075:             std = np.sqrt(acc_delta + eps)
+0076:             delta = np.sqrt(square_avg + eps)
+0077:             update = grad * std / delta
+0078: 
+0079:             # Update running average of squared updates
+0080:             acc_delta = rho * acc_delta + (1 - rho) * update * update
+0081:             state['acc_delta'] = acc_delta
+0082:             
+0083:             # Apply update
+0084:             p.data -= update
+0085: 
+0086:     def state_dict(self) -> Dict:
+0087:         """Returns the state of the optimizer as a Dict."""
+0088:         return {
+0089:             'state': self.state,
+0090:             'defaults': self.defaults
+0091:         }
+0092: 
+0093:     def load_state_dict(self, state_dict: Dict) -> None:
+0094:         """Loads the optimizer state."""
+0095:         self.state = state_dict['state']
+0096:         self.defaults = state_dict['defaults']
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adagrad.py
 // ----------------------------------------
@@ -3934,6 +4099,110 @@
 0089:             state['exp_avg_sq'] = exp_avg_sq
 0090:             if self.defaults['amsgrad']:
 0091:                 state['max_exp_avg_sq'] = max_exp_avg_sq
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\adamax.py
+// ----------------------------------------
+0001: import numpy as np
+0002: from typing import Dict, Iterator, Optional
+0003: from .optimizer import Optimizer
+0004: from ..core import Tensor
+0005: 
+0006: class AdaMax(Optimizer):
+0007:     """
+0008:     Implements AdaMax algorithm, a variant of Adam based on the infinity norm.
+0009:     
+0010:     AdaMax is a variant of Adam that adopts the infinity norm in place of the L2 norm.
+0011:     It tends to be more stable than Adam in some cases.
+0012:     
+0013:     Args:
+0014:         params: Iterable of parameters to optimize
+0015:         lr (float): Learning rate (default: 0.002)
+0016:         betas (tuple): Coefficients for computing running averages (default: (0.9, 0.999))
+0017:         eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
+0018:         weight_decay (float): Weight decay (L2 penalty) (default: 0)
+0019:     """
+0020:     
+0021:     def __init__(self, params, lr: float = 0.002, betas: tuple = (0.9, 0.999), 
+0022:                  eps: float = 1e-8, weight_decay: float = 0):
+0023:         if not 0.0 <= lr:
+0024:             raise ValueError(f"Invalid learning rate: {lr}")
+0025:         if not 0.0 <= eps:
+0026:             raise ValueError(f"Invalid epsilon value: {eps}")
+0027:         if not 0.0 <= betas[0] < 1.0:
+0028:             raise ValueError(f"Invalid beta1 parameter: {betas[0]}")
+0029:         if not 0.0 <= betas[1] < 1.0:
+0030:             raise ValueError(f"Invalid beta2 parameter: {betas[1]}")
+0031:         if not 0.0 <= weight_decay:
+0032:             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+0033:             
+0034:         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+0035:         super().__init__(params, defaults)
+0036:         
+0037:         # Initialize state for each parameter
+0038:         for group in self._params:
+0039:             state = self.state[id(group)]
+0040:             state['step'] = 0
+0041:             state['exp_avg'] = np.zeros_like(group.data, dtype=np.float64)  # m_t
+0042:             state['exp_inf'] = np.zeros_like(group.data, dtype=np.float64)  # u_t
+0043: 
+0044:     def step(self) -> None:
+0045:         """
+0046:         Performs a single optimization step.
+0047:         
+0048:         For each parameter:
+0049:         1. Update biased first moment estimate
+0050:         2. Update the exponentially weighted infinity norm
+0051:         3. Compute bias-corrected learning rate
+0052:         4. Update parameters
+0053:         """
+0054:         for p in self._params:
+0055:             if p.grad is None:
+0056:                 continue
+0057:                 
+0058:             grad = p.grad
+0059:             state = self.state[id(p)]
+0060: 
+0061:             # Apply weight decay if specified
+0062:             if self.defaults['weight_decay'] != 0:
+0063:                 grad = grad + self.defaults['weight_decay'] * p.data
+0064: 
+0065:             # Get parameters
+0066:             beta1, beta2 = self.defaults['betas']
+0067:             lr = self.defaults['lr']
+0068:             eps = self.defaults['eps']
+0069:             
+0070:             state['step'] += 1
+0071:             bias_correction = 1 - beta1 ** state['step']
+0072: 
+0073:             # Get momentum buffer
+0074:             exp_avg = state['exp_avg']
+0075:             exp_inf = state['exp_inf']
+0076: 
+0077:             # Update biased first moment estimate using numpy operations
+0078:             exp_avg = beta1 * exp_avg + (1 - beta1) * grad
+0079:             state['exp_avg'] = exp_avg
+0080:             
+0081:             # Update the exponentially weighted infinity norm
+0082:             exp_inf = np.maximum(beta2 * exp_inf, np.abs(grad))
+0083:             state['exp_inf'] = exp_inf
+0084: 
+0085:             # Compute bias-corrected learning rate
+0086:             step_size = lr / bias_correction
+0087: 
+0088:             # Update parameters
+0089:             p.data -= step_size * exp_avg / (exp_inf + eps)
+0090: 
+0091:     def state_dict(self) -> Dict:
+0092:         """Returns the state of the optimizer as a Dict."""
+0093:         return {
+0094:             'state': self.state,
+0095:             'defaults': self.defaults
+0096:         }
+0097: 
+0098:     def load_state_dict(self, state_dict: Dict) -> None:
+0099:         """Loads the optimizer state."""
+0100:         self.state = state_dict['state']
+0101:         self.defaults = state_dict['defaults']
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\optim\optimizer.py
 // ----------------------------------------
@@ -4667,248 +4936,488 @@
 0009:     _fold,
 0010:     _bilinear_interpolate,
 0011:     _generate_grid,
-0012:     _deform_grid
-0013: )
-0014: 
-0015: class TestConv2d:
-0016:     """Tests for Conv2d module."""
-0017:     
-0018:     # [Previous tests remain the same...]
-0019: 
-0020:     def test_conv2d_asymmetric_kernel(self):
-0021:         """Test Conv2d with asymmetric kernel."""
-0022:         batch_size = 2
-0023:         in_channels = 3
-0024:         out_channels = 16
-0025:         height = width = 32
-0026:         kernel_size = (3, 5)  # Asymmetric kernel
-0027:         
-0028:         conv = Conv2d(in_channels, out_channels, kernel_size)
-0029:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0030:         output = conv(x)
-0031:         
-0032:         # Check output shape
-0033:         expected_height = height - kernel_size[0] + 1
-0034:         expected_width = width - kernel_size[1] + 1
-0035:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
-0036: 
-0037:     def test_conv2d_asymmetric_stride(self):
-0038:         """Test Conv2d with different strides for height and width."""
-0039:         batch_size = 2
-0040:         in_channels = 3
-0041:         out_channels = 16
-0042:         height = width = 32
-0043:         kernel_size = 3
-0044:         stride = (2, 3)  # Different strides
-0045:         
-0046:         conv = Conv2d(in_channels, out_channels, kernel_size, stride=stride)
-0047:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0048:         output = conv(x)
-0049:         
-0050:         expected_height = (height - kernel_size) // stride[0] + 1
-0051:         expected_width = (width - kernel_size) // stride[1] + 1
-0052:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
-0053: 
-0054:     def test_conv2d_asymmetric_padding(self):
-0055:         """Test Conv2d with different padding for height and width."""
-0056:         batch_size = 2
-0057:         in_channels = 3
-0058:         out_channels = 16
-0059:         height = width = 32
-0060:         kernel_size = 3
-0061:         padding = (1, 2)  # Different padding
-0062:         
-0063:         conv = Conv2d(in_channels, out_channels, kernel_size, padding=padding)
-0064:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0065:         output = conv(x)
-0066:         
-0067:         expected_height = height + 2*padding[0] - kernel_size + 1
-0068:         expected_width = width + 2*padding[1] - kernel_size + 1
-0069:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
-0070: 
-0071:     def test_conv2d_dilated(self):
-0072:         """Test dilated convolution."""
-0073:         batch_size = 2
-0074:         in_channels = 3
-0075:         out_channels = 16
-0076:         height = width = 32
-0077:         kernel_size = 3
-0078:         dilation = 2
-0079:         
-0080:         conv = Conv2d(in_channels, out_channels, kernel_size, dilation=dilation)
-0081:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0082:         output = conv(x)
-0083:         
-0084:         effective_kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
-0085:         expected_height = height - effective_kernel_size + 1
-0086:         expected_width = width - effective_kernel_size + 1
-0087:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
-0088: 
-0089:     def test_conv2d_groups(self):
-0090:         """Test grouped convolution."""
-0091:         batch_size = 2
-0092:         in_channels = 4
-0093:         out_channels = 4
-0094:         height = width = 32
+0012:     _deform_grid,
+0013:     _get_deformable_offsets, 
+0014:     _compute_conv_grad_input_padding,
+0015:     _col2im_dilated
+0016: )
+0017: 
+0018: class TestConv2d:
+0019:     """Tests for Conv2d module."""
+0020:     
+0021:     def test_conv2d_asymmetric_kernel(self):
+0022:         """Test Conv2d with asymmetric kernel."""
+0023:         batch_size = 2
+0024:         in_channels = 3
+0025:         out_channels = 16
+0026:         height = width = 32
+0027:         kernel_size = (3, 5)  # Asymmetric kernel
+0028:         
+0029:         conv = Conv2d(in_channels, out_channels, kernel_size)
+0030:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0031:         output = conv(x)
+0032:         
+0033:         # Check output shape
+0034:         expected_height = height - kernel_size[0] + 1
+0035:         expected_width = width - kernel_size[1] + 1
+0036:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
+0037: 
+0038:     def test_conv2d_asymmetric_stride(self):
+0039:         """Test Conv2d with different strides for height and width."""
+0040:         batch_size = 2
+0041:         in_channels = 3
+0042:         out_channels = 16
+0043:         height = width = 32
+0044:         kernel_size = 3
+0045:         stride = (2, 3)  # Different strides
+0046:         
+0047:         conv = Conv2d(in_channels, out_channels, kernel_size, stride=stride)
+0048:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0049:         output = conv(x)
+0050:         
+0051:         expected_height = (height - kernel_size) // stride[0] + 1
+0052:         expected_width = (width - kernel_size) // stride[1] + 1
+0053:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
+0054: 
+0055:     def test_conv2d_asymmetric_padding(self):
+0056:         """Test Conv2d with different padding for height and width."""
+0057:         batch_size = 2
+0058:         in_channels = 3
+0059:         out_channels = 16
+0060:         height = width = 32
+0061:         kernel_size = 3
+0062:         padding = (1, 2)  # Different padding
+0063:         
+0064:         conv = Conv2d(in_channels, out_channels, kernel_size, padding=padding)
+0065:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0066:         output = conv(x)
+0067:         
+0068:         expected_height = height + 2*padding[0] - kernel_size + 1
+0069:         expected_width = width + 2*padding[1] - kernel_size + 1
+0070:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
+0071: 
+0072:     def test_conv2d_dilated(self):
+0073:         """Test dilated convolution."""
+0074:         batch_size = 2
+0075:         in_channels = 3
+0076:         out_channels = 16
+0077:         height = width = 32
+0078:         kernel_size = 3
+0079:         dilation = 2
+0080:         
+0081:         conv = Conv2d(in_channels, out_channels, kernel_size, dilation=dilation)
+0082:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0083:         output = conv(x)
+0084:         
+0085:         effective_kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
+0086:         expected_height = height - effective_kernel_size + 1
+0087:         expected_width = width - effective_kernel_size + 1
+0088:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
+0089: 
+0090:     def test_col2im_dilated(self):
+0091:         """Test column to image conversion with dilation"""
+0092:         batch_size = 2
+0093:         in_channels = 3
+0094:         height = width = 8
 0095:         kernel_size = 3
-0096:         groups = 2
-0097:         
-0098:         conv = Conv2d(in_channels, out_channels, kernel_size, groups=groups)
-0099:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0100:         output = conv(x)
-0101:         
-0102:         expected_height = height - kernel_size + 1
-0103:         expected_width = width - kernel_size + 1
-0104:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
-0105: 
-0106: class TestConv2dFunction:
-0107:     """Tests for Conv2dFunction and related helper functions."""
-0108:     
-0109:     def test_deformable_conv_forward(self):
-0110:         """Test forward pass of deformable convolution."""
-0111:         batch_size = 2
-0112:         in_channels = 3
-0113:         out_channels = 16
-0114:         height = width = 8
-0115:         kernel_size = 3
-0116:         
-0117:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0118:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size))
-0119:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2))
-0120:         bias = Tensor(np.random.randn(out_channels))
-0121:         
-0122:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1,
-0123:                                     ConvMode.DEFORMABLE, offset)
-0124: 
-0125:     def test_modulated_deform_conv(self):
-0126:         """Test modulated deformable convolution."""
-0127:         batch_size = 2
-0128:         in_channels = 3
-0129:         out_channels = 16
-0130:         height = width = 8
-0131:         kernel_size = 3
-0132:         
-0133:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
-0134:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size))
-0135:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2))
-0136:         mask = Tensor(np.random.randn(batch_size, kernel_size*kernel_size, height-2, width-2))
-0137:         bias = Tensor(np.random.randn(out_channels))
-0138:         
-0139:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1,
-0140:                                     ConvMode.DEFORMABLE, offset, mask)
-0141: 
-0142: class TestHelperFunctions:
-0143:     """Tests for CNN helper functions."""
-0144:     
-0145:     def test_compute_output_shape(self):
-0146:         """Test output shape computation."""
-0147:         input_size = 32
-0148:         kernel_size = 3
-0149:         stride = 1
-0150:         padding = 0
-0151:         dilation = 1
-0152:         
-0153:         output_size = _compute_conv_output_shape(
-0154:             input_size, kernel_size, stride, padding, dilation
-0155:         )
-0156:         assert output_size == 30  # 32 - 3 + 1
-0157: 
-0158:     def test_unfold_operation(self):
-0159:         """Test im2col (unfold) operation."""
-0160:         batch_size = 2
-0161:         channels = 3
-0162:         height = width = 8
-0163:         kernel_size = (3, 3)
-0164:         
-0165:         input_tensor = np.random.randn(batch_size, channels, height, width)
-0166:         unfolded = _unfold(input_tensor, kernel_size, (1, 1), (0, 0), (1, 1))
-0167:         
-0168:         # Check unfolded shape
-0169:         expected_unfold_shape = (channels * kernel_size[0] * kernel_size[1],
-0170:                                batch_size * (height - kernel_size[0] + 1) * 
-0171:                                (width - kernel_size[1] + 1))
-0172:         assert unfolded.shape == expected_unfold_shape
-0173: 
-0174:     def test_fold_operation(self):
-0175:         """Test col2im (fold) operation."""
-0176:         batch_size = 2
-0177:         channels = 3
-0178:         height = width = 8
-0179:         kernel_size = (3, 3)
-0180:         
-0181:         # Create random input and unfold it
-0182:         input_tensor = np.random.randn(batch_size, channels, height, width)
-0183:         unfolded = _unfold(input_tensor, kernel_size, (1, 1), (0, 0), (1, 1))
-0184:         
-0185:         # Fold back
-0186:         folded = _fold(unfolded, (height, width), kernel_size, (1, 1), (0, 0), (1, 1))
+0096:         
+0097:         # Create sample columns
+0098:         cols = np.random.randn(in_channels * kernel_size * kernel_size, 
+0099:                             batch_size * height * width)
+0100:         
+0101:         # Test with different dilation rates
+0102:         dilations = [(1, 1), (2, 2), (1, 2)]
+0103:         for dilation in dilations:
+0104:             output = _col2im_dilated(cols, 
+0105:                                     (batch_size, in_channels, height, width),
+0106:                                     (kernel_size, kernel_size),
+0107:                                     (1, 1),  # stride
+0108:                                     dilation)
+0109:             
+0110:             assert output.shape == (batch_size, in_channels, height, width)
+0111: 
+0112:     def test_conv2d_groups(self):
+0113:         """Test grouped convolution."""
+0114:         batch_size = 2
+0115:         in_channels = 4
+0116:         out_channels = 4
+0117:         height = width = 32
+0118:         kernel_size = 3
+0119:         groups = 2
+0120:         
+0121:         conv = Conv2d(in_channels, out_channels, kernel_size, groups=groups)
+0122:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0123:         output = conv(x)
+0124:         
+0125:         expected_height = height - kernel_size + 1
+0126:         expected_width = width - kernel_size + 1
+0127:         assert output.shape == (batch_size, out_channels, expected_height, expected_width)
+0128: 
+0129:     def test_conv2d_output_shape_calculation(self):
+0130:         """Test the calc_output_shape static method"""
+0131:         input_shape = (1, 3, 32, 32)
+0132:         out_channels = 16
+0133:         kernel_size = (3, 3)
+0134:         stride = (2, 2)
+0135:         padding = (1, 1)
+0136:         dilation = (1, 1)
+0137:         
+0138:         output_shape = Conv2d.calc_output_shape(
+0139:             input_shape, out_channels, kernel_size, stride, padding, dilation
+0140:         )
+0141:         assert output_shape == (1, 16, 16, 16)
+0142: 
+0143:     def test_conv2d_invalid_groups(self):
+0144:         """Test error handling for invalid group configurations"""
+0145:         with pytest.raises(ValueError):
+0146:             # in_channels not divisible by groups
+0147:             Conv2d(5, 10, kernel_size=3, groups=2)
+0148:             
+0149:         with pytest.raises(ValueError):
+0150:             # out_channels not divisible by groups
+0151:             Conv2d(4, 5, kernel_size=3, groups=2)
+0152: 
+0153:     def test_conv2d_extra_repr(self):
+0154:         """Test string representation of Conv2d layer"""
+0155:         conv = Conv2d(3, 16, kernel_size=3, stride=2, padding=1, dilation=2, groups=1)
+0156:         repr_str = conv.extra_repr()
+0157:         assert '3, 16' in repr_str
+0158:         assert 'kernel_size=(3, 3)' in repr_str
+0159:         assert 'stride=(2, 2)' in repr_str
+0160: 
+0161: class TestConv2dFunction:
+0162:     """Tests for Conv2dFunction and related helper functions."""
+0163:     
+0164:     def test_deformable_conv_forward(self):
+0165:         """Test forward pass of deformable convolution."""
+0166:         batch_size = 2
+0167:         in_channels = 3
+0168:         out_channels = 16
+0169:         height = width = 8
+0170:         kernel_size = 3
+0171:         
+0172:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0173:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size))
+0174:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2))
+0175:         bias = Tensor(np.random.randn(out_channels))
+0176:         
+0177:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1,
+0178:                                     ConvMode.DEFORMABLE, offset)
+0179: 
+0180:     def test_modulated_deform_conv(self):
+0181:         """Test modulated deformable convolution."""
+0182:         batch_size = 2
+0183:         in_channels = 3
+0184:         out_channels = 16
+0185:         height = width = 8
+0186:         kernel_size = 3
 0187:         
-0188:         # Check folded shape
-0189:         assert folded.shape == input_tensor.shape
-0190: 
-0191:     def test_bilinear_interpolation(self):
-0192:         """Test bilinear interpolation."""
-0193:         batch_size = 2
-0194:         channels = 3
-0195:         height = width = 8
-0196:         
-0197:         input_tensor = np.random.randn(batch_size, channels, height, width)
-0198:         points = np.random.uniform(-1, 1, (batch_size, 4, 2))  # Sample 4 points
-0199:         
-0200:         interpolated = _bilinear_interpolate(input_tensor, points)
-0201:         assert interpolated.shape == (batch_size, channels, 4)
-0202: 
-0203:     def test_generate_grid(self):
-0204:         """Test sampling grid generation."""
-0205:         batch_size = 2
-0206:         height = 8
-0207:         width = 8
-0208:         
-0209:         grid = _generate_grid(batch_size, height, width)
-0210:         assert grid.shape == (batch_size, height, width, 2)
-0211:         assert np.all(grid >= -1) and np.all(grid <= 1)
-0212: 
-0213:     def test_deform_grid(self):
-0214:         """Test grid deformation."""
-0215:         batch_size = 2
-0216:         height = 8
-0217:         width = 8
-0218:         
-0219:         grid = _generate_grid(batch_size, height, width)
-0220:         offset = np.random.randn(batch_size, 2, height, width) * 0.1
-0221:         
-0222:         deformed = _deform_grid(grid, offset)
-0223:         assert deformed.shape == (batch_size, height, width, 2)
-0224:         assert np.all(deformed >= -1) and np.all(deformed <= 1)
-0225: 
-0226:     def test_numerical_gradient_deformable(self):
-0227:         """Test numerical gradient computation for deformable convolution."""
-0228:         batch_size = 2
-0229:         in_channels = 2
-0230:         out_channels = 3
-0231:         height = width = 5
-0232:         kernel_size = 3
-0233:         
-0234:         x = Tensor(np.random.randn(batch_size, in_channels, height, width), requires_grad=True)
-0235:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size), 
-0236:                        requires_grad=True)
-0237:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2), 
-0238:                        requires_grad=True)
-0239:         setattr(weight, 'offset', offset)
-0240:         bias = Tensor(np.random.randn(out_channels), requires_grad=True)
-0241:         
-0242:         def compute_loss(x, w, b):
-0243:             return np.sum(Conv2dFunction.apply(x, w, b, (1, 1), (0, 0), (1, 1), 1, 
-0244:                                              ConvMode.DEFORMABLE).data)
-0245:         
-0246:         # Compute analytical gradients
-0247:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1, 
-0248:                                     ConvMode.DEFORMABLE)
-0249:         output.backward(np.ones_like(output.data))
-0250:         
-0251:         # Verify offset gradients exist and have correct shape
-0252:         assert offset.grad is not None
-0253:         assert offset.grad.shape == offset.shape
+0188:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0189:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size))
+0190:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2))
+0191:         mask = Tensor(np.random.randn(batch_size, kernel_size*kernel_size, height-2, width-2))
+0192:         bias = Tensor(np.random.randn(out_channels))
+0193:         
+0194:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1,
+0195:                                     ConvMode.DEFORMABLE, offset, mask)
+0196: 
+0197:     def test_bilinear_interpolate(self):
+0198:         """Test bilinear interpolation function"""
+0199:         input_tensor = np.random.randn(1, 3, 4, 4)  # Change batch size to 1
+0200:         points = np.array([[[-1.0, -1.0]]])  # Use normalized coordinates in [-1, 1] range
+0201:         
+0202:         output = _bilinear_interpolate(input_tensor, points)
+0203:         assert output.shape == (1, 3, 1)  # (batch_size, channels, num_points)
+0204:         
+0205:     def test_compute_conv_output_shape(self):
+0206:         """Test output shape computation for different configurations"""
+0207:         input_size = 32
+0208:         kernel_size = 3
+0209:         stride = 2
+0210:         padding = 1
+0211:         dilation = 1
+0212:         
+0213:         output_size = _compute_conv_output_shape(
+0214:             input_size, kernel_size, stride, padding, dilation
+0215:         )
+0216:         expected = ((32 + 2*1 - 1*(3-1) - 1) // 2) + 1
+0217:         assert output_size == expected
+0218: 
+0219:     def test_unfold_fold_operations(self):
+0220:         """Test unfold and fold operations are inverses"""
+0221:         input_tensor = np.random.randn(2, 3, 8, 8)
+0222:         kernel_size = (3, 3)
+0223:         stride = (1, 1)
+0224:         padding = (1, 1)
+0225:         dilation = (1, 1)
+0226:         
+0227:         unfolded = _unfold(input_tensor, kernel_size, dilation, padding, stride)
+0228:         folded = _fold(unfolded, (8, 8), kernel_size, dilation, padding, stride)
+0229:         
+0230:         assert np.allclose(input_tensor, folded, atol=1e-6)
+0231:     
+0232:     def test_backward_standard_comprehensive(self):
+0233:         """Test standard convolution backward pass with various configurations"""
+0234:         batch_size = 2
+0235:         in_channels = 4
+0236:         out_channels = 8
+0237:         height = width = 8
+0238:         kernel_size = 3
+0239:         
+0240:         # Test different stride/padding combinations
+0241:         configs = [
+0242:             ((1, 1), (0, 0)),  # Basic case
+0243:             ((2, 2), (1, 1)),  # With stride and padding
+0244:             ((1, 2), (2, 1)),  # Asymmetric stride and padding
+0245:         ]
+0246:         
+0247:         for stride, padding in configs:
+0248:             # Set requires_grad=True for tensors that need gradients
+0249:             x = Tensor(np.random.randn(batch_size, in_channels, height, width), requires_grad=True)
+0250:             weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size), requires_grad=True)
+0251:             bias = Tensor(np.random.randn(out_channels), requires_grad=True)
+0252:             
+0253:             # Forward pass
+0254:             output = Conv2dFunction.apply(x, weight, bias, stride, padding)
+0255:             
+0256:             # Backward pass
+0257:             grad_output = np.random.randn(*output.shape)
+0258:             output.backward(grad_output)
+0259:             
+0260:             # Verify gradients exist and have correct shapes
+0261:             assert x.grad is not None
+0262:             assert weight.grad is not None
+0263:             assert bias.grad is not None
+0264:             
+0265:             # Verify gradient shapes
+0266:             assert x.grad.shape == x.shape
+0267:             assert weight.grad.shape == weight.shape
+0268:             assert bias.grad.shape == bias.shape
+0269: 
+0270:     def test_deformable_conv_with_mask(self):
+0271:         """Test deformable convolution with modulation mask"""
+0272:         batch_size = 2
+0273:         in_channels = 3
+0274:         out_channels = 16
+0275:         height = width = 8
+0276:         kernel_size = 3
+0277:         
+0278:         x = Tensor(np.random.randn(batch_size, in_channels, height, width), requires_grad=True)
+0279:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size), requires_grad=True)
+0280:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2), requires_grad=True)
+0281:         mask = Tensor(np.random.randn(batch_size, kernel_size*kernel_size, height-2, width-2), requires_grad=True)
+0282:         bias = Tensor(np.random.randn(out_channels), requires_grad=True)  # Add bias
+0283:         
+0284:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1,
+0285:                                     ConvMode.DEFORMABLE, offset, mask)
+0286:         
+0287:         grad_output = np.random.randn(*output.shape)
+0288:         output.backward(grad_output)
+0289:     
+0290:     def test_transposed_conv_output_padding(self):
+0291:         """Test transposed convolution with output padding"""
+0292:         batch_size = 2
+0293:         in_channels = 3
+0294:         out_channels = 16
+0295:         height = width = 8
+0296:         kernel_size = 3
+0297:         stride = (2, 2)
+0298:         padding = (1, 1)
+0299: 
+0300:         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
+0301:         # For transposed conv, weight shape should be (in_channels, out_channels/groups, kernel_size, kernel_size)
+0302:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size))  # Not swapped, keep original format
+0303: 
+0304:         # Forward pass
+0305:         H_out = (height - 1) * stride[0] - 2 * padding[0] + kernel_size
+0306:         W_out = (width - 1) * stride[1] - 2 * padding[1] + kernel_size
+0307:         
+0308:         # Test with different output paddings
+0309:         output_paddings = [(0, 0), (1, 1), (1, 0)]
+0310:         for output_padding in output_paddings:
+0311:             # Add output padding to expected dimensions
+0312:             expected_H = H_out + output_padding[0]
+0313:             expected_W = W_out + output_padding[1]
+0314:             
+0315:             output = Conv2dFunction.apply(x, weight, None, stride, padding, (1, 1), 1,
+0316:                                     ConvMode.TRANSPOSED, output_padding=output_padding)
+0317:             
+0318:             assert output.shape == (batch_size, out_channels, expected_H, expected_W)
+0319:         
+0320:     def test_conv2d_edge_cases(self):
+0321:         """Test convolution with edge cases"""
+0322:         # Test 1x1 convolution
+0323:         x = Tensor(np.random.randn(2, 3, 8, 8))
+0324:         weight = Tensor(np.random.randn(4, 3, 1, 1))
+0325:         output = Conv2dFunction.apply(x, weight)
+0326:         assert output.shape == (2, 4, 8, 8)
+0327:         
+0328:         # Test with large kernel
+0329:         x = Tensor(np.random.randn(2, 3, 16, 16))
+0330:         weight = Tensor(np.random.randn(4, 3, 7, 7))
+0331:         output = Conv2dFunction.apply(x, weight)
+0332:         assert output.shape == (2, 4, 10, 10)
+0333:     
+0334:     def test_conv2d_validation_errors(self):
+0335:         """Test proper error handling"""
+0336:         with pytest.raises(ValueError):
+0337:             # Test invalid group configuration
+0338:             x = Tensor(np.random.randn(2, 3, 8, 8))
+0339:             weight = Tensor(np.random.randn(4, 2, 3, 3))  # Wrong in_channels per group
+0340:             Conv2dFunction.apply(x, weight, groups=2)
+0341: 
+0342: class TestHelperFunctions:
+0343:     """Tests for CNN helper functions."""
+0344:     
+0345:     def test_compute_output_shape(self):
+0346:         """Test output shape computation."""
+0347:         input_size = 32
+0348:         kernel_size = 3
+0349:         stride = 1
+0350:         padding = 0
+0351:         dilation = 1
+0352:         
+0353:         output_size = _compute_conv_output_shape(
+0354:             input_size, kernel_size, stride, padding, dilation
+0355:         )
+0356:         assert output_size == 30  # 32 - 3 + 1
+0357: 
+0358:     def test_unfold_operation(self):
+0359:         """Test im2col (unfold) operation."""
+0360:         batch_size = 2
+0361:         channels = 3
+0362:         height = width = 8
+0363:         kernel_size = (3, 3)
+0364:         
+0365:         input_tensor = np.random.randn(batch_size, channels, height, width)
+0366:         unfolded = _unfold(input_tensor, kernel_size, (1, 1), (0, 0), (1, 1))
+0367:         
+0368:         # Check unfolded shape
+0369:         expected_unfold_shape = (channels * kernel_size[0] * kernel_size[1],
+0370:                                batch_size * (height - kernel_size[0] + 1) * 
+0371:                                (width - kernel_size[1] + 1))
+0372:         assert unfolded.shape == expected_unfold_shape
+0373: 
+0374:     def test_fold_operation(self):
+0375:         """Test col2im (fold) operation."""
+0376:         batch_size = 2
+0377:         channels = 3
+0378:         height = width = 8
+0379:         kernel_size = (3, 3)
+0380:         
+0381:         # Create random input and unfold it
+0382:         input_tensor = np.random.randn(batch_size, channels, height, width)
+0383:         unfolded = _unfold(input_tensor, kernel_size, (1, 1), (0, 0), (1, 1))
+0384:         
+0385:         # Fold back
+0386:         folded = _fold(unfolded, (height, width), kernel_size, (1, 1), (0, 0), (1, 1))
+0387:         
+0388:         # Check folded shape
+0389:         assert folded.shape == input_tensor.shape
+0390: 
+0391:     def test_bilinear_interpolate(self):
+0392:         """Test bilinear interpolation function"""
+0393:         input_tensor = np.random.randn(1, 3, 4, 4)  # Changed batch size to 1
+0394:         points = np.array([[[0.5, 0.5]]])  # Shape should be (1, 1, 2)
+0395:         
+0396:         output = _bilinear_interpolate(input_tensor, points)
+0397:         assert output.shape == (1, 3, 1)  # (N, C, P)
+0398: 
+0399:     def test_generate_grid(self):
+0400:         """Test sampling grid generation."""
+0401:         batch_size = 2
+0402:         height = 8
+0403:         width = 8
+0404:         
+0405:         grid = _generate_grid(batch_size, height, width)
+0406:         assert grid.shape == (batch_size, height, width, 2)
+0407:         assert np.all(grid >= -1) and np.all(grid <= 1)
+0408: 
+0409:     def test_deform_grid(self):
+0410:         """Test grid deformation."""
+0411:         batch_size = 2
+0412:         height = 8
+0413:         width = 8
+0414:         
+0415:         grid = _generate_grid(batch_size, height, width)
+0416:         offset = np.random.randn(batch_size, 2, height, width) * 0.1
+0417:         
+0418:         deformed = _deform_grid(grid, offset)
+0419:         assert deformed.shape == (batch_size, height, width, 2)
+0420:         assert np.all(deformed >= -1) and np.all(deformed <= 1)
+0421: 
+0422:     def test_numerical_gradient_deformable(self):
+0423:         """Test numerical gradient computation for deformable convolution."""
+0424:         batch_size = 2
+0425:         in_channels = 2
+0426:         out_channels = 3
+0427:         height = width = 5
+0428:         kernel_size = 3
+0429:         
+0430:         x = Tensor(np.random.randn(batch_size, in_channels, height, width), requires_grad=True)
+0431:         weight = Tensor(np.random.randn(out_channels, in_channels, kernel_size, kernel_size), 
+0432:                        requires_grad=True)
+0433:         offset = Tensor(np.random.randn(batch_size, 2*kernel_size*kernel_size, height-2, width-2), 
+0434:                        requires_grad=True)
+0435:         setattr(weight, 'offset', offset)
+0436:         bias = Tensor(np.random.randn(out_channels), requires_grad=True)
+0437:         
+0438:         def compute_loss(x, w, b):
+0439:             return np.sum(Conv2dFunction.apply(x, w, b, (1, 1), (0, 0), (1, 1), 1, 
+0440:                                              ConvMode.DEFORMABLE).data)
+0441:         
+0442:         # Compute analytical gradients
+0443:         output = Conv2dFunction.apply(x, weight, bias, (1, 1), (0, 0), (1, 1), 1, 
+0444:                                     ConvMode.DEFORMABLE)
+0445:         output.backward(np.ones_like(output.data))
+0446:         
+0447:         # Verify offset gradients exist and have correct shape
+0448:         assert offset.grad is not None
+0449:         assert offset.grad.shape == offset.shape
+0450:     
+0451:     def test_get_deformable_offsets(self):
+0452:         """Test deformable convolution offset computation"""
+0453:         batch_size, in_channels = 2, 3
+0454:         height, width = 8, 8
+0455:         kernel_size = (3, 3)
+0456:         
+0457:         # Create sample offset tensor
+0458:         offset_tensor = np.random.randn(batch_size, 2*kernel_size[0]*kernel_size[1], height-2, width-2)
+0459:         input_shape = (batch_size, in_channels, height, width)
+0460:         
+0461:         sampling_locations = _get_deformable_offsets(offset_tensor, kernel_size, input_shape)
+0462:         assert sampling_locations.shape == (batch_size, (height-2)*(width-2), kernel_size[0]*kernel_size[1], 2)
+0463: 
+0464:     def test_compute_conv_grad_input_padding(self):
+0465:         """Test gradient input padding computation"""
+0466:         grad_output_size = 8
+0467:         input_size = 10
+0468:         kernel_size = 3
+0469:         stride = 1
+0470:         padding = 1
+0471:         dilation = 1
+0472:         
+0473:         grad_padding = _compute_conv_grad_input_padding(
+0474:             grad_output_size, input_size, kernel_size, stride, padding, dilation
+0475:         )
+0476:         assert isinstance(grad_padding, int)
+0477: 
+0478:     def test_generate_grid(self):
+0479:         """Test sampling grid generation for different align_corners settings"""
+0480:         batch_size = 2
+0481:         height = 4
+0482:         width = 4
+0483:         
+0484:         # Test with align_corners=True
+0485:         grid_aligned = _generate_grid(batch_size, height, width, align_corners=True)
+0486:         assert grid_aligned.shape == (batch_size, height, width, 2)
+0487:         # Check grid bounds
+0488:         assert np.all(grid_aligned >= -1) and np.all(grid_aligned <= 1)
+0489:         
+0490:         # Test with align_corners=False
+0491:         grid_unaligned = _generate_grid(batch_size, height, width, align_corners=False)
+0492:         assert grid_unaligned.shape == (batch_size, height, width, 2)
+0493:         assert np.all(grid_unaligned >= -1) and np.all(grid_unaligned <= 1)
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_context.py
 // ----------------------------------------
@@ -5229,119 +5738,153 @@
 0185:         loss = KLDivLoss.apply(predictions, targets)
 0186:         assert not np.isnan(loss.data)
 0187:         assert not np.isinf(loss.data)
-0188: 
-0189: class TestCosineSimilarityLoss:
-0190:     """Tests for Cosine Similarity Loss"""
-0191:     
-0192:     def test_forward(self):
-0193:         """Test forward pass of cosine similarity loss"""
-0194:         x1 = Tensor([[1.0, 0.0]])
-0195:         x2 = Tensor([[0.0, 1.0]])
+0188:     
+0189:     def test_kldiv_loss_log_target(self):
+0190:         """Test KL divergence loss with log target"""
+0191:         predictions = Tensor([[-1.0, -2.0]], requires_grad=True)
+0192:         targets = Tensor([[-1.0, -1.0]])  # log probabilities
+0193:         
+0194:         loss = KLDivLoss.apply(predictions, targets, log_target=True)
+0195:         loss.backward()
 0196:         
-0197:         loss = CosineSimilarityLoss.apply(x1, x2)
-0198:         # Orthogonal vectors should have cos_sim = 0, so loss = 1 - 0 = 1
-0199:         assert np.allclose(loss.data, 1.0), f"Expected 1.0, got {loss.data}"
-0200:         
-0201:     def test_identical_vectors(self):
-0202:         """Test with identical vectors"""
-0203:         x = Tensor([[1.0, 1.0]])
-0204:         loss = CosineSimilarityLoss.apply(x, x)
-0205:         # For identical vectors, cosine similarity is 1, so loss = 1 - 1 = 0
-0206:         assert np.allclose(loss.data, 0.0, atol=1e-7)
+0197:         assert predictions.grad is not None
+0198:         assert not np.isnan(loss.data)
+0199: 
+0200: class TestCosineSimilarityLoss:
+0201:     """Tests for Cosine Similarity Loss"""
+0202:     
+0203:     def test_forward(self):
+0204:         """Test forward pass of cosine similarity loss"""
+0205:         x1 = Tensor([[1.0, 0.0]])
+0206:         x2 = Tensor([[0.0, 1.0]])
 0207:         
-0208:     def test_numerical_stability(self):
-0209:         """Test numerical stability with zero vectors"""
-0210:         x1 = Tensor([[0.0, 0.0]])
-0211:         x2 = Tensor([[1.0, 1.0]])
-0212:         
-0213:         loss = CosineSimilarityLoss.apply(x1, x2)
-0214:         assert not np.isnan(loss.data)
-0215: 
-0216: class TestHingeLoss:
-0217:     """Tests for Hinge Loss"""
-0218:     
-0219:     def test_forward(self):
-0220:         """Test forward pass of hinge loss"""
-0221:         predictions = Tensor([0.5, -0.5])
-0222:         targets = Tensor([1.0, 0.0])
+0208:         loss = CosineSimilarityLoss.apply(x1, x2)
+0209:         # Orthogonal vectors should have cos_sim = 0, so loss = 1 - 0 = 1
+0210:         assert np.allclose(loss.data, 1.0), f"Expected 1.0, got {loss.data}"
+0211:         
+0212:     def test_identical_vectors(self):
+0213:         """Test with identical vectors"""
+0214:         x = Tensor([[1.0, 1.0]])
+0215:         loss = CosineSimilarityLoss.apply(x, x)
+0216:         # For identical vectors, cosine similarity is 1, so loss = 1 - 1 = 0
+0217:         assert np.allclose(loss.data, 0.0, atol=1e-7)
+0218:         
+0219:     def test_numerical_stability(self):
+0220:         """Test numerical stability with zero vectors"""
+0221:         x1 = Tensor([[0.0, 0.0]])
+0222:         x2 = Tensor([[1.0, 1.0]])
 0223:         
-0224:         loss = HingeLoss.apply(predictions, targets)
-0225:         assert loss.data >= 0  # Hinge loss is non-negative
-0226:         
-0227:     def test_perfect_prediction(self):
-0228:         """Test with perfect predictions"""
-0229:         predictions = Tensor([1.0])
-0230:         targets = Tensor([1.0])
+0224:         loss = CosineSimilarityLoss.apply(x1, x2)
+0225:         assert not np.isnan(loss.data)
+0226:     
+0227:     def test_cosine_similarity_zero_input(self):
+0228:         """Test cosine similarity with zero vectors"""
+0229:         x1 = Tensor([[0.0, 0.0]], requires_grad=True)
+0230:         x2 = Tensor([[1.0, 1.0]], requires_grad=True)
 0231:         
-0232:         loss = HingeLoss.apply(predictions, targets)
-0233:         assert np.allclose(loss.data, 0.0)  # Loss should be zero
+0232:         loss = CosineSimilarityLoss.apply(x1, x2, eps=1e-8)
+0233:         loss.backward()
 0234:         
-0235:     def test_margin(self):
-0236:         """Test different margin values"""
-0237:         predictions = Tensor([0.5])
-0238:         targets = Tensor([1.0])
-0239:         
-0240:         loss1 = HingeLoss.apply(predictions, targets, margin=1.0)
-0241:         loss2 = HingeLoss.apply(predictions, targets, margin=2.0)
-0242:         assert loss2.data > loss1.data  # Larger margin should give larger loss
-0243: 
-0244: class TestFocalLoss:
-0245:     """Tests for Focal Loss"""
-0246:     
-0247:     def test_forward(self):
-0248:         """Test forward pass of focal loss"""
-0249:         predictions = Tensor([0.7, 0.3])
-0250:         targets = Tensor([1.0, 0.0])
-0251:         
-0252:         loss = FocalLoss.apply(predictions, targets)
-0253:         assert loss.data >= 0  # Focal loss is non-negative
+0235:         assert not np.isnan(loss.data)
+0236:         assert not np.isnan(x1.grad).any()
+0237:         assert not np.isnan(x2.grad).any()
+0238: 
+0239: class TestHingeLoss:
+0240:     """Tests for Hinge Loss"""
+0241:     
+0242:     def test_forward(self):
+0243:         """Test forward pass of hinge loss"""
+0244:         predictions = Tensor([0.5, -0.5])
+0245:         targets = Tensor([1.0, 0.0])
+0246:         
+0247:         loss = HingeLoss.apply(predictions, targets)
+0248:         assert loss.data >= 0  # Hinge loss is non-negative
+0249:         
+0250:     def test_perfect_prediction(self):
+0251:         """Test with perfect predictions"""
+0252:         predictions = Tensor([1.0])
+0253:         targets = Tensor([1.0])
 0254:         
-0255:     def test_gamma_effect(self):
-0256:         """Test effect of gamma parameter"""
-0257:         predictions = Tensor([0.7])
-0258:         targets = Tensor([1.0])
-0259:         
-0260:         loss1 = FocalLoss.apply(predictions, targets, gamma=0.0)  # Equivalent to BCE
-0261:         loss2 = FocalLoss.apply(predictions, targets, gamma=2.0)  # Standard focal loss
+0255:         loss = HingeLoss.apply(predictions, targets)
+0256:         assert np.allclose(loss.data, 0.0)  # Loss should be zero
+0257:         
+0258:     def test_margin(self):
+0259:         """Test different margin values"""
+0260:         predictions = Tensor([0.5])
+0261:         targets = Tensor([1.0])
 0262:         
-0263:         # Focal loss should be smaller than BCE for easy examples
-0264:         assert loss2.data < loss1.data
-0265:         
-0266:     def test_numerical_stability(self):
-0267:         """Test numerical stability with extreme probabilities"""
-0268:         predictions = Tensor([0.999, 0.001])
-0269:         targets = Tensor([1.0, 0.0])
-0270:         
-0271:         loss = FocalLoss.apply(predictions, targets)
-0272:         assert not np.isnan(loss.data)
-0273:         assert not np.isinf(loss.data)
-0274: 
-0275: class TestEdgeCases:
-0276:     """Tests for edge cases and error conditions"""
-0277:     
-0278:     def test_shape_mismatch(self):
-0279:         """Test shape mismatch handling"""
-0280:         predictions = Tensor([[1.0, 2.0]])
+0263:         loss1 = HingeLoss.apply(predictions, targets, margin=1.0)
+0264:         loss2 = HingeLoss.apply(predictions, targets, margin=2.0)
+0265:         assert loss2.data > loss1.data  # Larger margin should give larger loss
+0266: 
+0267: class TestFocalLoss:
+0268:     """Tests for Focal Loss"""
+0269:     
+0270:     def test_forward(self):
+0271:         """Test forward pass of focal loss"""
+0272:         predictions = Tensor([0.7, 0.3])
+0273:         targets = Tensor([1.0, 0.0])
+0274:         
+0275:         loss = FocalLoss.apply(predictions, targets)
+0276:         assert loss.data >= 0  # Focal loss is non-negative
+0277:         
+0278:     def test_gamma_effect(self):
+0279:         """Test effect of gamma parameter"""
+0280:         predictions = Tensor([0.7])
 0281:         targets = Tensor([1.0])
 0282:         
-0283:         with pytest.raises(ValueError):
-0284:             MSELoss.apply(predictions, targets)
-0285:             
-0286:     def test_invalid_reduction(self):
-0287:         """Test invalid reduction method"""
-0288:         predictions = Tensor([1.0])
-0289:         targets = Tensor([1.0])
-0290:         
-0291:         with pytest.raises(ValueError):
-0292:             MSELoss.apply(predictions, targets, reduction='invalid')
-0293:             
-0294:     def test_negative_probabilities(self):
-0295:         """Test handling of negative probabilities"""
-0296:         predictions = Tensor([-0.1, 1.1])
-0297:         targets = Tensor([0.0, 1.0])
-0298:         
-0299:         with pytest.raises(ValueError):
-0300:             BinaryCrossEntropyLoss.apply(predictions, targets)
+0283:         loss1 = FocalLoss.apply(predictions, targets, gamma=0.0)  # Equivalent to BCE
+0284:         loss2 = FocalLoss.apply(predictions, targets, gamma=2.0)  # Standard focal loss
+0285:         
+0286:         # Focal loss should be smaller than BCE for easy examples
+0287:         assert loss2.data < loss1.data
+0288:         
+0289:     def test_numerical_stability(self):
+0290:         """Test numerical stability with extreme probabilities"""
+0291:         predictions = Tensor([0.999, 0.001])
+0292:         targets = Tensor([1.0, 0.0])
+0293:         
+0294:         loss = FocalLoss.apply(predictions, targets)
+0295:         assert not np.isnan(loss.data)
+0296:         assert not np.isinf(loss.data)
+0297:     
+0298:     def test_focal_loss_extreme_probabilities(self):
+0299:         """Test focal loss with extreme probability values"""
+0300:         predictions = Tensor([[0.999, 0.001]], requires_grad=True)
+0301:         targets = Tensor([[1.0, 0.0]])
+0302:         
+0303:         loss = FocalLoss.apply(predictions, targets, gamma=2.0)
+0304:         loss.backward()
+0305:         
+0306:         assert not np.isnan(loss.data)
+0307:         assert not np.isnan(predictions.grad).any()
+0308: 
+0309: class TestEdgeCases:
+0310:     """Tests for edge cases and error conditions"""
+0311:     
+0312:     def test_shape_mismatch(self):
+0313:         """Test shape mismatch handling"""
+0314:         predictions = Tensor([[1.0, 2.0]])
+0315:         targets = Tensor([1.0])
+0316:         
+0317:         with pytest.raises(ValueError):
+0318:             MSELoss.apply(predictions, targets)
+0319:             
+0320:     def test_invalid_reduction(self):
+0321:         """Test invalid reduction method"""
+0322:         predictions = Tensor([1.0])
+0323:         targets = Tensor([1.0])
+0324:         
+0325:         with pytest.raises(ValueError):
+0326:             MSELoss.apply(predictions, targets, reduction='invalid')
+0327:             
+0328:     def test_negative_probabilities(self):
+0329:         """Test handling of negative probabilities"""
+0330:         predictions = Tensor([-0.1, 1.1])
+0331:         targets = Tensor([0.0, 1.0])
+0332:         
+0333:         with pytest.raises(ValueError):
+0334:             BinaryCrossEntropyLoss.apply(predictions, targets)
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_modules.py
 // ----------------------------------------
@@ -5745,196 +6288,222 @@
 0097:         y = Tensor([], requires_grad=True)
 0098:         z = Multiply.apply(x, y)
 0099:         assert z.shape == (0,)
-0100: 
-0101: class TestPowerOperations:
-0102:     """Tests for power and division operations"""
-0103:     
-0104:     def test_power_scalar(self):
-0105:         """Test power operation with scalar exponent"""
-0106:         x = Tensor([2.0, 3.0], requires_grad=True)
-0107:         y = x ** 2
-0108:         y.backward(np.array([1.0, 1.0]))
-0109:         
-0110:         assert np.allclose(y.data, [4.0, 9.0])
-0111:         assert np.allclose(x.grad, [4.0, 6.0])  # d/dx(x^2) = 2x
+0100:     
+0101:     def test_add_broadcasting_edge_cases(self):
+0102:         """Test edge cases of broadcasting in Add operation"""
+0103:         # Test scalar + matrix
+0104:         scalar = Tensor(2.0, requires_grad=True)
+0105:         matrix = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+0106:         result = Add.apply(scalar, matrix)
+0107:         result.backward(np.ones_like(matrix.data))
+0108:         
+0109:         assert result.shape == matrix.shape
+0110:         assert scalar.grad == 4.0  # Sum of gradients
+0111:         assert np.all(matrix.grad == 1.0)
 0112:         
-0113:     def test_power_negative(self):
-0114:         """Test power operation with negative exponent"""
-0115:         x = Tensor([2.0, 4.0], requires_grad=True)
-0116:         y = x ** (-1)
-0117:         y.backward(np.array([1.0, 1.0]))
-0118:         
-0119:         assert np.allclose(y.data, [0.5, 0.25])
-0120:         assert np.allclose(x.grad, [-0.25, -0.0625])  # d/dx(x^-1) = -x^-2
-0121:         
-0122:     def test_division(self):
-0123:         """Test division operation"""
-0124:         x = Tensor([6.0, 8.0], requires_grad=True)
-0125:         y = Tensor([2.0, 4.0], requires_grad=True)
-0126:         z = x / y
-0127:         z.backward(np.array([1.0, 1.0]))
-0128:         
-0129:         assert np.allclose(z.data, [3.0, 2.0])
-0130:         assert np.allclose(x.grad, [0.5, 0.25])  # d/dx(x/y) = 1/y
-0131:         assert np.allclose(y.grad, [-1.5, -0.5])  # d/dy(x/y) = -x/y^2
-0132:         
-0133:     def test_division_by_zero(self):
-0134:         """Test division by zero raises error"""
-0135:         x = Tensor([1.0, 2.0])
-0136:         y = Tensor([1.0, 0.0])
-0137:         with pytest.raises(ValueError):
-0138:             _ = x / y
-0139: 
-0140: class TestElementwiseOperations:
-0141:     """Tests for element-wise operations"""
-0142:     
-0143:     def test_log(self):
-0144:         """Test natural logarithm"""
-0145:         x = Tensor([1.0, np.e], requires_grad=True)
-0146:         y = x.log()
-0147:         y.backward(np.array([1.0, 1.0]))
-0148:         
-0149:         assert np.allclose(y.data, [0.0, 1.0])
-0150:         assert np.allclose(x.grad, [1.0, 1/np.e])  # d/dx(log(x)) = 1/x
-0151:         
-0152:     def test_exp(self):
-0153:         """Test exponential function"""
-0154:         x = Tensor([0.0, 1.0], requires_grad=True)
-0155:         y = x.exp()
-0156:         y.backward(np.array([1.0, 1.0]))
-0157:         
-0158:         assert np.allclose(y.data, [1.0, np.e])
-0159:         assert np.allclose(y.data, x.grad)  # d/dx(exp(x)) = exp(x)
-0160: 
-0161: class TestReductionOperations:
-0162:     """Tests for reduction operations"""
-0163:     
-0164:     def test_sum(self):
-0165:         """Test sum reduction"""
-0166:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-0167:         
-0168:         # Test sum all elements
-0169:         y1 = x.sum()
-0170:         y1.backward()
-0171:         assert np.allclose(y1.data, 10.0)
-0172:         assert np.allclose(x.grad, np.ones_like(x.data))
-0173:         
-0174:         # Reset gradients
-0175:         x.grad = None
-0176:         
-0177:         # Test sum along axis
-0178:         y2 = x.sum(axis=0)
-0179:         y2.backward(np.array([1.0, 1.0]))
-0180:         assert np.allclose(y2.data, [4.0, 6.0])
-0181:         assert np.allclose(x.grad, np.ones_like(x.data))
-0182:         
-0183:     def test_mean(self):
-0184:         """Test mean reduction"""
-0185:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-0186:         y = x.mean()
-0187:         y.backward()
-0188:         
-0189:         assert np.allclose(y.data, 2.5)
-0190:         assert np.allclose(x.grad, np.full_like(x.data, 0.25))  # 1/n for each element
-0191:         
-0192:     def test_max(self):
-0193:         """Test max reduction"""
-0194:         x = Tensor([[1.0, 4.0], [3.0, 2.0]], requires_grad=True)
-0195:         y = x.max()
-0196:         y.backward()
-0197:         
-0198:         assert np.allclose(y.data, 4.0)
-0199:         expected_grad = np.array([[0.0, 1.0], [0.0, 0.0]])
-0200:         assert np.allclose(x.grad, expected_grad)
-0201: 
-0202: class TestMatrixOperations:
-0203:     """Tests for matrix operations"""
-0204:     
-0205:     def test_transpose(self):
-0206:         """Test matrix transpose"""
-0207:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-0208:         y = x.t()
-0209:         y.backward(np.ones_like(y.data))
-0210:         
-0211:         assert np.allclose(y.data, [[1.0, 3.0], [2.0, 4.0]])
-0212:         assert np.allclose(x.grad, np.ones_like(x.data))
-0213:         
-0214:     def test_transpose_3d(self):
-0215:         """Test 3D tensor transpose"""
-0216:         x = Tensor(np.arange(8).reshape(2, 2, 2), requires_grad=True)
-0217:         y = x.transpose(1, 2, 0)
-0218:         y.backward(np.ones_like(y.data))
-0219:         
-0220:         assert y.data.shape == (2, 2, 2)
-0221:         assert np.allclose(x.grad, np.ones_like(x.data))
-0222: 
-0223: class TestComparisonOperations:
-0224:     """Tests for comparison operations"""
-0225:     
-0226:     def test_greater(self):
-0227:         """Test greater than operation"""
-0228:         x = Tensor([1.0, 2.0, 3.0])
-0229:         y = Tensor([2.0, 2.0, 2.0])
-0230:         result = x > y
-0231:         assert np.allclose(result.data, [False, False, True])
-0232:         
-0233:     def test_less_equal(self):
-0234:         """Test less than or equal operation"""
-0235:         x = Tensor([1.0, 2.0, 3.0])
-0236:         y = Tensor([2.0, 2.0, 2.0])
-0237:         result = x <= y
-0238:         assert np.allclose(result.data, [True, True, False])
+0113:         # Test incompatible shapes
+0114:         with pytest.raises(ValueError):
+0115:             Add.apply(Tensor([1.0, 2.0]), Tensor([[1.0]]))
+0116: 
+0117:     def test_multiply_zero_gradient(self):
+0118:         """Test multiply operation with zero gradient"""
+0119:         x = Tensor([1.0, 2.0], requires_grad=True)
+0120:         y = Tensor([3.0, 4.0], requires_grad=True)
+0121:         z = Multiply.apply(x, y)
+0122:         z.backward(np.zeros_like(z.data))
+0123:         
+0124:         assert np.all(x.grad == 0)
+0125:         assert np.all(y.grad == 0)
+0126: 
+0127: class TestPowerOperations:
+0128:     """Tests for power and division operations"""
+0129:     
+0130:     def test_power_scalar(self):
+0131:         """Test power operation with scalar exponent"""
+0132:         x = Tensor([2.0, 3.0], requires_grad=True)
+0133:         y = x ** 2
+0134:         y.backward(np.array([1.0, 1.0]))
+0135:         
+0136:         assert np.allclose(y.data, [4.0, 9.0])
+0137:         assert np.allclose(x.grad, [4.0, 6.0])  # d/dx(x^2) = 2x
+0138:         
+0139:     def test_power_negative(self):
+0140:         """Test power operation with negative exponent"""
+0141:         x = Tensor([2.0, 4.0], requires_grad=True)
+0142:         y = x ** (-1)
+0143:         y.backward(np.array([1.0, 1.0]))
+0144:         
+0145:         assert np.allclose(y.data, [0.5, 0.25])
+0146:         assert np.allclose(x.grad, [-0.25, -0.0625])  # d/dx(x^-1) = -x^-2
+0147:         
+0148:     def test_division(self):
+0149:         """Test division operation"""
+0150:         x = Tensor([6.0, 8.0], requires_grad=True)
+0151:         y = Tensor([2.0, 4.0], requires_grad=True)
+0152:         z = x / y
+0153:         z.backward(np.array([1.0, 1.0]))
+0154:         
+0155:         assert np.allclose(z.data, [3.0, 2.0])
+0156:         assert np.allclose(x.grad, [0.5, 0.25])  # d/dx(x/y) = 1/y
+0157:         assert np.allclose(y.grad, [-1.5, -0.5])  # d/dy(x/y) = -x/y^2
+0158:         
+0159:     def test_division_by_zero(self):
+0160:         """Test division by zero raises error"""
+0161:         x = Tensor([1.0, 2.0])
+0162:         y = Tensor([1.0, 0.0])
+0163:         with pytest.raises(ValueError):
+0164:             _ = x / y
+0165: 
+0166: class TestElementwiseOperations:
+0167:     """Tests for element-wise operations"""
+0168:     
+0169:     def test_log(self):
+0170:         """Test natural logarithm"""
+0171:         x = Tensor([1.0, np.e], requires_grad=True)
+0172:         y = x.log()
+0173:         y.backward(np.array([1.0, 1.0]))
+0174:         
+0175:         assert np.allclose(y.data, [0.0, 1.0])
+0176:         assert np.allclose(x.grad, [1.0, 1/np.e])  # d/dx(log(x)) = 1/x
+0177:         
+0178:     def test_exp(self):
+0179:         """Test exponential function"""
+0180:         x = Tensor([0.0, 1.0], requires_grad=True)
+0181:         y = x.exp()
+0182:         y.backward(np.array([1.0, 1.0]))
+0183:         
+0184:         assert np.allclose(y.data, [1.0, np.e])
+0185:         assert np.allclose(y.data, x.grad)  # d/dx(exp(x)) = exp(x)
+0186: 
+0187: class TestReductionOperations:
+0188:     """Tests for reduction operations"""
+0189:     
+0190:     def test_sum(self):
+0191:         """Test sum reduction"""
+0192:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+0193:         
+0194:         # Test sum all elements
+0195:         y1 = x.sum()
+0196:         y1.backward()
+0197:         assert np.allclose(y1.data, 10.0)
+0198:         assert np.allclose(x.grad, np.ones_like(x.data))
+0199:         
+0200:         # Reset gradients
+0201:         x.grad = None
+0202:         
+0203:         # Test sum along axis
+0204:         y2 = x.sum(axis=0)
+0205:         y2.backward(np.array([1.0, 1.0]))
+0206:         assert np.allclose(y2.data, [4.0, 6.0])
+0207:         assert np.allclose(x.grad, np.ones_like(x.data))
+0208:         
+0209:     def test_mean(self):
+0210:         """Test mean reduction"""
+0211:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+0212:         y = x.mean()
+0213:         y.backward()
+0214:         
+0215:         assert np.allclose(y.data, 2.5)
+0216:         assert np.allclose(x.grad, np.full_like(x.data, 0.25))  # 1/n for each element
+0217:         
+0218:     def test_max(self):
+0219:         """Test max reduction"""
+0220:         x = Tensor([[1.0, 4.0], [3.0, 2.0]], requires_grad=True)
+0221:         y = x.max()
+0222:         y.backward()
+0223:         
+0224:         assert np.allclose(y.data, 4.0)
+0225:         expected_grad = np.array([[0.0, 1.0], [0.0, 0.0]])
+0226:         assert np.allclose(x.grad, expected_grad)
+0227: 
+0228: class TestMatrixOperations:
+0229:     """Tests for matrix operations"""
+0230:     
+0231:     def test_transpose(self):
+0232:         """Test matrix transpose"""
+0233:         x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+0234:         y = x.t()
+0235:         y.backward(np.ones_like(y.data))
+0236:         
+0237:         assert np.allclose(y.data, [[1.0, 3.0], [2.0, 4.0]])
+0238:         assert np.allclose(x.grad, np.ones_like(x.data))
 0239:         
-0240:     def test_equal(self):
-0241:         """Test equality operation"""
-0242:         x = Tensor([1.0, 2.0, 3.0])
-0243:         y = Tensor([1.0, 2.0, 2.0])
-0244:         result = x == y
-0245:         assert np.allclose(result.data, [True, True, False])
-0246:         
-0247:     def test_not_equal(self):
-0248:         """Test inequality operation"""
-0249:         x = Tensor([1.0, 2.0, 3.0])
-0250:         y = Tensor([1.0, 2.0, 2.0])
-0251:         result = x != y
-0252:         assert np.allclose(result.data, [False, False, True])
-0253: 
-0254: class TestEdgeCases:
-0255:     """Tests for edge cases and error conditions"""
-0256:     
-0257:     def test_log_negative(self):
-0258:         """Test log of negative number raises error"""
-0259:         x = Tensor([-1.0])
-0260:         with pytest.raises(ValueError):
-0261:             _ = x.log()
-0262:             
-0263:     def test_power_non_scalar(self):
-0264:         """Test power with non-scalar exponent raises error"""
-0265:         x = Tensor([2.0])
-0266:         y = Tensor([1.0, 2.0])
-0267:         with pytest.raises(ValueError):
-0268:             _ = x ** y
-0269:             
-0270:     def test_reduction_keepdims(self):
-0271:         """Test reduction operations with keepdims=True"""
-0272:         x = Tensor([[1.0, 2.0], [3.0, 4.0]])
-0273:         y = x.sum(axis=0, keepdims=True)
-0274:         assert y.shape == (1, 2)
-0275:         
-0276:     def test_broadcasting_division(self):
-0277:         """Test division with broadcasting"""
-0278:         x = Tensor([[1.0, 2.0], [3.0, 4.0]])
-0279:         y = Tensor([2.0])
-0280:         z = x / y
-0281:         assert z.shape == x.shape
-0282:         assert np.allclose(z.data, [[0.5, 1.0], [1.5, 2.0]])
+0240:     def test_transpose_3d(self):
+0241:         """Test 3D tensor transpose"""
+0242:         x = Tensor(np.arange(8).reshape(2, 2, 2), requires_grad=True)
+0243:         y = x.transpose(1, 2, 0)
+0244:         y.backward(np.ones_like(y.data))
+0245:         
+0246:         assert y.data.shape == (2, 2, 2)
+0247:         assert np.allclose(x.grad, np.ones_like(x.data))
+0248: 
+0249: class TestComparisonOperations:
+0250:     """Tests for comparison operations"""
+0251:     
+0252:     def test_greater(self):
+0253:         """Test greater than operation"""
+0254:         x = Tensor([1.0, 2.0, 3.0])
+0255:         y = Tensor([2.0, 2.0, 2.0])
+0256:         result = x > y
+0257:         assert np.allclose(result.data, [False, False, True])
+0258:         
+0259:     def test_less_equal(self):
+0260:         """Test less than or equal operation"""
+0261:         x = Tensor([1.0, 2.0, 3.0])
+0262:         y = Tensor([2.0, 2.0, 2.0])
+0263:         result = x <= y
+0264:         assert np.allclose(result.data, [True, True, False])
+0265:         
+0266:     def test_equal(self):
+0267:         """Test equality operation"""
+0268:         x = Tensor([1.0, 2.0, 3.0])
+0269:         y = Tensor([1.0, 2.0, 2.0])
+0270:         result = x == y
+0271:         assert np.allclose(result.data, [True, True, False])
+0272:         
+0273:     def test_not_equal(self):
+0274:         """Test inequality operation"""
+0275:         x = Tensor([1.0, 2.0, 3.0])
+0276:         y = Tensor([1.0, 2.0, 2.0])
+0277:         result = x != y
+0278:         assert np.allclose(result.data, [False, False, True])
+0279: 
+0280: class TestEdgeCases:
+0281:     """Tests for edge cases and error conditions"""
+0282:     
+0283:     def test_log_negative(self):
+0284:         """Test log of negative number raises error"""
+0285:         x = Tensor([-1.0])
+0286:         with pytest.raises(ValueError):
+0287:             _ = x.log()
+0288:             
+0289:     def test_power_non_scalar(self):
+0290:         """Test power with non-scalar exponent raises error"""
+0291:         x = Tensor([2.0])
+0292:         y = Tensor([1.0, 2.0])
+0293:         with pytest.raises(ValueError):
+0294:             _ = x ** y
+0295:             
+0296:     def test_reduction_keepdims(self):
+0297:         """Test reduction operations with keepdims=True"""
+0298:         x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+0299:         y = x.sum(axis=0, keepdims=True)
+0300:         assert y.shape == (1, 2)
+0301:         
+0302:     def test_broadcasting_division(self):
+0303:         """Test division with broadcasting"""
+0304:         x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+0305:         y = Tensor([2.0])
+0306:         z = x / y
+0307:         assert z.shape == x.shape
+0308:         assert np.allclose(z.data, [[0.5, 1.0], [1.5, 2.0]])
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_optim.py
 // ----------------------------------------
 0001: import pytest
 0002: import numpy as np
 0003: from DLpy.core import Tensor
-0004: from DLpy.optim import SGD, Adam, RMSprop, AdaGrad
+0004: from DLpy.optim import SGD, Adam, RMSprop, AdaGrad, AdaDelta, AdaMax
 0005: 
 0006: class TestOptimizers:
 0007:     """Base test class for all optimizers."""
@@ -6164,6 +6733,324 @@
 0231:         
 0232:         assert not np.array_equal(param1.data, [1.0])
 0233:         assert not np.array_equal(param2.data, [2.0])
+0234:     
+0235:     def test_optimizer_state_dict(self):
+0236:         """Test state dict functionality"""
+0237:         param = Tensor([1.0], requires_grad=True)
+0238:         optimizer = SGD([param], lr=0.1)
+0239:         
+0240:         # Save state
+0241:         state = optimizer.state_dict()
+0242:         assert 'state' in state
+0243:         
+0244:         # Load state
+0245:         new_optimizer = SGD([param], lr=0.1)
+0246:         new_optimizer.load_state_dict(state)
+0247:         
+0248:         assert new_optimizer.state == optimizer.state
+0249: 
+0250:     def test_optimizer_add_param_group_validation(self):
+0251:         """Test param group validation"""
+0252:         param = Tensor([1.0], requires_grad=True)
+0253:         optimizer = SGD([param], lr=0.1)
+0254:         
+0255:         # Test adding single tensor
+0256:         optimizer.add_param_group({'params': Tensor([2.0], requires_grad=True)})
+0257:         
+0258:         # Test adding list of tensors instead of set
+0259:         param_list = [Tensor([3.0], requires_grad=True)]
+0260:         optimizer.add_param_group({'params': param_list})
+0261:         
+0262:         assert len(optimizer._params) == 3
+0263: 
+0264: class TestAdaDelta:
+0265:     """Tests for AdaDelta optimizer."""
+0266:     
+0267:     def setup_method(self):
+0268:         """Setup method run before each test."""
+0269:         self.param = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+0270:         self.grad = np.array([0.1, 0.2, 0.3])
+0271:         
+0272:     def test_basic_adadelta(self):
+0273:         """Test basic AdaDelta functionality."""
+0274:         optimizer = AdaDelta([self.param])
+0275:         
+0276:         # Initial parameter values
+0277:         initial_params = self.param.data.copy()
+0278:         
+0279:         # First update
+0280:         self.param.grad = self.grad
+0281:         optimizer.step()
+0282:         
+0283:         # Parameters should be updated
+0284:         assert not np.array_equal(self.param.data, initial_params)
+0285:         
+0286:         # State should be initialized
+0287:         state = optimizer.state[id(self.param)]
+0288:         assert 'square_avg' in state
+0289:         assert 'acc_delta' in state
+0290:         assert state['step'] == 1
+0291:         
+0292:     def test_adadelta_no_lr(self):
+0293:         """Test AdaDelta works without learning rate."""
+0294:         optimizer = AdaDelta([self.param])
+0295:         self.param.grad = self.grad
+0296:         
+0297:         # Should not raise error despite no learning rate
+0298:         optimizer.step()
+0299:         
+0300:     def test_adadelta_convergence(self):
+0301:         """Test AdaDelta converges to minimum."""
+0302:         param = Tensor([1.0], requires_grad=True)
+0303:         optimizer = AdaDelta([param], eps=1e-5)
+0304:         
+0305:         # Simple quadratic function: f(x) = (x-1)^2
+0306:         for _ in range(100):
+0307:             # Gradient of (x-1)^2 is 2(x-1)
+0308:             param.grad = np.array([2.0 * (param.data[0] - 1.0)])
+0309:             optimizer.step()
+0310:             
+0311:         # Should converge close to x=1
+0312:         assert np.abs(param.data[0] - 1.0) < 0.1
+0313:         
+0314:     def test_adadelta_parameter_validation(self):
+0315:         """Test parameter validation in AdaDelta."""
+0316:         with pytest.raises(ValueError):
+0317:             AdaDelta([self.param], rho=-0.1)
+0318:         with pytest.raises(ValueError):
+0319:             AdaDelta([self.param], rho=1.1)
+0320:         with pytest.raises(ValueError):
+0321:             AdaDelta([self.param], eps=-1e-6)
+0322:         with pytest.raises(ValueError):
+0323:             AdaDelta([self.param], weight_decay=-0.1)
+0324: 
+0325: class TestAdaMax:
+0326:     """Tests for AdaMax optimizer."""
+0327:     
+0328:     def setup_method(self):
+0329:         """Setup method run before each test."""
+0330:         self.param = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+0331:         self.grad = np.array([0.1, 0.2, 0.3])
+0332:         
+0333:     def test_basic_adamax(self):
+0334:         """Test basic AdaMax functionality."""
+0335:         optimizer = AdaMax([self.param])
+0336:         
+0337:         # Initial parameter values
+0338:         initial_params = self.param.data.copy()
+0339:         
+0340:         # First update
+0341:         self.param.grad = self.grad
+0342:         optimizer.step()
+0343:         
+0344:         # Parameters should be updated
+0345:         assert not np.array_equal(self.param.data, initial_params)
+0346:         
+0347:         # State should be initialized
+0348:         state = optimizer.state[id(self.param)]
+0349:         assert 'exp_avg' in state
+0350:         assert 'exp_inf' in state
+0351:         assert state['step'] == 1
+0352:         
+0353:     def test_adamax_bias_correction(self):
+0354:         """Test AdaMax bias correction."""
+0355:         optimizer = AdaMax([self.param], lr=0.01)
+0356:         
+0357:         updates = []
+0358:         initial_param = self.param.data.copy()
+0359:         
+0360:         # Perform several updates and track parameter changes
+0361:         for _ in range(5):
+0362:             self.param.grad = self.grad
+0363:             optimizer.step()
+0364:             updates.append(np.linalg.norm(self.param.data - initial_param))
+0365:             
+0366:         # Updates should vary due to bias correction
+0367:         assert len(set(updates)) > 1
+0368:         
+0369:     def test_adamax_convergence(self):
+0370:         """Test AdaMax converges to minimum."""
+0371:         param = Tensor([2.0], requires_grad=True)
+0372:         optimizer = AdaMax([param], lr=0.1)
+0373:         
+0374:         # Simple quadratic function: f(x) = (x-1)^2
+0375:         for _ in range(100):
+0376:             # Gradient of (x-1)^2 is 2(x-1)
+0377:             param.grad = np.array([2.0 * (param.data[0] - 1.0)])
+0378:             optimizer.step()
+0379:             
+0380:         # Should converge close to x=1
+0381:         assert np.abs(param.data[0] - 1.0) < 0.1
+0382:         
+0383:     def test_adamax_parameter_validation(self):
+0384:         """Test parameter validation in AdaMax."""
+0385:         with pytest.raises(ValueError):
+0386:             AdaMax([self.param], lr=-0.1)
+0387:         with pytest.raises(ValueError):
+0388:             AdaMax([self.param], eps=-1e-8)
+0389:         with pytest.raises(ValueError):
+0390:             AdaMax([self.param], betas=(-0.1, 0.999))
+0391:         with pytest.raises(ValueError):
+0392:             AdaMax([self.param], betas=(0.9, 1.1))
+0393:         with pytest.raises(ValueError):
+0394:             AdaMax([self.param], weight_decay=-0.1)
+0395: 
+0396: class TestAdvancedOptimizerEdgeCases:
+0397:     """Tests for edge cases in advanced optimizers."""
+0398:     
+0399:     def test_zero_gradients(self):
+0400:         """Test handling of zero gradients."""
+0401:         param = Tensor([1.0], requires_grad=True)
+0402:         optimizers = [
+0403:             AdaDelta([param]),
+0404:             AdaMax([param])
+0405:         ]
+0406:         
+0407:         for optimizer in optimizers:
+0408:             # Parameter should not change if there's no gradient
+0409:             initial_param = param.data.copy()
+0410:             optimizer.step()
+0411:             assert np.array_equal(param.data, initial_param)
+0412:             
+0413:     def test_state_dict(self):
+0414:         """Test state dict functionality."""
+0415:         param = Tensor([1.0], requires_grad=True)
+0416:         optimizers = [
+0417:             AdaDelta([param]),
+0418:             AdaMax([param])
+0419:         ]
+0420:         
+0421:         for optimizer in optimizers:
+0422:             # Perform an update
+0423:             param.grad = np.array([0.1])
+0424:             optimizer.step()
+0425:             
+0426:             # Save state
+0427:             state = optimizer.state_dict()
+0428:             assert 'state' in state
+0429:             assert 'defaults' in state
+0430:             
+0431:             # Create new optimizer and load state
+0432:             if isinstance(optimizer, AdaDelta):
+0433:                 new_optimizer = AdaDelta([param])
+0434:             else:
+0435:                 new_optimizer = AdaMax([param])
+0436:             
+0437:             new_optimizer.load_state_dict(state)
+0438:             
+0439:             # States should match
+0440:             assert new_optimizer.state.keys() == optimizer.state.keys()
+0441:             for key in optimizer.state:
+0442:                 assert all(np.array_equal(optimizer.state[key][k], 
+0443:                                         new_optimizer.state[key][k])
+0444:                          for k in optimizer.state[key]
+0445:                          if isinstance(optimizer.state[key][k], np.ndarray))
+0446:                          
+0447:     def test_sparse_gradients(self):
+0448:         """Test handling of sparse gradients."""
+0449:         param = Tensor([1.0, 0.0, 2.0, 0.0], requires_grad=True)
+0450:         optimizers = [
+0451:             AdaDelta([param]),
+0452:             AdaMax([param])
+0453:         ]
+0454:         
+0455:         # Create sparse gradient (most values zero)
+0456:         sparse_grad = np.array([0.1, 0.0, 0.0, 0.3])
+0457:         
+0458:         for optimizer in optimizers:
+0459:             param.grad = sparse_grad
+0460:             optimizer.step()
+0461:             
+0462:             # Check that only non-zero gradient entries caused updates
+0463:             state = optimizer.state[id(param)]
+0464:             if isinstance(optimizer, AdaDelta):
+0465:                 square_avg = state['square_avg']
+0466:                 assert square_avg[1] == 0  # No update where gradient was 0
+0467:                 assert square_avg[2] == 0
+0468:                 assert square_avg[0] != 0  # Update where gradient was non-zero
+0469:                 assert square_avg[3] != 0
+0470:             else:  # AdaMax
+0471:                 exp_avg = state['exp_avg']
+0472:                 assert exp_avg[1] == 0  # No update where gradient was 0
+0473:                 assert exp_avg[2] == 0
+0474:                 assert exp_avg[0] != 0  # Update where gradient was non-zero
+0475:                 assert exp_avg[3] != 0
+0476: 
+0477:     def test_momentum_behavior(self):
+0478:         """Test momentum-like behavior in optimizers with varying gradients."""
+0479:         # Initialize a single parameter
+0480:         param_adadelta = Tensor([1.0], requires_grad=True)
+0481:         param_adamax = Tensor([1.0], requires_grad=True)
+0482: 
+0483:         optimizers = [
+0484:             AdaDelta([param_adadelta], rho=0.9),
+0485:             AdaMax([param_adamax], betas=(0.9, 0.999))
+0486:         ]
+0487: 
+0488:         for optimizer, param in zip(optimizers, [param_adadelta, param_adamax]):
+0489:             # Apply varying gradients
+0490:             updates = []
+0491:             for i in range(1, 6):
+0492:                 param.grad = np.array([0.1 * i])  # Gradients increase each step
+0493:                 optimizer.step()
+0494:                 updates.append(float(param.data[0]))
+0495: 
+0496:             # Compute differences between consecutive updates
+0497:             diffs = np.diff(updates)
+0498: 
+0499:             # Debugging output (optional)
+0500:             print(f"{type(optimizer).__name__} updates: {updates}")
+0501:             print(f"{type(optimizer).__name__} diffs: {diffs}")
+0502: 
+0503:             # Assert that diffs are not all close to zero
+0504:             assert not np.allclose(diffs, diffs[0]), (
+0505:                 f"{type(optimizer).__name__} does not exhibit momentum-like behavior"
+0506:             )
+0507: 
+0508:     def test_numerical_stability(self):
+0509:         """Test numerical stability with extreme values."""
+0510:         param = Tensor([1e-6, 1e6], requires_grad=True)
+0511:         optimizers = [
+0512:             AdaDelta([param], eps=1e-7),
+0513:             AdaMax([param], eps=1e-7)
+0514:         ]
+0515:         
+0516:         for optimizer in optimizers:
+0517:             # Test with very small and very large gradients
+0518:             param.grad = np.array([1e-8, 1e8])
+0519:             
+0520:             try:
+0521:                 optimizer.step()
+0522:             except Exception as e:
+0523:                 pytest.fail(f"Optimizer {type(optimizer).__name__} failed with extreme values: {str(e)}")
+0524:                 
+0525:             # Check for NaN or inf values
+0526:             assert not np.any(np.isnan(param.data))
+0527:             assert not np.any(np.isinf(param.data))
+0528: 
+0529:     def test_weight_decay(self):
+0530:         """Test weight decay in optimizers."""
+0531:         weight_decay = 0.2
+0532:         
+0533:         # Test both optimizers with and without weight decay
+0534:         for optimizer_class in [AdaDelta, AdaMax]:
+0535:             # Without weight decay
+0536:             param_no_decay = Tensor([1.0, 2.0], requires_grad=True)
+0537:             opt_no_decay = optimizer_class([param_no_decay])
+0538:             param_no_decay.grad = np.array([0.1, 0.2])
+0539:             opt_no_decay.step()
+0540:             result_no_decay = param_no_decay.data.copy()
+0541:             
+0542:             # With weight decay
+0543:             param_with_decay = Tensor([1.0, 2.0], requires_grad=True)
+0544:             opt_with_decay = optimizer_class([param_with_decay], weight_decay=weight_decay)
+0545:             param_with_decay.grad = np.array([0.1, 0.2])
+0546:             opt_with_decay.step()
+0547:             result_with_decay = param_with_decay.data.copy()
+0548:             
+0549:             # Parameters should be smaller with weight decay
+0550:             assert np.all(np.abs(result_with_decay) < np.abs(result_no_decay)), \
+0551:                 f"{type(optimizer_class).__name__} does not correctly apply weight decay"
 
 // File: C:\Users\aluja\Desktop\DLpy\tests\test_tensor.py
 // ----------------------------------------
@@ -6261,4 +7148,4 @@
 0092:         assert 'requires_grad=True' in repr(t)
 
 // ----------------------------------------
-// Total Python files found: 43
+// Total Python files found: 45

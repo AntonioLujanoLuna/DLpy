@@ -9,11 +9,15 @@ from .sgd import SGD
 from .adam import Adam
 from .rmsprop import RMSprop
 from .adagrad import AdaGrad
+from .adadelta import AdaDelta
+from .adamax import AdaMax
 
 __all__ = [
     'Optimizer',
     'SGD',
     'Adam',
     'RMSprop',
-    'AdaGrad'
+    'AdaGrad',
+    'AdaDelta',
+    'AdaMax'
 ]

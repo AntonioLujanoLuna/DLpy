@@ -30,8 +30,10 @@ DLpy/ops/power.py
 DLpy/ops/reduction.py
 DLpy/ops/reshape.py
 DLpy/optim/__init__.py
+DLpy/optim/adadelta.py
 DLpy/optim/adagrad.py
 DLpy/optim/adam.py
+DLpy/optim/adamax.py
 DLpy/optim/optimizer.py
 DLpy/optim/rmsprop.py
 DLpy/optim/sgd.py
