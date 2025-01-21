@@ -11,12 +11,19 @@ from .dropout import Dropout, Dropout2d
 from .sequential import Sequential
 from .activations import (
     relu, leaky_relu, elu, gelu, sigmoid, tanh,
-    ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
+    ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh,
+    ReLUFunction, LeakyReLUFunction, ELUFunction, GELUFunction, SigmoidFunction, TanhFunction
 )
 from .conv2d import Conv2d 
 from .pooling import MaxPool2d, AvgPool2d
 from .normalization import GroupNorm, InstanceNorm2d
 from .rnn import LSTM, GRU, LSTMCell, GRUCell
+from .transformer import (
+    MultiHeadAttention,
+    TransformerEncoderLayer,
+    TransformerEncoder,
+    PositionalEncoding
+)
 
 __all__ = [
     # Layers
@@ -41,6 +48,12 @@ __all__ = [
     'GELU',
     'Sigmoid',
     'Tanh',
+    'ReLUFunction',
+    'LeakyReLUFunction',
+    'ELUFunction',
+    'GELUFunction',
+    'SigmoidFunction',
+    'TanhFunction',
 
     # Convolutional layers
     'Conv2d',
@@ -57,5 +70,11 @@ __all__ = [
     'LSTM',
     'GRU',
     'LSTMCell',
-    'GRUCell'
+    'GRUCell',
+
+    # Transformer layers
+    'MultiHeadAttention',
+    'TransformerEncoderLayer',
+    'TransformerEncoder',
+    'PositionalEncoding',
 ]

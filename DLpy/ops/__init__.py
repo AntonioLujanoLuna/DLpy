@@ -4,7 +4,7 @@ Operations module for DLpy.
 This module contains all the mathematical operations that can be performed on tensors.
 """
 
-from .basic import Add, Multiply, MatMul
+from .basic import Add, Multiply, MatMul, Softmax, Clip
 from .reshape import Reshape
 from .power import Power, Divide
 from .elementwise import Log, Exp
@@ -39,6 +39,8 @@ __all__ = [
     'Multiply',
     'MatMul',
     'Reshape',
+    'Softmax',
+    'Clip',
     
     # Power operations
     'Power',

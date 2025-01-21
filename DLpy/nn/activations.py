@@ -1,15 +1,18 @@
 """
 Activation functions module for DLpy.
 
-This module contains all standard activation functions used in neural networks.
-Each activation function is implemented as a Function subclass for autograd support.
+This module contains both Function and Module implementations of standard activation functions.
+Functions can be used directly (relu(x)), while Modules can be used in Sequential layers (ReLU()).
+Each activation function is implemented with full autograd support.
 """
 
 from typing import Dict, Optional
 import numpy as np
-from ..core import Function, Tensor
+from ..core import Function, Module, Tensor
 
-class ReLU(Function):
+# Function implementations (for functional usage)
+
+class ReLUFunction(Function):
     """
     Rectified Linear Unit activation function.
     
@@ -32,7 +35,7 @@ class ReLU(Function):
             grad = grad_output * (x.data > 0)
             grad_dict[id(x)] = grad
 
-class LeakyReLU(Function):
+class LeakyReLUFunction(Function):
     """
     Leaky Rectified Linear Unit activation function.
     
@@ -62,7 +65,7 @@ class LeakyReLU(Function):
             grad = grad_output * np.where(x.data > 0, 1.0, negative_slope)
             grad_dict[id(x)] = grad
 
-class ELU(Function):
+class ELUFunction(Function):
     """
     Exponential Linear Unit activation function.
     
@@ -92,7 +95,7 @@ class ELU(Function):
             grad = grad_output * np.where(x.data > 0, 1.0, alpha * np.exp(x.data))
             grad_dict[id(x)] = grad
 
-class GELU(Function):
+class GELUFunction(Function):
     """
     Gaussian Error Linear Unit activation function.
     
@@ -146,7 +149,7 @@ class GELU(Function):
             
             grad_dict[id(x)] = grad_output * grad
 
-class Sigmoid(Function):
+class SigmoidFunction(Function):
     """
     Sigmoid activation function.
     
@@ -179,7 +182,7 @@ class Sigmoid(Function):
             grad = grad_output * sigmoid_x * (1 - sigmoid_x)
             grad_dict[id(x)] = grad
 
-class Tanh(Function):
+class TanhFunction(Function):
     """
     Hyperbolic tangent activation function.
     
@@ -206,27 +209,68 @@ class Tanh(Function):
             grad = grad_output * (1 - tanh_x ** 2)
             grad_dict[id(x)] = grad
 
-# Add convenience functions for each activation
+# Module implementations (for use in Sequential and other Module-based architectures)
+
+class ReLU(Module):
+    """Applies the rectified linear unit function element-wise."""
+    def forward(self, x: Tensor) -> Tensor:
+        return ReLUFunction.apply(x)
+
+class LeakyReLU(Module):
+    """Applies leaky ReLU function element-wise."""
+    def __init__(self, negative_slope: float = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return LeakyReLUFunction.apply(x, self.negative_slope)
+
+class ELU(Module):
+    """Applies the exponential linear unit function element-wise."""
+    def __init__(self, alpha: float = 1.0):
+        super().__init__()
+        self.alpha = alpha
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return ELUFunction.apply(x, self.alpha)
+
+class GELU(Module):
+    """Applies the Gaussian Error Linear Units function."""
+    def forward(self, x: Tensor) -> Tensor:
+        return GELUFunction.apply(x)
+
+class Sigmoid(Module):
+    """Applies the sigmoid function element-wise."""
+    def forward(self, x: Tensor) -> Tensor:
+        return SigmoidFunction.apply(x)
+
+class Tanh(Module):
+    """Applies the hyperbolic tangent function element-wise."""
+    def forward(self, x: Tensor) -> Tensor:
+        return TanhFunction.apply(x)
+
+# Functional interface (for direct usage)
+
 def relu(x: Tensor) -> Tensor:
     """Applies ReLU activation function."""
-    return ReLU.apply(x)
+    return ReLUFunction.apply(x)
 
 def leaky_relu(x: Tensor, negative_slope: float = 0.01) -> Tensor:
     """Applies Leaky ReLU activation function."""
-    return LeakyReLU.apply(x, negative_slope)
+    return LeakyReLUFunction.apply(x, negative_slope)
 
 def elu(x: Tensor, alpha: float = 1.0) -> Tensor:
     """Applies ELU activation function."""
-    return ELU.apply(x, alpha)
+    return ELUFunction.apply(x, alpha)
 
 def gelu(x: Tensor) -> Tensor:
     """Applies GELU activation function."""
-    return GELU.apply(x)
+    return GELUFunction.apply(x)
 
 def sigmoid(x: Tensor) -> Tensor:
     """Applies Sigmoid activation function."""
-    return Sigmoid.apply(x)
+    return SigmoidFunction.apply(x)
 
 def tanh(x: Tensor) -> Tensor:
     """Applies Tanh activation function."""
-    return Tanh.apply(x)
+    return TanhFunction.apply(x)

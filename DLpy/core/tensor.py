@@ -160,6 +160,11 @@ class Tensor:
         """Returns a tensor with the same data and new shape."""
         from ..ops import Reshape
         return Reshape.apply(self, shape)
+    
+    def permute(self, *dims: int) -> 'Tensor':
+        """Permutes the dimensions of the tensor."""
+        from ..ops import Transpose
+        return Transpose.apply(self, dims)
 
     def pow(self, exponent: Union['Tensor', float]) -> 'Tensor':
         """Returns tensor raised to the power of exponent."""
@@ -180,6 +185,11 @@ class Tensor:
         """Returns e raised to the power of each element in the tensor."""
         from ..ops import Exp
         return Exp.apply(self)
+    
+    def softmax(self, dim: int = -1) -> 'Tensor':
+        """Applies the softmax function along the specified dimension."""
+        from ..ops.basic import Softmax
+        return Softmax.apply(self, dim)
 
     def sigmoid(self) -> 'Tensor':
         """Returns the sigmoid of the tensor."""
@@ -190,6 +200,11 @@ class Tensor:
         """Returns the hyperbolic tangent of the tensor."""
         from ..ops import Tanh
         return Tanh.apply(self)
+    
+    def clip(self, min_val: Union[float, int], max_val: Union[float, int]) -> 'Tensor':
+        """Clips tensor values between minimum and maximum."""
+        from ..ops import Clip
+        return Clip.apply(self, min_val, max_val)
 
     def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
         """Returns the sum of all elements in the tensor."""

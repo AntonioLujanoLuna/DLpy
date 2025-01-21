@@ -52,12 +52,25 @@ class LinearFunction(Function):
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         input, weight, bias = ctx.saved_tensors
-        
+
         if input.requires_grad:
+            # For input gradient: (batch_size, out_features) @ (out_features, in_features)
             grad_dict[id(input)] = grad_output @ weight.data
-            
+
         if weight.requires_grad:
-            grad_dict[id(weight)] = grad_output.T @ input.data
-            
+            # For weight gradient: (in_features, batch_size) @ (batch_size, out_features)
+            # Reshape grad_output to (batch_size, out_features) if needed
+            if len(grad_output.shape) == 3:
+                batch_size, seq_len, out_features = grad_output.shape
+                grad_output = grad_output.reshape(-1, out_features)
+                input_data = input.data.reshape(-1, input.data.shape[-1])
+            else:
+                input_data = input.data
+                
+            grad_dict[id(weight)] = input_data.T @ grad_output
+
         if bias is not None and bias.requires_grad:
+            # Sum across batch dimension
             grad_dict[id(bias)] = grad_output.sum(axis=0)
+            if len(grad_output.shape) == 3:
+                grad_dict[id(bias)] = grad_dict[id(bias)].sum(axis=0)

@@ -1,3 +1,21 @@
+<#
+.SYNOPSIS
+    Generates an inventory of Python files by concatenating their contents into a single text file.
+
+.DESCRIPTION
+    This script recursively searches for Python files in the current directory, excluding specified directories and optionally excluding test files. It writes the concatenated contents of these files into an output file with line numbers and headers for each file.
+
+.PARAMETER ExcludeTests
+    Optional switch to exclude test files (e.g., files starting with 'test_' or ending with '_test.py').
+
+.EXAMPLE
+    .\GeneratePythonInventory.ps1 -ExcludeTests
+#>
+
+param (
+    [switch]$ExcludeTests
+)
+
 # Ensure the script runs on PowerShell 5+ for compatibility
 $PSVersion = $PSVersionTable.PSVersion.Major
 if ($PSVersion -lt 5) {
@@ -16,9 +34,38 @@ try {
     $header = "// Python Files Concatenated on $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')`n// ----------------------------------------`n`n"
     $stream.WriteLine($header)
 
-    # Find all Python files recursively, excluding the venv directory
+    # Define patterns to exclude test files if the ExcludeTests parameter is set
+    if ($ExcludeTests) {
+        $TestFilePatterns = @(
+            '^test_.*\.py$',      # Files starting with 'test_'
+            '.*_test\.py$',       # Files ending with '_test.py'
+            '\\tests?\\',         # Files within 'test' or 'tests' directories
+            '\\test_.*\\'         # Any other test directory patterns
+        )
+    }
+
+    # Find all Python files recursively, excluding the venv directory and optionally excluding test files
     $PythonFiles = Get-ChildItem -Path . -Filter *.py -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\venv\\' } |
+        Where-Object {
+            $_.FullName -notmatch '\\venv\\' -and (
+                -not $ExcludeTests -or (
+                    $TestFilePatterns | ForEach-Object { $_ } | ForEach-Object { $_ -notmatch $_ }
+                )
+            )
+        } |
+        Sort-Object FullName
+
+    # Alternatively, using more efficient filtering:
+    $PythonFiles = Get-ChildItem -Path . -Filter *.py -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.FullName -notmatch '\\venv\\' -and (
+                -not $ExcludeTests -or (
+                    ($_.Name -notmatch '^test_.*\.py$') -and
+                    ($_.Name -notmatch '.*_test\.py$') -and
+                    ($_.FullName -notmatch '\\test(s)?\\')
+                )
+            )
+        } |
         Sort-Object FullName
 
     # Process each file
@@ -67,5 +114,11 @@ finally {
 
 # Print completion message
 Write-Host "Inventory has been created in $OutputFile"
-Write-Host "Found files:"
-$PythonFiles | ForEach-Object { Write-Host $_.FullName }
+
+# Print found files if any
+if ($PythonFiles.Count -gt 0) {
+    Write-Host "Found files:"
+    $PythonFiles | ForEach-Object { Write-Host $_.FullName }
+} else {
+    Write-Host "No Python files found."
+}

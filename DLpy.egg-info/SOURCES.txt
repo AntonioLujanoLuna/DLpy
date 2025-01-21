@@ -30,13 +30,13 @@ DLpy/nn/normalization.py
 DLpy/nn/pooling.py
 DLpy/nn/rnn.py
 DLpy/nn/sequential.py
+DLpy/nn/transformer.py
 DLpy/ops/__init__.py
 DLpy/ops/basic.py
 DLpy/ops/cnn.py
 DLpy/ops/elementwise.py
 DLpy/ops/loss.py
 DLpy/ops/matrix.py
-DLpy/ops/nn.py
 DLpy/ops/pooling.py
 DLpy/ops/power.py
 DLpy/ops/reduction.py
@@ -66,3 +66,4 @@ tests/test_optim.py
 tests/test_rnn.py
 tests/test_serialization.py
 tests/test_tensor.py
+tests/test_transformer.py
