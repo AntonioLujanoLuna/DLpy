@@ -6,6 +6,25 @@ from ..nn.layer_norm import LayerNorm
 from ..nn.dropout import Dropout
 from ..nn.sequential import Sequential
 from ..nn.activations import ReLU
+from ..utils import calculate_fan_in_fan_out
+
+def get_angles(pos: np.ndarray, i: np.ndarray, d_model: int) -> np.ndarray:
+    """
+    Calculate the angles for positional encoding.
+    
+    Args:
+        pos: Array of positions [0, 1, 2, ...]
+        i: Array of dimension indices [0, 2, 4, ...] for even indices
+        d_model: The model dimension
+        
+    Returns:
+        Array of angles for positional encoding
+    """
+    # Compute angle rates
+    angle_rates = 1 / np.power(10000, (2 * i) / np.float32(d_model))
+    
+    # Return position-dependent angles
+    return pos[:, np.newaxis] * angle_rates[np.newaxis, :]
 
 class MultiHeadAttention(Module):
     """
@@ -35,10 +54,10 @@ class MultiHeadAttention(Module):
         self.head_dim = embed_dim // num_heads
         self.scaling = self.head_dim ** -0.5
         
-        self.w_q = Linear(embed_dim, embed_dim, bias=bias)
-        self.w_k = Linear(embed_dim, embed_dim, bias=bias)
-        self.w_v = Linear(embed_dim, embed_dim, bias=bias)
-        self.w_o = Linear(embed_dim, embed_dim, bias=bias)
+        self.w_q = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
+        self.w_k = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
+        self.w_v = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
+        self.w_o = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
 
         self.attention_dropout = Dropout(self.dropout)
         
@@ -70,51 +89,54 @@ class MultiHeadAttention(Module):
         batch_size, query_len, _ = query.shape
         _, key_len, _ = key.shape
 
-        # Linear projections
+        # Linear projections for Q, K, V
         q = self.w_q(query)  # (batch_size, query_len, embed_dim)
         k = self.w_k(key)    # (batch_size, key_len, embed_dim)
         v = self.w_v(value)  # (batch_size, key_len, embed_dim)
 
         # Reshape for multi-head attention
         q = self._reshape_for_heads(q)  # (batch_size, num_heads, query_len, head_dim)
-        k = self._reshape_for_heads(k)
-        v = self._reshape_for_heads(v)
+        k = self._reshape_for_heads(k)  # (batch_size, num_heads, key_len, head_dim)
+        v = self._reshape_for_heads(v)  # (batch_size, num_heads, key_len, head_dim)
 
         # Scale query
-        q = q * self.scaling
+        q = q * self.scaling  # Scale by sqrt(head_dim)
 
         # Compute attention scores
+        # Transpose key for matrix multiplication
         k_t = k.transpose(0, 1, 3, 2)  # (batch_size, num_heads, head_dim, key_len)
         attention_scores = q @ k_t      # (batch_size, num_heads, query_len, key_len)
 
+        # Attention mask handling
         if attention_mask is not None:
-            # First stabilize the scores before applying mask
-            attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
-            
-            # Add the mask (broadcasting will handle shape differences)
+            # Apply mask first - this ensures masked positions stay masked
             attention_scores = attention_scores + attention_mask
-            
-            # Clip values for numerical stability
-            attention_scores = attention_scores.clip(-1e30, 1e30)
-        else:
-            # If no mask, still stabilize numerically
-            attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
+        
+        # Apply numerical stabilization after masking
+        # This prevents overflow while maintaining masked positions
+        attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
+        
+        # Clip values for additional numerical stability
+        attention_scores = attention_scores.clip(-1e30, 1e30)
 
         # Apply softmax to get attention weights
         attention_weights = attention_scores.softmax(dim=-1)
 
+        # Apply dropout during training
         if self.training:
             attention_weights = self.attention_dropout(attention_weights)
 
-        # Apply attention to values
+        # Apply attention weights to values
         output = attention_weights @ v  # (batch_size, num_heads, query_len, head_dim)
 
         # Reshape back to original dimensions
+        # First transpose to get heads dimension next to head_dim
         output = output.transpose(0, 2, 1, 3)  # (batch_size, query_len, num_heads, head_dim)
+        # Then combine heads with head_dim to get back to embed_dim
         output = output.reshape(batch_size, query_len, self.embed_dim)
 
         # Final linear projection
-        output = self.w_o(output)
+        output = self.w_o(output)  # (batch_size, query_len, embed_dim)
 
         return output, attention_weights
 
@@ -139,6 +161,11 @@ class TransformerEncoderLayer(Module):
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
                  dropout: float = 0.1, activation: str = "relu",
                  layer_norm_eps: float = 1e-5):
+        if d_model % nhead != 0:
+            raise ValueError(f"d_model must be divisible by nhead. Got {d_model} and {nhead}")
+        if dim_feedforward < d_model:
+            raise ValueError(f"dim_feedforward ({dim_feedforward}) < d_model ({d_model})")
+
         super().__init__()
         # Create single instances of dropout layers
         self.attn_dropout = Dropout(dropout)
@@ -188,13 +215,17 @@ class PositionalEncoding(Module):
         super().__init__()
         self.dropout = Dropout(dropout)
         
+        # Create position array and dimension indices
+        position = np.arange(max_len)
+        div_term_indices = np.arange(0, d_model, 2)
+        
+        # Calculate angles using the more stable method
+        angles = get_angles(position, div_term_indices, d_model)
+        
         # Create positional encoding matrix
         pe = np.zeros((max_len, d_model))
-        position = np.arange(max_len)[:, np.newaxis]
-        div_term = np.exp(np.arange(0, d_model, 2) * (-np.log(10000.0) / d_model))
-        
-        pe[:, 0::2] = np.sin(position * div_term)
-        pe[:, 1::2] = np.cos(position * div_term)
+        pe[:, 0::2] = np.sin(angles)
+        pe[:, 1::2] = np.cos(angles)
         
         # Register buffer (not a parameter)
         self.register_buffer('pe', Tensor(pe[np.newaxis, :, :]))
@@ -450,20 +481,15 @@ class Transformer(Module):
         self.nhead = nhead
         
     def _reset_parameters(self):
-        """
-        Initialize parameters using Xavier uniform initialization.
-        
-        This is crucial for proper transformer operation - without good initialization,
-        the network can collapse to outputting all zeros.
-        """
+        """Initialize parameters using a layer-dependent scale."""
         for p in self.parameters():
-            if p.data.ndim > 1:
-                # Xavier uniform initialization for weight matrices
-                bound = np.sqrt(6.0 / sum(p.data.shape))
-                p.data = np.random.uniform(-bound, bound, p.data.shape)
-            else:
-                # Initialize biases to small positive values to prevent dead neurons
-                p.data.fill(0.01)
+            if isinstance(p, Tensor) and p.data.ndim > 1:
+                # Calculate fan_in and fan_out
+                fan_in, fan_out = calculate_fan_in_fan_out(p.data)
+                # Layer-dependent scaling
+                std = np.sqrt(2.0 / float(fan_in + fan_out))
+                # Initialize using normal distribution
+                p.data = np.random.normal(0.0, std, p.data.shape)
                 
     def forward(self, src: Tensor, tgt: Tensor,
                 src_mask: Optional[Tensor] = None,

@@ -1,30 +1,7 @@
-﻿// Python Files Concatenated on 01/22/2025 16:56:03
+﻿// Python Files Concatenated on 01/22/2025 17:58:57
 // ----------------------------------------
 
 
-
-// File: C:\Users\aluja\Desktop\DLpy\DLpy\__init__.py
-// ----------------------------------------
-0001: """
-0002: DLpy: A Deep Learning Library with DAG-based Autograd
-0003: 
-0004: This library provides a PyTorch-like interface for building and training neural networks,
-0005: with a focus on clear implementation and educational value.
-0006: """
-0007: 
-0008: from .core import Tensor, Function, Context
-0009: from .ops import Add, Multiply, Reshape
-0010: 
-0011: __version__ = "0.1.0"
-0012: 
-0013: __all__ = [
-0014:     'Tensor',
-0015:     'Function',
-0016:     'Context',
-0017:     'Add',
-0018:     'Multiply',
-0019:     'Reshape',
-0020: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\core\__init__.py
 // ----------------------------------------
@@ -1414,62 +1391,74 @@
 0022:     MultiHeadAttention,
 0023:     TransformerEncoderLayer,
 0024:     TransformerEncoder,
-0025:     PositionalEncoding
-0026: )
-0027: 
-0028: __all__ = [
-0029:     # Layers
-0030:     'Linear',
-0031:     'BatchNorm1d',
-0032:     'BatchNorm2d',
-0033:     'LayerNorm',
-0034:     'Dropout',
-0035:     'Dropout2d',
-0036:     'Sequential',
-0037:     
-0038:     # Activation functions
-0039:     'relu',
-0040:     'leaky_relu',
-0041:     'elu',
-0042:     'gelu',
-0043:     'sigmoid',
-0044:     'tanh',
-0045:     'ReLU',
-0046:     'LeakyReLU',
-0047:     'ELU',
-0048:     'GELU',
-0049:     'Sigmoid',
-0050:     'Tanh',
-0051:     'ReLUFunction',
-0052:     'LeakyReLUFunction',
-0053:     'ELUFunction',
-0054:     'GELUFunction',
-0055:     'SigmoidFunction',
-0056:     'TanhFunction',
-0057: 
-0058:     # Convolutional layers
-0059:     'Conv2d',
-0060: 
-0061:     # Pooling layers
-0062:     'MaxPool2d',
-0063:     'AvgPool2d',
-0064: 
-0065:     # Normalization layers
-0066:     'GroupNorm',
-0067:     'InstanceNorm2d',
-0068:     
-0069:     # RNN layers
-0070:     'LSTM',
-0071:     'GRU',
-0072:     'LSTMCell',
-0073:     'GRUCell',
-0074: 
-0075:     # Transformer layers
-0076:     'MultiHeadAttention',
-0077:     'TransformerEncoderLayer',
-0078:     'TransformerEncoder',
-0079:     'PositionalEncoding',
-0080: ]
+0025:     PositionalEncoding,
+0026:     TransformerDecoderLayer,
+0027:     TransformerDecoder,
+0028:     Transformer,
+0029:     generate_square_subsequent_mask,
+0030:     get_angles
+0031: )
+0032: 
+0033: __all__ = [
+0034:     # Layers
+0035:     'Linear',
+0036:     'BatchNorm1d',
+0037:     'BatchNorm2d',
+0038:     'LayerNorm',
+0039:     'Dropout',
+0040:     'Dropout2d',
+0041:     'Sequential',
+0042:     
+0043:     # Activation functions
+0044:     'relu',
+0045:     'leaky_relu',
+0046:     'elu',
+0047:     'gelu',
+0048:     'sigmoid',
+0049:     'tanh',
+0050:     'ReLU',
+0051:     'LeakyReLU',
+0052:     'ELU',
+0053:     'GELU',
+0054:     'Sigmoid',
+0055:     'Tanh',
+0056:     'ReLUFunction',
+0057:     'LeakyReLUFunction',
+0058:     'ELUFunction',
+0059:     'GELUFunction',
+0060:     'SigmoidFunction',
+0061:     'TanhFunction',
+0062: 
+0063:     # Convolutional layers
+0064:     'Conv2d',
+0065: 
+0066:     # Pooling layers
+0067:     'MaxPool2d',
+0068:     'AvgPool2d',
+0069: 
+0070:     # Normalization layers
+0071:     'GroupNorm',
+0072:     'InstanceNorm2d',
+0073:     
+0074:     # RNN layers
+0075:     'LSTM',
+0076:     'GRU',
+0077:     'LSTMCell',
+0078:     'GRUCell',
+0079: 
+0080:     # Transformer layers
+0081:     'MultiHeadAttention',
+0082:     'TransformerEncoderLayer',
+0083:     'TransformerEncoder',
+0084:     'PositionalEncoding',
+0085:     'TransformerDecoderLayer',
+0086:     'TransformerDecoder',
+0087:     'Transformer',
+0088: 
+0089:     # Utility functions
+0090:     'generate_square_subsequent_mask',
+0091:     'get_angles'
+0092: ]
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\activations.py
 // ----------------------------------------
@@ -2018,72 +2007,81 @@
 0005: 
 0006: class Dropout(Module):
 0007:     """
-0008:     Randomly zeroes some of the elements of the input tensor with probability p using samples 
-0009:     from a Bernoulli distribution.
-0010:     
-0011:     Args:
-0012:         p: Probability of an element to be zeroed. Default: 0.5
-0013:         inplace: If set to True, will do operation in-place. Default: False
-0014:     """
-0015:     def __init__(self, p: float = 0.5, inplace: bool = False):
-0016:         super().__init__()
-0017:         if p < 0 or p > 1:
-0018:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
-0019:         self.p = p
-0020:         self.inplace = inplace
-0021:         self.mask: Optional[np.ndarray] = None
-0022: 
-0023:     def forward(self, x: Tensor) -> Tensor:
-0024:         if self.training:
-0025:             # Generate mask
-0026:             self.mask = (np.random.rand(*x.shape) > self.p).astype(np.float64)
-0027:             # Scale up by 1/(1-p) to maintain expected value
-0028:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
-0029:             
-0030:             if self.inplace:
-0031:                 x.data *= self.mask * scale
-0032:                 return x
-0033:             else:
-0034:                 return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
-0035:         else:
-0036:             return x
-0037: 
-0038: class Dropout2d(Module):
-0039:     """
-0040:     Randomly zero out entire channels (a channel is a 2D feature map,
-0041:     e.g., the j-th channel of the i-th sample in the batch input) of the input tensor.
-0042:     Each channel will be zeroed out independently on every forward call with probability p.
-0043:     
-0044:     Args:
-0045:         p: Probability of a channel to be zeroed. Default: 0.5
-0046:         inplace: If set to True, will do operation in-place. Default: False
-0047:     """
-0048:     def __init__(self, p: float = 0.5, inplace: bool = False):
-0049:         super().__init__()
-0050:         if p < 0 or p > 1:
-0051:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
-0052:         self.p = p
-0053:         self.inplace = inplace
-0054:         self.mask: Optional[np.ndarray] = None
-0055: 
-0056:     def forward(self, x: Tensor) -> Tensor:
-0057:         if self.training:
-0058:             assert len(x.shape) == 4, f'expected 4D input, got {len(x.shape)}D input'
-0059:             
-0060:             # Generate mask for entire channels
-0061:             mask = (np.random.rand(x.shape[0], x.shape[1], 1, 1) > self.p).astype(np.float64)
-0062:             self.mask = np.broadcast_to(mask, x.shape)
-0063:             
-0064:             # Scale up by 1/(1-p) to maintain expected value
-0065:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
-0066:             
-0067:             if self.inplace:
-0068:                 x.data *= self.mask * scale
-0069:                 return x
-0070:             else:
-0071:                 return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
-0072:         else:
-0073:             return x
+0008:     Randomly zeroes some elements of the input tensor with probability p.
+0009:     
+0010:     Args:
+0011:         p (float): Probability of an element to be zeroed. Default: 0.5
+0012:         inplace (bool): If True, will do operation in-place. Default: False
+0013:     """
+0014:     def __init__(self, p: float = 0.5, inplace: bool = False):
+0015:         super().__init__()
+0016:         if p < 0 or p > 1:
+0017:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+0018:         self.p = p
+0019:         self.inplace = inplace
+0020:         
+0021:     def forward(self, x: Tensor) -> Tensor:
+0022:         """
+0023:         Forward pass of dropout.
+0024:         
+0025:         Args:
+0026:             x: Input tensor
+0027:             
+0028:         Returns:
+0029:             Output tensor, either the same object (if inplace=True) or a new tensor
+0030:         """
+0031:         if self.training:
+0032:             # Generate random mask 
+0033:             mask = (np.random.rand(*x.shape) > self.p).astype(np.float64)
+0034:             # Scale up to maintain expected value
+0035:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
+0036:             mask = mask * scale
+0037:             
+0038:             if self.inplace:
+0039:                 # Modify input tensor directly
+0040:                 x.data *= mask
+0041:                 return x
+0042:             else:
+0043:                 # Create new tensor
+0044:                 return Tensor(x.data * mask, requires_grad=x.requires_grad)
+0045:         return x
+0046: 
+0047: class Dropout2d(Module):
+0048:     """
+0049:     Randomly zero out entire channels (a channel is a 2D feature map,
+0050:     e.g., the j-th channel of the i-th sample in the batch input) of the input tensor.
+0051:     Each channel will be zeroed out independently on every forward call with probability p.
+0052:     
+0053:     Args:
+0054:         p: Probability of a channel to be zeroed. Default: 0.5
+0055:         inplace: If set to True, will do operation in-place. Default: False
+0056:     """
+0057:     def __init__(self, p: float = 0.5, inplace: bool = False):
+0058:         super().__init__()
+0059:         if p < 0 or p > 1:
+0060:             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+0061:         self.p = p
+0062:         self.inplace = inplace
+0063:         self.mask: Optional[np.ndarray] = None
+0064: 
+0065:     def forward(self, x: Tensor) -> Tensor:
+0066:         if self.training:
+0067:             assert len(x.shape) == 4, f'expected 4D input, got {len(x.shape)}D input'
+0068:             
+0069:             # Generate mask for entire channels
+0070:             mask = (np.random.rand(x.shape[0], x.shape[1], 1, 1) > self.p).astype(np.float64)
+0071:             self.mask = np.broadcast_to(mask, x.shape)
+0072:             
+0073:             # Scale up by 1/(1-p) to maintain expected value
+0074:             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
+0075:             
+0076:             if self.inplace:
+0077:                 x.data *= self.mask * scale
+0078:                 return x
+0079:             else:
+0080:                 return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
+0081:         else:
+0082:             return x
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\nn\layer_norm.py
 // ----------------------------------------
@@ -2923,241 +2921,515 @@
 0006: from ..nn.dropout import Dropout
 0007: from ..nn.sequential import Sequential
 0008: from ..nn.activations import ReLU
-0009: 
-0010: class MultiHeadAttention(Module):
-0011:     """
-0012:     Multi-head attention mechanism.
-0013:     
-0014:     This module splits the input into multiple heads, applies scaled dot-product
-0015:     attention independently on each head, and then concatenates the results.
-0016:     
-0017:     Args:
-0018:         embed_dim (int): Total dimension of the model
-0019:         num_heads (int): Number of parallel attention heads
-0020:         dropout (float): Dropout probability (optional)
-0021:         bias (bool): If True, use bias in linear layers
+0009: from ..utils import calculate_fan_in_fan_out
+0010: 
+0011: def get_angles(pos: np.ndarray, i: np.ndarray, d_model: int) -> np.ndarray:
+0012:     """
+0013:     Calculate the angles for positional encoding.
+0014:     
+0015:     Args:
+0016:         pos: Array of positions [0, 1, 2, ...]
+0017:         i: Array of dimension indices [0, 2, 4, ...] for even indices
+0018:         d_model: The model dimension
+0019:         
+0020:     Returns:
+0021:         Array of angles for positional encoding
 0022:     """
-0023:     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0,
-0024:                  bias: bool = True):
-0025:         super().__init__()
-0026:         
-0027:         if embed_dim % num_heads != 0:
-0028:             raise ValueError(
-0029:                 f"Embedding dimension {embed_dim} not divisible by num_heads {num_heads}"
-0030:             )
-0031:             
-0032:         self.embed_dim = embed_dim
-0033:         self.num_heads = num_heads
-0034:         self.dropout = dropout
-0035:         self.head_dim = embed_dim // num_heads
-0036:         self.scaling = self.head_dim ** -0.5
-0037:         
-0038:         self.w_q = Linear(embed_dim, embed_dim, bias=bias)
-0039:         self.w_k = Linear(embed_dim, embed_dim, bias=bias)
-0040:         self.w_v = Linear(embed_dim, embed_dim, bias=bias)
-0041:         self.w_o = Linear(embed_dim, embed_dim, bias=bias)
-0042:         
-0043:     def _reshape_for_heads(self, x: Tensor) -> Tensor:
-0044:         """Reshapes input for parallel head processing."""
-0045:         batch_size, seq_len, _ = x.shape
-0046:         # First reshape to separate head dimensions
-0047:         x = x.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
-0048:         # Then transpose dimensions to (batch_size, num_heads, seq_len, head_dim)
-0049:         x = x.transpose(0, 2, 1, 3)  # Note: passing axes as a tuple
-0050:         return x
-0051:         
-0052:     def forward(self, query: Tensor, key: Tensor, value: Tensor,
-0053:                 attention_mask: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
-0054:         """
-0055:         Forward pass of multi-head attention.
+0023:     # Compute angle rates
+0024:     angle_rates = 1 / np.power(10000, (2 * i) / np.float32(d_model))
+0025:     
+0026:     # Return position-dependent angles
+0027:     return pos[:, np.newaxis] * angle_rates[np.newaxis, :]
+0028: 
+0029: class MultiHeadAttention(Module):
+0030:     """
+0031:     Multi-head attention mechanism.
+0032:     
+0033:     This module splits the input into multiple heads, applies scaled dot-product
+0034:     attention independently on each head, and then concatenates the results.
+0035:     
+0036:     Args:
+0037:         embed_dim (int): Total dimension of the model
+0038:         num_heads (int): Number of parallel attention heads
+0039:         dropout (float): Dropout probability (optional)
+0040:         bias (bool): If True, use bias in linear layers
+0041:     """
+0042:     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0,
+0043:                  bias: bool = True):
+0044:         super().__init__()
+0045:         
+0046:         if embed_dim % num_heads != 0:
+0047:             raise ValueError(
+0048:                 f"Embedding dimension {embed_dim} not divisible by num_heads {num_heads}"
+0049:             )
+0050:             
+0051:         self.embed_dim = embed_dim
+0052:         self.num_heads = num_heads
+0053:         self.dropout = dropout
+0054:         self.head_dim = embed_dim // num_heads
+0055:         self.scaling = self.head_dim ** -0.5
 0056:         
-0057:         Args:
-0058:             query: Query tensor of shape (batch_size, query_len, embed_dim)
-0059:             key: Key tensor of shape (batch_size, key_len, embed_dim)
-0060:             value: Value tensor of shape (batch_size, key_len, embed_dim)
-0061:             attention_mask: Optional mask tensor of shape (batch_size, num_heads, query_len, key_len)
-0062:             
-0063:         Returns:
-0064:             Tuple of:
-0065:                 - Output tensor of shape (batch_size, query_len, embed_dim)
-0066:                 - Attention weights of shape (batch_size, num_heads, query_len, key_len)
-0067:         """
-0068:         batch_size, query_len, _ = query.shape
-0069:         _, key_len, _ = key.shape
-0070: 
-0071:         # Linear projections
-0072:         q = self.w_q(query)  # (batch_size, query_len, embed_dim)
-0073:         k = self.w_k(key)    # (batch_size, key_len, embed_dim)
-0074:         v = self.w_v(value)  # (batch_size, key_len, embed_dim)
-0075: 
-0076:         # Reshape for multi-head attention
-0077:         q = self._reshape_for_heads(q)  # (batch_size, num_heads, query_len, head_dim)
-0078:         k = self._reshape_for_heads(k)
-0079:         v = self._reshape_for_heads(v)
-0080: 
-0081:         # Scale query
-0082:         q = q * self.scaling
-0083: 
-0084:         # Compute attention scores
-0085:         k_t = k.transpose(0, 1, 3, 2)  # (batch_size, num_heads, head_dim, key_len)
-0086:         attention_scores = q @ k_t      # (batch_size, num_heads, query_len, key_len)
-0087: 
-0088:         if attention_mask is not None:
-0089:             # Apply the mask first
-0090:             attention_scores = attention_scores + attention_mask
+0057:         self.w_q = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
+0058:         self.w_k = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
+0059:         self.w_v = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
+0060:         self.w_o = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
+0061: 
+0062:         self.attention_dropout = Dropout(self.dropout)
+0063:         
+0064:     def _reshape_for_heads(self, x: Tensor) -> Tensor:
+0065:         """Reshapes input for parallel head processing."""
+0066:         batch_size, seq_len, _ = x.shape
+0067:         # First reshape to separate head dimensions
+0068:         x = x.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+0069:         # Then transpose dimensions to (batch_size, num_heads, seq_len, head_dim)
+0070:         x = x.transpose(0, 2, 1, 3)  # Note: passing axes as a tuple
+0071:         return x
+0072:         
+0073:     def forward(self, query: Tensor, key: Tensor, value: Tensor,
+0074:             attention_mask: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+0075:         """
+0076:         Forward pass of multi-head attention.
+0077:         
+0078:         Args:
+0079:             query: Query tensor of shape (batch_size, query_len, embed_dim)
+0080:             key: Key tensor of shape (batch_size, key_len, embed_dim)
+0081:             value: Value tensor of shape (batch_size, key_len, embed_dim)
+0082:             attention_mask: Optional mask tensor of shape (batch_size, num_heads, query_len, key_len)
+0083:                 
+0084:         Returns:
+0085:             Tuple of:
+0086:                 - Output tensor of shape (batch_size, query_len, embed_dim)
+0087:                 - Attention weights of shape (batch_size, num_heads, query_len, key_len)
+0088:         """
+0089:         batch_size, query_len, _ = query.shape
+0090:         _, key_len, _ = key.shape
 0091: 
-0092:             # For numerical stability, subtract max after applying the mask
-0093:             attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
-0094: 
-0095:             # Clip to avoid overflow (though unlikely after subtraction)
-0096:             attention_scores = attention_scores.clip(-1e30, 1e30)
-0097: 
-0098:         # Apply softmax to get attention weights
-0099:         attention_weights = attention_scores.softmax(dim=-1)
-0100: 
-0101:         if self.training and self.dropout > 0:
-0102:             attention_weights = Dropout(self.dropout)(attention_weights)
-0103: 
-0104:         # Apply attention to values
-0105:         output = attention_weights @ v  # (batch_size, num_heads, query_len, head_dim)
-0106: 
-0107:         # Reshape back to original dimensions
-0108:         output = output.transpose(0, 2, 1, 3)  # (batch_size, query_len, num_heads, head_dim)
-0109:         output = output.reshape(batch_size, query_len, self.embed_dim)
-0110: 
-0111:         # Final linear projection
-0112:         output = self.w_o(output)
-0113: 
-0114:         return output, attention_weights
-0115: 
-0116: class TransformerEncoderLayer(Module):
-0117:     """
-0118:     Transformer Encoder Layer.
-0119:     
-0120:     Implements a single layer of the transformer encoder, consisting of:
-0121:     1. Multi-head self-attention
-0122:     2. Add & Norm
-0123:     3. Feed-forward network
-0124:     4. Add & Norm
-0125:     
-0126:     Args:
-0127:         d_model (int): The dimension of the model
-0128:         nhead (int): Number of attention heads
-0129:         dim_feedforward (int): Dimension of feedforward network
-0130:         dropout (float): Dropout probability
-0131:         activation (str): Activation function to use
-0132:         layer_norm_eps (float): eps value in layer normalizations
-0133:     """
-0134:     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
-0135:                  dropout: float = 0.1, activation: str = "relu",
-0136:                  layer_norm_eps: float = 1e-5):
-0137:         super().__init__()
-0138:         
-0139:         self.self_attn = MultiHeadAttention(d_model, nhead, dropout)
-0140:         
-0141:         # Create ReLU activation as a Module instance
-0142:         self.activation = ReLU()
-0143:         
-0144:         # Fix Sequential layer construction
-0145:         self.ff = Sequential(
-0146:             Linear(d_model, dim_feedforward),
-0147:             self.activation,  # Use the Module instance
-0148:             Dropout(dropout),
-0149:             Linear(dim_feedforward, d_model)
-0150:         )
-0151:         
-0152:         self.norm1 = LayerNorm([d_model], eps=layer_norm_eps)
-0153:         self.norm2 = LayerNorm([d_model], eps=layer_norm_eps)
-0154:         self.dropout = Dropout(dropout)
-0155:         
-0156:     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-0157:         attn_output, _ = self.self_attn(x, x, x, mask)
-0158:         x = x + self.dropout(attn_output)
-0159:         x = self.norm1(x)
-0160:         
-0161:         ff_output = self.ff(x)
-0162:         x = x + self.dropout(ff_output)
-0163:         x = self.norm2(x)
-0164:         
-0165:         return x
-0166: 
-0167: class PositionalEncoding(Module):
-0168:     """
-0169:     Positional Encoding module.
-0170:     
-0171:     Adds positional information to the input embeddings using sine and cosine
-0172:     functions of different frequencies.
-0173:     
-0174:     Args:
-0175:         d_model (int): Dimension of the model
-0176:         max_len (int): Maximum sequence length
-0177:         dropout (float): Dropout probability
-0178:     """
-0179:     def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
-0180:         super().__init__()
-0181:         self.dropout = Dropout(dropout)
-0182:         
-0183:         # Create positional encoding matrix
-0184:         pe = np.zeros((max_len, d_model))
-0185:         position = np.arange(max_len)[:, np.newaxis]
-0186:         div_term = np.exp(np.arange(0, d_model, 2) * (-np.log(10000.0) / d_model))
-0187:         
-0188:         pe[:, 0::2] = np.sin(position * div_term)
-0189:         pe[:, 1::2] = np.cos(position * div_term)
-0190:         
-0191:         # Register buffer (not a parameter)
-0192:         self.register_buffer('pe', Tensor(pe[np.newaxis, :, :]))
-0193:         
-0194:     def forward(self, x: Tensor) -> Tensor:
-0195:         """
-0196:         Args:
-0197:             x: Input tensor of shape (batch_size, seq_len, d_model)
-0198:             
-0199:         Returns:
-0200:             Output tensor of shape (batch_size, seq_len, d_model)
-0201:         """
-0202:         x = x + self.pe[:, :x.shape[1]]
-0203:         return self.dropout(x)
-0204: 
-0205: class TransformerEncoder(Module):
-0206:     """
-0207:     Transformer Encoder.
+0092:         # Linear projections for Q, K, V
+0093:         q = self.w_q(query)  # (batch_size, query_len, embed_dim)
+0094:         k = self.w_k(key)    # (batch_size, key_len, embed_dim)
+0095:         v = self.w_v(value)  # (batch_size, key_len, embed_dim)
+0096: 
+0097:         # Reshape for multi-head attention
+0098:         q = self._reshape_for_heads(q)  # (batch_size, num_heads, query_len, head_dim)
+0099:         k = self._reshape_for_heads(k)  # (batch_size, num_heads, key_len, head_dim)
+0100:         v = self._reshape_for_heads(v)  # (batch_size, num_heads, key_len, head_dim)
+0101: 
+0102:         # Scale query
+0103:         q = q * self.scaling  # Scale by sqrt(head_dim)
+0104: 
+0105:         # Compute attention scores
+0106:         # Transpose key for matrix multiplication
+0107:         k_t = k.transpose(0, 1, 3, 2)  # (batch_size, num_heads, head_dim, key_len)
+0108:         attention_scores = q @ k_t      # (batch_size, num_heads, query_len, key_len)
+0109: 
+0110:         # Attention mask handling
+0111:         if attention_mask is not None:
+0112:             # Apply mask first - this ensures masked positions stay masked
+0113:             attention_scores = attention_scores + attention_mask
+0114:         
+0115:         # Apply numerical stabilization after masking
+0116:         # This prevents overflow while maintaining masked positions
+0117:         attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
+0118:         
+0119:         # Clip values for additional numerical stability
+0120:         attention_scores = attention_scores.clip(-1e30, 1e30)
+0121: 
+0122:         # Apply softmax to get attention weights
+0123:         attention_weights = attention_scores.softmax(dim=-1)
+0124: 
+0125:         # Apply dropout during training
+0126:         if self.training:
+0127:             attention_weights = self.attention_dropout(attention_weights)
+0128: 
+0129:         # Apply attention weights to values
+0130:         output = attention_weights @ v  # (batch_size, num_heads, query_len, head_dim)
+0131: 
+0132:         # Reshape back to original dimensions
+0133:         # First transpose to get heads dimension next to head_dim
+0134:         output = output.transpose(0, 2, 1, 3)  # (batch_size, query_len, num_heads, head_dim)
+0135:         # Then combine heads with head_dim to get back to embed_dim
+0136:         output = output.reshape(batch_size, query_len, self.embed_dim)
+0137: 
+0138:         # Final linear projection
+0139:         output = self.w_o(output)  # (batch_size, query_len, embed_dim)
+0140: 
+0141:         return output, attention_weights
+0142: 
+0143: class TransformerEncoderLayer(Module):
+0144:     """
+0145:     Transformer Encoder Layer.
+0146:     
+0147:     Implements a single layer of the transformer encoder, consisting of:
+0148:     1. Multi-head self-attention
+0149:     2. Add & Norm
+0150:     3. Feed-forward network
+0151:     4. Add & Norm
+0152:     
+0153:     Args:
+0154:         d_model (int): The dimension of the model
+0155:         nhead (int): Number of attention heads
+0156:         dim_feedforward (int): Dimension of feedforward network
+0157:         dropout (float): Dropout probability
+0158:         activation (str): Activation function to use
+0159:         layer_norm_eps (float): eps value in layer normalizations
+0160:     """
+0161:     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
+0162:                  dropout: float = 0.1, activation: str = "relu",
+0163:                  layer_norm_eps: float = 1e-5):
+0164:         if d_model % nhead != 0:
+0165:             raise ValueError(f"d_model must be divisible by nhead. Got {d_model} and {nhead}")
+0166:         if dim_feedforward < d_model:
+0167:             raise ValueError(f"dim_feedforward ({dim_feedforward}) < d_model ({d_model})")
+0168: 
+0169:         super().__init__()
+0170:         # Create single instances of dropout layers
+0171:         self.attn_dropout = Dropout(dropout)
+0172:         self.dropout1 = Dropout(dropout)
+0173:         self.dropout2 = Dropout(dropout)
+0174:         
+0175:         self.self_attn = MultiHeadAttention(d_model, nhead, dropout=0.0)  # Set to 0 as we handle dropout separately
+0176:         self.activation = ReLU()
+0177:         
+0178:         # Feed forward network with dropout
+0179:         self.ff = Sequential(
+0180:             Linear(d_model, dim_feedforward),
+0181:             self.activation,
+0182:             Dropout(dropout),  # This is fine as Sequential handles the instance properly
+0183:             Linear(dim_feedforward, d_model)
+0184:         )
+0185:         
+0186:         self.norm1 = LayerNorm([d_model], eps=layer_norm_eps)
+0187:         self.norm2 = LayerNorm([d_model], eps=layer_norm_eps)
+0188:         
+0189:     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+0190:         # Self attention block
+0191:         attn_output, _ = self.self_attn(x, x, x, mask)
+0192:         attn_output = self.attn_dropout(attn_output)  # Apply dropout to attention output
+0193:         x = x + self.dropout1(attn_output)  # Apply dropout to residual
+0194:         x = self.norm1(x)
+0195:         # Feedforward block
+0196:         ff_output = self.ff(x)
+0197:         x = x + self.dropout2(ff_output)  # Apply dropout to residual
+0198:         x = self.norm2(x)
+0199:         
+0200:         return x
+0201: 
+0202: class PositionalEncoding(Module):
+0203:     """
+0204:     Positional Encoding module.
+0205:     
+0206:     Adds positional information to the input embeddings using sine and cosine
+0207:     functions of different frequencies.
 0208:     
-0209:     A stack of N encoder layers.
-0210:     
-0211:     Args:
-0212:         encoder_layer: An instance of TransformerEncoderLayer
-0213:         num_layers (int): Number of encoder layers in the stack
-0214:         norm (Module, optional): Layer normalization component
-0215:     """
-0216:     def __init__(self, encoder_layer: TransformerEncoderLayer, num_layers: int,
-0217:                  norm: Optional[Module] = None):
-0218:         super().__init__()
-0219:         self.layers = Sequential(
-0220:             *[encoder_layer for _ in range(num_layers)]
-0221:         )
-0222:         self.norm = norm
-0223:         
-0224:     def forward(self, src: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-0225:         """
-0226:         Forward pass of transformer encoder.
-0227:         
-0228:         Args:
-0229:             src: Source sequence of shape (batch_size, seq_len, d_model)
-0230:             mask: Optional attention mask
-0231:             
-0232:         Returns:
-0233:             Output tensor of shape (batch_size, seq_len, d_model)
+0209:     Args:
+0210:         d_model (int): Dimension of the model
+0211:         max_len (int): Maximum sequence length
+0212:         dropout (float): Dropout probability
+0213:     """
+0214:     def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
+0215:         super().__init__()
+0216:         self.dropout = Dropout(dropout)
+0217:         
+0218:         # Create position array and dimension indices
+0219:         position = np.arange(max_len)
+0220:         div_term_indices = np.arange(0, d_model, 2)
+0221:         
+0222:         # Calculate angles using the more stable method
+0223:         angles = get_angles(position, div_term_indices, d_model)
+0224:         
+0225:         # Create positional encoding matrix
+0226:         pe = np.zeros((max_len, d_model))
+0227:         pe[:, 0::2] = np.sin(angles)
+0228:         pe[:, 1::2] = np.cos(angles)
+0229:         
+0230:         # Register buffer (not a parameter)
+0231:         self.register_buffer('pe', Tensor(pe[np.newaxis, :, :]))
+0232:         
+0233:     def forward(self, x: Tensor) -> Tensor:
 0234:         """
-0235:         output = src
-0236:         
-0237:         for layer in self.layers:
-0238:             output = layer(output, mask)
-0239:             
-0240:         if self.norm is not None:
-0241:             output = self.norm(output)
-0242:             
-0243:         return output
+0235:         Args:
+0236:             x: Input tensor of shape (batch_size, seq_len, d_model)
+0237:             
+0238:         Returns:
+0239:             Output tensor of shape (batch_size, seq_len, d_model)
+0240:         """
+0241:         x = x + self.pe[:, :x.shape[1]]
+0242:         return self.dropout(x)
+0243: 
+0244: class TransformerEncoder(Module):
+0245:     """
+0246:     Transformer Encoder.
+0247:     
+0248:     A stack of N encoder layers.
+0249:     
+0250:     Args:
+0251:         encoder_layer: An instance of TransformerEncoderLayer
+0252:         num_layers (int): Number of encoder layers in the stack
+0253:         norm (Module, optional): Layer normalization component
+0254:     """
+0255:     def __init__(self, encoder_layer: TransformerEncoderLayer, num_layers: int,
+0256:                  norm: Optional[Module] = None):
+0257:         super().__init__()
+0258:         self.layers = Sequential(
+0259:             *[encoder_layer for _ in range(num_layers)]
+0260:         )
+0261:         self.norm = norm
+0262:         
+0263:     def forward(self, src: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+0264:         """
+0265:         Forward pass of transformer encoder.
+0266:         
+0267:         Args:
+0268:             src: Source sequence of shape (batch_size, seq_len, d_model)
+0269:             mask: Optional attention mask
+0270:             
+0271:         Returns:
+0272:             Output tensor of shape (batch_size, seq_len, d_model)
+0273:         """
+0274:         output = src
+0275:         
+0276:         for layer in self.layers:
+0277:             output = layer(output, mask)
+0278:             
+0279:         if self.norm is not None:
+0280:             output = self.norm(output)
+0281:             
+0282:         return output
+0283: 
+0284: class TransformerDecoderLayer(Module):
+0285:     """
+0286:     Transformer Decoder Layer.
+0287:     
+0288:     Implements a single layer of the transformer decoder, consisting of:
+0289:     1. Masked multi-head self-attention
+0290:     2. Add & Norm
+0291:     3. Multi-head attention over encoder output
+0292:     4. Add & Norm
+0293:     5. Feed-forward network
+0294:     6. Add & Norm
+0295:     
+0296:     Args:
+0297:         d_model (int): The dimension of the model
+0298:         nhead (int): Number of attention heads
+0299:         dim_feedforward (int): Dimension of feedforward network
+0300:         dropout (float): Dropout probability
+0301:         activation (str): Activation function to use
+0302:         layer_norm_eps (float): eps value in layer normalizations
+0303:     """
+0304:     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
+0305:                  dropout: float = 0.1, activation: str = "relu",
+0306:                  layer_norm_eps: float = 1e-5):
+0307:         super().__init__()
+0308:         
+0309:         # Self attention mechanism
+0310:         self.self_attn = MultiHeadAttention(d_model, nhead, dropout)
+0311:         
+0312:         # Cross attention mechanism
+0313:         self.multihead_attn = MultiHeadAttention(d_model, nhead, dropout)
+0314:         
+0315:         # Create ReLU activation
+0316:         self.activation = ReLU()
+0317:         
+0318:         # Initialize all required layers
+0319:         self.linear1 = Linear(d_model, dim_feedforward)
+0320:         self.linear2 = Linear(dim_feedforward, d_model)
+0321:         
+0322:         # Layer normalization layers
+0323:         self.norm1 = LayerNorm([d_model], eps=layer_norm_eps)
+0324:         self.norm2 = LayerNorm([d_model], eps=layer_norm_eps)
+0325:         self.norm3 = LayerNorm([d_model], eps=layer_norm_eps)
+0326:         
+0327:         # Dropout layers
+0328:         self.dropout = Dropout(dropout)
+0329:         self.dropout1 = Dropout(dropout)
+0330:         self.dropout2 = Dropout(dropout)
+0331:         self.dropout3 = Dropout(dropout)
+0332:         
+0333:         # Feed-forward network
+0334:         self.ff = Sequential(
+0335:             self.linear1,
+0336:             self.activation,
+0337:             self.dropout,
+0338:             self.linear2
+0339:         )
+0340:         
+0341:     def forward(self, x: Tensor, memory: Tensor,
+0342:                 tgt_mask: Optional[Tensor] = None,
+0343:                 memory_mask: Optional[Tensor] = None) -> Tensor:
+0344:         """
+0345:         Forward pass of decoder layer.
+0346:         
+0347:         Args:
+0348:             x: Input tensor (target sequence)
+0349:             memory: Output from encoder
+0350:             tgt_mask: Mask for target sequence
+0351:             memory_mask: Mask for source sequence
+0352:             
+0353:         Returns:
+0354:             Output tensor
+0355:         """
+0356:         # Self-attention block
+0357:         attn_output, _ = self.self_attn(x, x, x, tgt_mask)
+0358:         x = x + self.dropout1(attn_output)
+0359:         x = self.norm1(x)
+0360:         
+0361:         # Cross-attention block
+0362:         attn_output, _ = self.multihead_attn(x, memory, memory, memory_mask)
+0363:         x = x + self.dropout2(attn_output)
+0364:         x = self.norm2(x)
+0365:         
+0366:         # Feedforward block
+0367:         ff_output = self.ff(x)
+0368:         x = x + self.dropout3(ff_output)
+0369:         x = self.norm3(x)
+0370:         
+0371:         return x
+0372:         
+0373: class TransformerDecoder(Module):
+0374:     """
+0375:     Transformer Decoder.
+0376:     
+0377:     A stack of N decoder layers with masking functionality.
+0378:     
+0379:     Args:
+0380:         decoder_layer: An instance of TransformerDecoderLayer
+0381:         num_layers (int): Number of decoder layers
+0382:         norm (Module, optional): Layer normalization component
+0383:     """
+0384:     
+0385:     def __init__(self, decoder_layer: TransformerDecoderLayer, num_layers: int,
+0386:                  norm: Optional[Module] = None):
+0387:         super().__init__()
+0388:         self.layers = Sequential(
+0389:             *[decoder_layer for _ in range(num_layers)]
+0390:         )
+0391:         self.norm = norm
+0392:         
+0393:     def forward(self, tgt: Tensor, memory: Tensor,
+0394:                 tgt_mask: Optional[Tensor] = None,
+0395:                 memory_mask: Optional[Tensor] = None) -> Tensor:
+0396:         """
+0397:         Forward pass of transformer decoder.
+0398:         
+0399:         Args:
+0400:             tgt: Target sequence
+0401:             memory: Output from encoder
+0402:             tgt_mask: Target sequence mask
+0403:             memory_mask: Source sequence mask
+0404:             
+0405:         Returns:
+0406:             Output tensor
+0407:         """
+0408:         output = tgt
+0409:         
+0410:         for layer in self.layers:
+0411:             output = layer(output, memory, tgt_mask, memory_mask)
+0412:             
+0413:         if self.norm is not None:
+0414:             output = self.norm(output)
+0415:             
+0416:         return output
+0417: 
+0418: def generate_square_subsequent_mask(sz: int) -> Tensor:
+0419:     """
+0420:     Generate a square mask for the sequence where subsequent positions are masked.
+0421:     
+0422:     Args:
+0423:         sz: Size of square matrix
+0424:         
+0425:     Returns:
+0426:         Tensor of shape (sz, sz) containing mask where entries in upper triangle
+0427:         are -inf and lower triangle (including diagonal) are 0
+0428:     """
+0429:     mask = np.zeros((sz, sz))
+0430:     # Fill upper triangle with -inf (excluding diagonal)
+0431:     mask[np.triu(np.ones((sz, sz), dtype=bool), k=1)] = -np.inf
+0432:     return Tensor(mask)
+0433: 
+0434: class Transformer(Module):
+0435:     """
+0436:     A complete Transformer model.
+0437:     
+0438:     Combines encoder and decoder with all the necessary components.
+0439:     
+0440:     Args:
+0441:         d_model (int): Dimension of the model
+0442:         nhead (int): Number of attention heads
+0443:         num_encoder_layers (int): Number of encoder layers
+0444:         num_decoder_layers (int): Number of decoder layers
+0445:         dim_feedforward (int): Dimension of feedforward network
+0446:         dropout (float): Dropout probability
+0447:         activation (str): Activation function
+0448:         layer_norm_eps (float): Layer norm epsilon
+0449:     """
+0450:     
+0451:     def __init__(self, d_model: int, nhead: int, num_encoder_layers: int,
+0452:                  num_decoder_layers: int, dim_feedforward: int = 2048,
+0453:                  dropout: float = 0.1, activation: str = "relu",
+0454:                  layer_norm_eps: float = 1e-5):
+0455:         super().__init__()
+0456:         
+0457:         # Create encoder layer and full encoder
+0458:         encoder_layer = TransformerEncoderLayer(
+0459:             d_model, nhead, dim_feedforward, dropout,
+0460:             activation, layer_norm_eps
+0461:         )
+0462:         encoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
+0463:         self.encoder = TransformerEncoder(
+0464:             encoder_layer, num_encoder_layers, encoder_norm
+0465:         )
+0466:         
+0467:         # Create decoder layer and full decoder
+0468:         decoder_layer = TransformerDecoderLayer(
+0469:             d_model, nhead, dim_feedforward, dropout,
+0470:             activation, layer_norm_eps
+0471:         )
+0472:         decoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
+0473:         self.decoder = TransformerDecoder(
+0474:             decoder_layer, num_decoder_layers, decoder_norm
+0475:         )
+0476:         
+0477:         # Initialize parameters
+0478:         self._reset_parameters()
+0479:         
+0480:         self.d_model = d_model
+0481:         self.nhead = nhead
+0482:         
+0483:     def _reset_parameters(self):
+0484:         """Initialize parameters using a layer-dependent scale."""
+0485:         for p in self.parameters():
+0486:             if isinstance(p, Tensor) and p.data.ndim > 1:
+0487:                 # Calculate fan_in and fan_out
+0488:                 fan_in, fan_out = calculate_fan_in_fan_out(p.data)
+0489:                 # Layer-dependent scaling
+0490:                 std = np.sqrt(2.0 / float(fan_in + fan_out))
+0491:                 # Initialize using normal distribution
+0492:                 p.data = np.random.normal(0.0, std, p.data.shape)
+0493:                 
+0494:     def forward(self, src: Tensor, tgt: Tensor,
+0495:                 src_mask: Optional[Tensor] = None,
+0496:                 tgt_mask: Optional[Tensor] = None,
+0497:                 memory_mask: Optional[Tensor] = None) -> Tensor:
+0498:         """
+0499:         Forward pass of transformer.
+0500:         
+0501:         Args:
+0502:             src: Source sequence
+0503:             tgt: Target sequence
+0504:             src_mask: Source sequence mask
+0505:             tgt_mask: Target sequence mask
+0506:             memory_mask: Memory mask
+0507:             
+0508:         Returns:
+0509:             Output tensor
+0510:         """
+0511:         # First run through encoder
+0512:         memory = self.encoder(src, src_mask)
+0513:         # Then through decoder
+0514:         output = self.decoder(tgt, memory, tgt_mask, memory_mask)
+0515:         # Add a small epsilon to prevent exact zeros
+0516:         output = output + 1e-8
+0517:         return output
 
 // File: C:\Users\aluja\Desktop\DLpy\DLpy\ops\__init__.py
 // ----------------------------------------
@@ -6406,6 +6678,50 @@
 0070:             # Store updated momentum buffer
 0071:             self.state[id(p)]['momentum_buffer'] = buf
 
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\utils\__init__.py
+// ----------------------------------------
+0001: """
+0002: Utils module for DLpy.
+0003: """
+0004: 
+0005: from .utils import calculate_fan_in_fan_out
+0006: 
+0007: __all__ = ['calculate_fan_in_fan_out']
+
+// File: C:\Users\aluja\Desktop\DLpy\DLpy\utils\utils.py
+// ----------------------------------------
+0001: from typing import Tuple
+0002: import numpy as np
+0003: 
+0004: def calculate_fan_in_fan_out(tensor: np.ndarray) -> Tuple[int, int]:
+0005:     """
+0006:     Calculate fan-in and fan-out of a tensor.
+0007:     
+0008:     Args:
+0009:         tensor: Input tensor
+0010:         
+0011:     Returns:
+0012:         Tuple of (fan_in, fan_out)
+0013:         
+0014:     Note:
+0015:         For linear layers: fan_in is input dimensions, fan_out is output dimensions
+0016:         For conv layers: fan_in is (channels_in * kernel_size), fan_out is (channels_out * kernel_size)
+0017:     """
+0018:     dimensions = tensor.shape
+0019:     
+0020:     if len(dimensions) == 2:  # Linear layer
+0021:         fan_in, fan_out = dimensions[1], dimensions[0]
+0022:     
+0023:     elif len(dimensions) > 2:  # Convolution layers
+0024:         receptive_field_size = np.prod(dimensions[2:])  # kernel size
+0025:         fan_in = dimensions[1] * receptive_field_size   # channels_in * kernel_size
+0026:         fan_out = dimensions[0] * receptive_field_size  # channels_out * kernel_size
+0027:     
+0028:     else:
+0029:         raise ValueError(f"tensor.shape should have at least 2 dimensions, got {dimensions}")
+0030:         
+0031:     return fan_in, fan_out
+
 // File: C:\Users\aluja\Desktop\DLpy\examples\basic_autograd.py
 // ----------------------------------------
 
@@ -6438,4 +6754,4 @@
 0022: )
 
 // ----------------------------------------
-// Total Python files found: 45
+// Total Python files found: 46

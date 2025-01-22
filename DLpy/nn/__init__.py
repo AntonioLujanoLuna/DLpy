@@ -26,7 +26,8 @@ from .transformer import (
     TransformerDecoderLayer,
     TransformerDecoder,
     Transformer,
-    generate_square_subsequent_mask
+    generate_square_subsequent_mask,
+    get_angles
 )
 
 __all__ = [
@@ -86,5 +87,6 @@ __all__ = [
     'Transformer',
 
     # Utility functions
-    'generate_square_subsequent_mask'
+    'generate_square_subsequent_mask',
+    'get_angles'
 ]

@@ -2,7 +2,6 @@ LICENSE
 README.md
 pyproject.toml
 setup.py
-DLpy/__init__.py
 DLpy.egg-info/PKG-INFO
 DLpy.egg-info/SOURCES.txt
 DLpy.egg-info/dependency_links.txt
