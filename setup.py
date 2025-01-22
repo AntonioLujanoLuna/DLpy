@@ -3,7 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="DLpy",  # Changed from DLpy to DLpy
     version="0.1.0",
-    packages=find_packages(include=["DLpy", "DLpy.*"]),  # Changed from DLpy to DLpy
+    author="Antonio Lujano Luna",
+    packages=find_packages(include=["DLpy"]), 
     install_requires=[
         "numpy>=1.20.0",
     ],

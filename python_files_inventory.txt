@@ -1,4 +1,4 @@
-﻿// Python Files Concatenated on 01/21/2025 18:23:12
+﻿// Python Files Concatenated on 01/22/2025 16:56:03
 // ----------------------------------------
 
 
@@ -6419,22 +6419,23 @@
 0003: setup(
 0004:     name="DLpy",  # Changed from DLpy to DLpy
 0005:     version="0.1.0",
-0006:     packages=find_packages(include=["DLpy", "DLpy.*"]),  # Changed from DLpy to DLpy
-0007:     install_requires=[
-0008:         "numpy>=1.20.0",
-0009:     ],
-0010:     extras_require={
-0011:         "dev": [
-0012:             "pytest>=7.0.0",
-0013:             "pytest-cov>=4.0.0",
-0014:             "pytest-xdist>=3.0.0",
-0015:             "black>=22.0.0",
-0016:             "isort>=5.0.0",
-0017:             "mypy>=1.0.0",
-0018:         ],
-0019:     },
-0020:     python_requires=">=3.8",
-0021: )
+0006:     author="Antonio Lujano Luna",
+0007:     packages=find_packages(include=["DLpy"]), 
+0008:     install_requires=[
+0009:         "numpy>=1.20.0",
+0010:     ],
+0011:     extras_require={
+0012:         "dev": [
+0013:             "pytest>=7.0.0",
+0014:             "pytest-cov>=4.0.0",
+0015:             "pytest-xdist>=3.0.0",
+0016:             "black>=22.0.0",
+0017:             "isort>=5.0.0",
+0018:             "mypy>=1.0.0",
+0019:         ],
+0020:     },
+0021:     python_requires=">=3.8",
+0022: )
 
 // ----------------------------------------
 // Total Python files found: 45

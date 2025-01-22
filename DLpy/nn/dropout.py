@@ -5,12 +5,11 @@ from ..core import Tensor, Module
 
 class Dropout(Module):
     """
-    Randomly zeroes some of the elements of the input tensor with probability p using samples 
-    from a Bernoulli distribution.
+    Randomly zeroes some elements of the input tensor with probability p.
     
     Args:
-        p: Probability of an element to be zeroed. Default: 0.5
-        inplace: If set to True, will do operation in-place. Default: False
+        p (float): Probability of an element to be zeroed. Default: 0.5
+        inplace (bool): If True, will do operation in-place. Default: False
     """
     def __init__(self, p: float = 0.5, inplace: bool = False):
         super().__init__()
@@ -18,22 +17,32 @@ class Dropout(Module):
             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
         self.p = p
         self.inplace = inplace
-        self.mask: Optional[np.ndarray] = None
-
+        
     def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass of dropout.
+        
+        Args:
+            x: Input tensor
+            
+        Returns:
+            Output tensor, either the same object (if inplace=True) or a new tensor
+        """
         if self.training:
-            # Generate mask
-            self.mask = (np.random.rand(*x.shape) > self.p).astype(np.float64)
-            # Scale up by 1/(1-p) to maintain expected value
+            # Generate random mask 
+            mask = (np.random.rand(*x.shape) > self.p).astype(np.float64)
+            # Scale up to maintain expected value
             scale = 1.0 / (1.0 - self.p) if self.p != 1.0 else 0.0
+            mask = mask * scale
             
             if self.inplace:
-                x.data *= self.mask * scale
+                # Modify input tensor directly
+                x.data *= mask
                 return x
             else:
-                return Tensor(x.data * self.mask * scale, requires_grad=x.requires_grad)
-        else:
-            return x
+                # Create new tensor
+                return Tensor(x.data * mask, requires_grad=x.requires_grad)
+        return x
 
 class Dropout2d(Module):
     """

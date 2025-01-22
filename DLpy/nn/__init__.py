@@ -22,7 +22,11 @@ from .transformer import (
     MultiHeadAttention,
     TransformerEncoderLayer,
     TransformerEncoder,
-    PositionalEncoding
+    PositionalEncoding,
+    TransformerDecoderLayer,
+    TransformerDecoder,
+    Transformer,
+    generate_square_subsequent_mask
 )
 
 __all__ = [
@@ -77,4 +81,10 @@ __all__ = [
     'TransformerEncoderLayer',
     'TransformerEncoder',
     'PositionalEncoding',
+    'TransformerDecoderLayer',
+    'TransformerDecoder',
+    'Transformer',
+
+    # Utility functions
+    'generate_square_subsequent_mask'
 ]

@@ -39,6 +39,8 @@ class MultiHeadAttention(Module):
         self.w_k = Linear(embed_dim, embed_dim, bias=bias)
         self.w_v = Linear(embed_dim, embed_dim, bias=bias)
         self.w_o = Linear(embed_dim, embed_dim, bias=bias)
+
+        self.attention_dropout = Dropout(self.dropout)
         
     def _reshape_for_heads(self, x: Tensor) -> Tensor:
         """Reshapes input for parallel head processing."""
@@ -50,7 +52,7 @@ class MultiHeadAttention(Module):
         return x
         
     def forward(self, query: Tensor, key: Tensor, value: Tensor,
-                attention_mask: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+            attention_mask: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
         """
         Forward pass of multi-head attention.
         
@@ -59,7 +61,7 @@ class MultiHeadAttention(Module):
             key: Key tensor of shape (batch_size, key_len, embed_dim)
             value: Value tensor of shape (batch_size, key_len, embed_dim)
             attention_mask: Optional mask tensor of shape (batch_size, num_heads, query_len, key_len)
-            
+                
         Returns:
             Tuple of:
                 - Output tensor of shape (batch_size, query_len, embed_dim)
@@ -86,20 +88,23 @@ class MultiHeadAttention(Module):
         attention_scores = q @ k_t      # (batch_size, num_heads, query_len, key_len)
 
         if attention_mask is not None:
-            # Apply the mask first
-            attention_scores = attention_scores + attention_mask
-
-            # For numerical stability, subtract max after applying the mask
+            # First stabilize the scores before applying mask
             attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
-
-            # Clip to avoid overflow (though unlikely after subtraction)
+            
+            # Add the mask (broadcasting will handle shape differences)
+            attention_scores = attention_scores + attention_mask
+            
+            # Clip values for numerical stability
             attention_scores = attention_scores.clip(-1e30, 1e30)
+        else:
+            # If no mask, still stabilize numerically
+            attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
 
         # Apply softmax to get attention weights
         attention_weights = attention_scores.softmax(dim=-1)
 
-        if self.training and self.dropout > 0:
-            attention_weights = Dropout(self.dropout)(attention_weights)
+        if self.training:
+            attention_weights = self.attention_dropout(attention_weights)
 
         # Apply attention to values
         output = attention_weights @ v  # (batch_size, num_heads, query_len, head_dim)
@@ -135,31 +140,34 @@ class TransformerEncoderLayer(Module):
                  dropout: float = 0.1, activation: str = "relu",
                  layer_norm_eps: float = 1e-5):
         super().__init__()
+        # Create single instances of dropout layers
+        self.attn_dropout = Dropout(dropout)
+        self.dropout1 = Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
         
-        self.self_attn = MultiHeadAttention(d_model, nhead, dropout)
-        
-        # Create ReLU activation as a Module instance
+        self.self_attn = MultiHeadAttention(d_model, nhead, dropout=0.0)  # Set to 0 as we handle dropout separately
         self.activation = ReLU()
         
-        # Fix Sequential layer construction
+        # Feed forward network with dropout
         self.ff = Sequential(
             Linear(d_model, dim_feedforward),
-            self.activation,  # Use the Module instance
-            Dropout(dropout),
+            self.activation,
+            Dropout(dropout),  # This is fine as Sequential handles the instance properly
             Linear(dim_feedforward, d_model)
         )
         
         self.norm1 = LayerNorm([d_model], eps=layer_norm_eps)
         self.norm2 = LayerNorm([d_model], eps=layer_norm_eps)
-        self.dropout = Dropout(dropout)
         
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        # Self attention block
         attn_output, _ = self.self_attn(x, x, x, mask)
-        x = x + self.dropout(attn_output)
+        attn_output = self.attn_dropout(attn_output)  # Apply dropout to attention output
+        x = x + self.dropout1(attn_output)  # Apply dropout to residual
         x = self.norm1(x)
-        
+        # Feedforward block
         ff_output = self.ff(x)
-        x = x + self.dropout(ff_output)
+        x = x + self.dropout2(ff_output)  # Apply dropout to residual
         x = self.norm2(x)
         
         return x
@@ -240,4 +248,244 @@ class TransformerEncoder(Module):
         if self.norm is not None:
             output = self.norm(output)
             
+        return output
+
+class TransformerDecoderLayer(Module):
+    """
+    Transformer Decoder Layer.
+    
+    Implements a single layer of the transformer decoder, consisting of:
+    1. Masked multi-head self-attention
+    2. Add & Norm
+    3. Multi-head attention over encoder output
+    4. Add & Norm
+    5. Feed-forward network
+    6. Add & Norm
+    
+    Args:
+        d_model (int): The dimension of the model
+        nhead (int): Number of attention heads
+        dim_feedforward (int): Dimension of feedforward network
+        dropout (float): Dropout probability
+        activation (str): Activation function to use
+        layer_norm_eps (float): eps value in layer normalizations
+    """
+    def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
+                 dropout: float = 0.1, activation: str = "relu",
+                 layer_norm_eps: float = 1e-5):
+        super().__init__()
+        
+        # Self attention mechanism
+        self.self_attn = MultiHeadAttention(d_model, nhead, dropout)
+        
+        # Cross attention mechanism
+        self.multihead_attn = MultiHeadAttention(d_model, nhead, dropout)
+        
+        # Create ReLU activation
+        self.activation = ReLU()
+        
+        # Initialize all required layers
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.linear2 = Linear(dim_feedforward, d_model)
+        
+        # Layer normalization layers
+        self.norm1 = LayerNorm([d_model], eps=layer_norm_eps)
+        self.norm2 = LayerNorm([d_model], eps=layer_norm_eps)
+        self.norm3 = LayerNorm([d_model], eps=layer_norm_eps)
+        
+        # Dropout layers
+        self.dropout = Dropout(dropout)
+        self.dropout1 = Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
+        self.dropout3 = Dropout(dropout)
+        
+        # Feed-forward network
+        self.ff = Sequential(
+            self.linear1,
+            self.activation,
+            self.dropout,
+            self.linear2
+        )
+        
+    def forward(self, x: Tensor, memory: Tensor,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None) -> Tensor:
+        """
+        Forward pass of decoder layer.
+        
+        Args:
+            x: Input tensor (target sequence)
+            memory: Output from encoder
+            tgt_mask: Mask for target sequence
+            memory_mask: Mask for source sequence
+            
+        Returns:
+            Output tensor
+        """
+        # Self-attention block
+        attn_output, _ = self.self_attn(x, x, x, tgt_mask)
+        x = x + self.dropout1(attn_output)
+        x = self.norm1(x)
+        
+        # Cross-attention block
+        attn_output, _ = self.multihead_attn(x, memory, memory, memory_mask)
+        x = x + self.dropout2(attn_output)
+        x = self.norm2(x)
+        
+        # Feedforward block
+        ff_output = self.ff(x)
+        x = x + self.dropout3(ff_output)
+        x = self.norm3(x)
+        
+        return x
+        
+class TransformerDecoder(Module):
+    """
+    Transformer Decoder.
+    
+    A stack of N decoder layers with masking functionality.
+    
+    Args:
+        decoder_layer: An instance of TransformerDecoderLayer
+        num_layers (int): Number of decoder layers
+        norm (Module, optional): Layer normalization component
+    """
+    
+    def __init__(self, decoder_layer: TransformerDecoderLayer, num_layers: int,
+                 norm: Optional[Module] = None):
+        super().__init__()
+        self.layers = Sequential(
+            *[decoder_layer for _ in range(num_layers)]
+        )
+        self.norm = norm
+        
+    def forward(self, tgt: Tensor, memory: Tensor,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None) -> Tensor:
+        """
+        Forward pass of transformer decoder.
+        
+        Args:
+            tgt: Target sequence
+            memory: Output from encoder
+            tgt_mask: Target sequence mask
+            memory_mask: Source sequence mask
+            
+        Returns:
+            Output tensor
+        """
+        output = tgt
+        
+        for layer in self.layers:
+            output = layer(output, memory, tgt_mask, memory_mask)
+            
+        if self.norm is not None:
+            output = self.norm(output)
+            
+        return output
+
+def generate_square_subsequent_mask(sz: int) -> Tensor:
+    """
+    Generate a square mask for the sequence where subsequent positions are masked.
+    
+    Args:
+        sz: Size of square matrix
+        
+    Returns:
+        Tensor of shape (sz, sz) containing mask where entries in upper triangle
+        are -inf and lower triangle (including diagonal) are 0
+    """
+    mask = np.zeros((sz, sz))
+    # Fill upper triangle with -inf (excluding diagonal)
+    mask[np.triu(np.ones((sz, sz), dtype=bool), k=1)] = -np.inf
+    return Tensor(mask)
+
+class Transformer(Module):
+    """
+    A complete Transformer model.
+    
+    Combines encoder and decoder with all the necessary components.
+    
+    Args:
+        d_model (int): Dimension of the model
+        nhead (int): Number of attention heads
+        num_encoder_layers (int): Number of encoder layers
+        num_decoder_layers (int): Number of decoder layers
+        dim_feedforward (int): Dimension of feedforward network
+        dropout (float): Dropout probability
+        activation (str): Activation function
+        layer_norm_eps (float): Layer norm epsilon
+    """
+    
+    def __init__(self, d_model: int, nhead: int, num_encoder_layers: int,
+                 num_decoder_layers: int, dim_feedforward: int = 2048,
+                 dropout: float = 0.1, activation: str = "relu",
+                 layer_norm_eps: float = 1e-5):
+        super().__init__()
+        
+        # Create encoder layer and full encoder
+        encoder_layer = TransformerEncoderLayer(
+            d_model, nhead, dim_feedforward, dropout,
+            activation, layer_norm_eps
+        )
+        encoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
+        self.encoder = TransformerEncoder(
+            encoder_layer, num_encoder_layers, encoder_norm
+        )
+        
+        # Create decoder layer and full decoder
+        decoder_layer = TransformerDecoderLayer(
+            d_model, nhead, dim_feedforward, dropout,
+            activation, layer_norm_eps
+        )
+        decoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
+        self.decoder = TransformerDecoder(
+            decoder_layer, num_decoder_layers, decoder_norm
+        )
+        
+        # Initialize parameters
+        self._reset_parameters()
+        
+        self.d_model = d_model
+        self.nhead = nhead
+        
+    def _reset_parameters(self):
+        """
+        Initialize parameters using Xavier uniform initialization.
+        
+        This is crucial for proper transformer operation - without good initialization,
+        the network can collapse to outputting all zeros.
+        """
+        for p in self.parameters():
+            if p.data.ndim > 1:
+                # Xavier uniform initialization for weight matrices
+                bound = np.sqrt(6.0 / sum(p.data.shape))
+                p.data = np.random.uniform(-bound, bound, p.data.shape)
+            else:
+                # Initialize biases to small positive values to prevent dead neurons
+                p.data.fill(0.01)
+                
+    def forward(self, src: Tensor, tgt: Tensor,
+                src_mask: Optional[Tensor] = None,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None) -> Tensor:
+        """
+        Forward pass of transformer.
+        
+        Args:
+            src: Source sequence
+            tgt: Target sequence
+            src_mask: Source sequence mask
+            tgt_mask: Target sequence mask
+            memory_mask: Memory mask
+            
+        Returns:
+            Output tensor
+        """
+        # First run through encoder
+        memory = self.encoder(src, src_mask)
+        # Then through decoder
+        output = self.decoder(tgt, memory, tgt_mask, memory_mask)
+        # Add a small epsilon to prevent exact zeros
+        output = output + 1e-8
         return output

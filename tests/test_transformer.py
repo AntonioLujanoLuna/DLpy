@@ -7,6 +7,10 @@ from DLpy.nn import (
     TransformerEncoder,
     PositionalEncoding,
     LayerNorm,
+    TransformerDecoderLayer,
+    TransformerDecoder,
+    Transformer,
+    generate_square_subsequent_mask
 )
 
 class TestMultiHeadAttention:
@@ -318,3 +322,335 @@ class TestIntegration:
         
         # Outputs should be the same
         assert np.array_equal(out1.data, out2.data)
+
+class TestTransformerDecoderLayer:
+    """Tests for TransformerDecoderLayer module."""
+    
+    def test_initialization(self):
+        """Test proper initialization of decoder layer."""
+        d_model = 512
+        nhead = 8
+        dim_feedforward = 2048
+        
+        layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward)
+        
+        # Check component existence
+        assert hasattr(layer, 'self_attn')
+        assert hasattr(layer, 'multihead_attn')
+        assert hasattr(layer, 'ff')
+        assert hasattr(layer, 'norm1')
+        assert hasattr(layer, 'norm2')
+        assert hasattr(layer, 'norm3')
+        
+    def test_forward(self):
+        """Test forward pass of decoder layer."""
+        batch_size = 32
+        seq_len = 10
+        d_model = 512
+        nhead = 8
+        
+        layer = TransformerDecoderLayer(d_model, nhead)
+        
+        # Create input tensors
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        memory = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        
+        output = layer(tgt, memory)
+        
+        # Check output shape
+        assert output.shape == tgt.shape
+        
+    def test_with_masks(self):
+        """Test decoder layer with attention masks."""
+        batch_size = 2
+        seq_len = 4
+        d_model = 8
+        nhead = 2
+        
+        layer = TransformerDecoderLayer(d_model, nhead)
+        
+        # Create input tensors
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        memory = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        
+        # Create attention masks
+        tgt_mask = Tensor(np.triu(np.ones((seq_len, seq_len)) * -1e9, k=1))
+        memory_mask = Tensor(np.ones((seq_len, seq_len)) * -1e9)
+        
+        output = layer(tgt, memory, tgt_mask, memory_mask)
+        assert output.shape == tgt.shape
+        
+    def test_gradient_flow(self):
+        """Test gradient computation through decoder layer."""
+        batch_size = 2
+        seq_len = 4
+        d_model = 8
+        nhead = 2
+        
+        layer = TransformerDecoderLayer(d_model, nhead)
+        
+        # Create input tensors with gradients
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        memory = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        
+        output = layer(tgt, memory)
+        loss = output.sum()
+        loss.backward()
+        
+        # Check that gradients were computed
+        assert tgt.grad is not None
+        assert memory.grad is not None
+
+class TestTransformerDecoder:
+    """Tests for TransformerDecoder module."""
+    
+    def test_initialization(self):
+        """Test proper initialization of transformer decoder."""
+        d_model = 512
+        nhead = 8
+        num_layers = 6
+        
+        decoder_layer = TransformerDecoderLayer(d_model, nhead)
+        decoder = TransformerDecoder(decoder_layer, num_layers)
+        
+        # Check number of layers
+        assert len(decoder.layers) == num_layers
+        
+    def test_forward(self):
+        """Test forward pass of transformer decoder."""
+        batch_size = 32
+        seq_len = 10
+        d_model = 512
+        nhead = 8
+        num_layers = 6
+        
+        decoder_layer = TransformerDecoderLayer(d_model, nhead)
+        decoder = TransformerDecoder(decoder_layer, num_layers)
+        
+        # Create input tensors
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        memory = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        
+        output = decoder(tgt, memory)
+        
+        # Check output shape
+        assert output.shape == tgt.shape
+        
+    def test_with_final_norm(self):
+        """Test transformer decoder with final layer normalization."""
+        d_model = 512
+        nhead = 8
+        num_layers = 6
+        
+        decoder_layer = TransformerDecoderLayer(d_model, nhead)
+        norm = LayerNorm([d_model])
+        decoder = TransformerDecoder(decoder_layer, num_layers, norm=norm)
+        
+        tgt = Tensor(np.random.randn(2, 4, d_model))
+        memory = Tensor(np.random.randn(2, 4, d_model))
+        
+        output = decoder(tgt, memory)
+        
+        # Check output shape
+        assert output.shape == tgt.shape
+
+class TestTransformer:
+    """Tests for complete Transformer model."""
+    
+    def test_initialization(self):
+        """Test proper initialization of transformer."""
+        d_model = 512
+        nhead = 8
+        num_encoder_layers = 6
+        num_decoder_layers = 6
+        
+        transformer = Transformer(
+            d_model, nhead, num_encoder_layers, num_decoder_layers
+        )
+        
+        # Check component existence
+        assert hasattr(transformer, 'encoder')
+        assert hasattr(transformer, 'decoder')
+        assert transformer.d_model == d_model
+        assert transformer.nhead == nhead
+        
+    def test_forward(self):
+        """Test forward pass of transformer."""
+        batch_size = 32
+        seq_len = 10
+        d_model = 512
+        nhead = 8
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=6,
+            num_decoder_layers=6
+        )
+        
+        # Create input tensors
+        src = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        
+        output = transformer(src, tgt)
+        
+        # Check output shape
+        assert output.shape == tgt.shape
+        
+    def test_with_masks(self):
+        """Test transformer with various masks."""
+        batch_size = 2
+        seq_len = 4
+        d_model = 8
+        nhead = 2
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=2,
+            num_decoder_layers=2
+        )
+        
+        # Create input tensors
+        src = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model))
+        
+        # Create masks
+        src_mask = Tensor(np.ones((seq_len, seq_len)) * -1e9)
+        tgt_mask = generate_square_subsequent_mask(seq_len)
+        memory_mask = Tensor(np.ones((seq_len, seq_len)) * -1e9)
+        
+        output = transformer(src, tgt, src_mask, tgt_mask, memory_mask)
+        assert output.shape == tgt.shape
+        
+    def test_gradient_flow(self):
+        """Test gradient computation through entire transformer."""
+        batch_size = 2
+        seq_len = 4
+        d_model = 8
+        nhead = 2
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=2,
+            num_decoder_layers=2
+        )
+        
+        # Create input tensors with gradients
+        src = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        tgt = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        
+        output = transformer(src, tgt)
+        loss = output.sum()
+        loss.backward()
+        
+        # Check that gradients were computed
+        assert src.grad is not None
+        assert tgt.grad is not None
+
+class TestMaskGeneration:
+    """Tests for mask generation utilities."""
+    
+    def test_square_subsequent_mask(self):
+        """Test generation of square subsequent mask."""
+        size = 5
+        mask = generate_square_subsequent_mask(size)
+        
+        # Check shape
+        assert mask.shape == (size, size)
+        
+        # Check mask values
+        # Lower triangle should be 0, upper triangle should be -inf
+        for i in range(size):
+            for j in range(size):
+                if i < j:  # Upper triangle
+                    assert mask.data[i, j] == -np.inf
+                else:  # Lower triangle and diagonal
+                    assert mask.data[i, j] == 0
+                    
+    def test_mask_broadcasting(self):
+        """Test that generated masks can be properly broadcast."""
+        size = 4
+        mask = generate_square_subsequent_mask(size)
+        
+        # Create dummy attention scores
+        scores = Tensor(np.random.randn(2, 8, size, size))  # (batch, heads, seq, seq)
+        
+        # Add mask to scores
+        masked_scores = scores + mask
+        
+        # Check that upper triangle was properly masked
+        for i in range(size):
+            for j in range(i + 1, size):
+                assert np.all(masked_scores.data[..., i, j] < -1e30)
+
+class TestAdvancedFeatures:
+    """Tests for advanced transformer features and edge cases."""
+    
+    def test_variable_sequence_length(self):
+        """Test transformer with different sequence lengths for source and target."""
+        d_model = 8
+        nhead = 2
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=2,
+            num_decoder_layers=2
+        )
+        
+        # Create inputs with different sequence lengths
+        src = Tensor(np.random.randn(2, 6, d_model))  # seq_len = 6
+        tgt = Tensor(np.random.randn(2, 4, d_model))  # seq_len = 4
+        
+        output = transformer(src, tgt)
+        assert output.shape == tgt.shape
+        
+    def test_training_vs_inference(self):
+        """Test transformer behavior in training vs inference modes."""
+        d_model = 8
+        nhead = 2
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=2,
+            num_decoder_layers=2,
+            dropout=0.5
+        )
+        
+        src = Tensor(np.random.randn(2, 4, d_model))
+        tgt = Tensor(np.random.randn(2, 4, d_model))
+        
+        # Training mode
+        transformer.train()
+        out1 = transformer(src, tgt)
+        out2 = transformer(src, tgt)
+        
+        # Outputs should be different due to dropout
+        assert not np.array_equal(out1.data, out2.data)
+        
+        # Eval mode
+        transformer.eval()
+        out1 = transformer(src, tgt)
+        out2 = transformer(src, tgt)
+        
+        # Outputs should be the same
+        assert np.array_equal(out1.data, out2.data)
+        
+    def test_large_attention_scores(self):
+        """Test numerical stability with large attention scores."""
+        d_model = 8
+        nhead = 2
+        
+        transformer = Transformer(
+            d_model, nhead,
+            num_encoder_layers=1,
+            num_decoder_layers=1
+        )
+        
+        # Create inputs with large values
+        src = Tensor(np.random.randn(2, 4, d_model) * 100)
+        tgt = Tensor(np.random.randn(2, 4, d_model) * 100)
+        
+        output = transformer(src, tgt)
+        
+        # Check that output values are reasonable
+        assert not np.any(np.isnan(output.data))
+        assert not np.any(np.isinf(output.data))
