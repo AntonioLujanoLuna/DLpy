@@ -8,7 +8,7 @@ from .basic import Add, Multiply, MatMul, Softmax, Clip
 from .reshape import Reshape
 from .power import Power, Divide
 from .elementwise import Log, Exp
-from .reduction import Sum, Mean, Max
+from .reduction import Sum, Mean, Max, Min
 from .matrix import (
     Transpose,
     Greater,

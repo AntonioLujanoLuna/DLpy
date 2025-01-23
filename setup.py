@@ -4,10 +4,10 @@ setup(
     name="DLpy",  # Changed from DLpy to DLpy
     version="0.1.0",
     author="Antonio Lujano Luna",
-    packages=find_packages(include=["DLpy"]), 
     install_requires=[
         "numpy>=1.20.0",
     ],
+    packages=find_packages(),  # Automatically includes all subdirectories with __init__.py
     extras_require={
         "dev": [
             "pytest>=7.0.0",

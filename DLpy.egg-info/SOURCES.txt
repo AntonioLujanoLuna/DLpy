@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 setup.py
+DLpy/__init__.py
 DLpy.egg-info/PKG-INFO
 DLpy.egg-info/SOURCES.txt
 DLpy.egg-info/dependency_links.txt
@@ -48,11 +49,16 @@ DLpy/optim/adamax.py
 DLpy/optim/optimizer.py
 DLpy/optim/rmsprop.py
 DLpy/optim/sgd.py
+DLpy/utils/__init__.py
+DLpy/utils/decomposition.py
+DLpy/utils/utils.py
+tests/__init__.py
 tests/test_activations.py
 tests/test_autograd.py
 tests/test_cnn.py
 tests/test_context.py
 tests/test_data.py
+tests/test_decompositions.py
 tests/test_dropout.py
 tests/test_function.py
 tests/test_loss.py

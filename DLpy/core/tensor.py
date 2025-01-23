@@ -141,10 +141,6 @@ class Tensor:
     def __sub__(self, other: Union['Tensor', Number]) -> 'Tensor':
         return self + (-other)
 
-    def reshape(self, *shape: int) -> 'Tensor':
-        from ..ops.reshape import Reshape
-        return Reshape.apply(self, shape)
-
     # Helper methods for numpy compatibility
     def numpy(self) -> np.ndarray:
         """Returns the underlying numpy array."""
@@ -155,11 +151,17 @@ class Tensor:
         """Creates a Tensor from a numpy array."""
         return cls(array.copy(), requires_grad=requires_grad)
 
-    # Shape manipulation methods
     def reshape(self, *shape: int) -> 'Tensor':
         """Returns a tensor with the same data and new shape."""
+        # Unwrap nested tuples if passed as single argument
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = shape[0]
+        
+        # Convert all elements to integers (handles -1 specially)
+        processed_shape = tuple(int(d) if d != -1 else -1 for d in shape)
+        
         from ..ops import Reshape
-        return Reshape.apply(self, shape)
+        return Reshape.apply(self, processed_shape)
     
     def permute(self, *dims: int) -> 'Tensor':
         """Permutes the dimensions of the tensor."""
@@ -221,6 +223,11 @@ class Tensor:
         from ..ops import Max
         return Max.apply(self, axis, keepdims)
 
+    def min(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """Returns the minimum value of all elements in the tensor."""
+        from ..ops import Min
+        return Min.apply(self, axis, keepdims)
+
     def t(self) -> 'Tensor':
         """Returns the transpose of the tensor."""
         from ..ops import Transpose
@@ -265,3 +272,14 @@ class Tensor:
         """Implements power using the ** operator."""
         from ..ops import Power
         return Power.apply(self, exponent)
+
+    def copy(self) -> 'Tensor':
+        """Creates a deep copy of the tensor."""
+        new_tensor = Tensor(
+            self.data.copy(),  # Create a new numpy array with copied data
+            requires_grad=self.requires_grad,
+            dtype=self.dtype
+        )
+        if self.grad is not None:
+            new_tensor.grad = self.grad.copy()
+        return new_tensor
