@@ -17,7 +17,6 @@ class Sequential(Module):
     >>>     Linear(5, 1)
     >>> )
     """
-    
     def __init__(self, *args):
         super().__init__()
         if len(args) == 1 and isinstance(args[0], OrderedDict):
@@ -26,6 +25,31 @@ class Sequential(Module):
         else:
             for idx, module in enumerate(args):
                 self.add_module(str(idx), module)
+                
+    def insert(self, index: int, module: Module) -> None:
+        """Insert a module at specified index."""
+        # Validate index
+        if not isinstance(index, int):
+            raise TypeError("Index must be an integer")
+        if index < 0:
+            index += len(self)
+        if not 0 <= index <= len(self):
+            raise IndexError("Index out of range")
+            
+        # Store existing modules
+        modules = list(self._modules.values())
+        
+        # Clear existing modules
+        self._modules.clear()
+        
+        # Reconstruct with new module inserted
+        for i in range(len(modules) + 1):
+            if i < index:
+                self.add_module(str(i), modules[i])
+            elif i == index:
+                self.add_module(str(i), module)
+            else:
+                self.add_module(str(i), modules[i - 1])
                 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through all modules in sequence."""
@@ -38,6 +62,7 @@ class Sequential(Module):
         if isinstance(idx, slice):
             return Sequential(OrderedDict(list(self._modules.items())[idx]))
         else:
+            # Return the actual module instance, not a copy
             return list(self._modules.values())[idx]
             
     def __len__(self) -> int:
@@ -51,17 +76,6 @@ class Sequential(Module):
     def append(self, module: Module) -> None:
         """Add a module to the end."""
         self.add_module(str(len(self)), module)
-        
-    def insert(self, index: int, module: Module) -> None:
-        """Insert a module at specified index."""
-        # Shift existing modules
-        for i in range(len(self) - 1, index - 1, -1):
-            if str(i) in self._modules:
-                self._modules[str(i + 1)] = self._modules[str(i)]
-                del self._modules[str(i)]
-                
-        # Insert new module
-        self.add_module(str(index), module)
         
     def extend(self, modules: List[Module]) -> None:
         """Add multiple modules to the end."""

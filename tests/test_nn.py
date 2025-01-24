@@ -1,7 +1,9 @@
 import pytest
 import numpy as np
+from collections import OrderedDict
 from DLpy.core import Tensor, Module
 from DLpy.nn.linear import Linear
+from DLpy.nn.sequential import Sequential
 
 
 class TestLinearLayer:
@@ -192,3 +194,130 @@ class TestEndToEnd:
         # Check that all parameters have gradients
         for param in model.parameters():
             assert param.grad is not None
+
+class DummyModule(Module):
+    def __init__(self, id=None):
+        super().__init__()
+        self.id = id
+        
+    def forward(self, x):
+        return x + 1 if self.id is None else x + self.id
+        
+    def __eq__(self, other):
+        if not isinstance(other, DummyModule):
+            return False
+        if self.id is None and other.id is None:
+            return True
+        return self.id == other.id
+
+class TestSequential:
+    def test_init_with_args(self):
+        modules = [DummyModule() for _ in range(3)]
+        seq = Sequential(*modules)
+        assert len(seq) == 3
+        assert list(seq) == modules
+
+    def test_init_with_ordered_dict(self):
+        modules = OrderedDict([
+            ('layer1', DummyModule()),
+            ('layer2', DummyModule())
+        ])
+        seq = Sequential(modules)
+        assert len(seq) == 2
+        assert list(seq) == list(modules.values())
+
+    def test_forward(self):
+        seq = Sequential(
+            DummyModule(1),
+            DummyModule(2),
+            DummyModule(3)
+        )
+        x = Tensor(np.array([0]))
+        output = seq(x)
+        assert output.data == 6  # 0 + 1 + 2 + 3
+
+    def test_getitem_int(self):
+        modules = [DummyModule() for _ in range(3)]
+        seq = Sequential(*modules)
+        assert seq[1] == modules[1]
+
+    def test_getitem_slice(self):
+        modules = [DummyModule() for _ in range(5)]
+        seq = Sequential(*modules)
+        sliced = seq[1:4]
+        assert isinstance(sliced, Sequential)
+        assert len(sliced) == 3
+        assert list(sliced) == modules[1:4]
+
+    def test_len(self):
+        seq = Sequential(DummyModule(), DummyModule())
+        assert len(seq) == 2
+
+    def test_iter(self):
+        modules = [DummyModule() for _ in range(3)]
+        seq = Sequential(*modules)
+        assert list(iter(seq)) == modules
+
+    def test_append(self):
+        seq = Sequential(DummyModule())
+        new_module = DummyModule()
+        seq.append(new_module)
+        assert len(seq) == 2
+        assert seq[-1] == new_module
+
+    def test_insert(self):
+        seq = Sequential(DummyModule(1), DummyModule(3))
+        middle_module = DummyModule(2)
+        
+        # Print initial state
+        print("Before insert:")
+        print(f"middle_module id: {id(middle_module)}")
+        print(f"middle_module.id: {middle_module.id}")
+        
+        seq.insert(1, middle_module)
+        
+        # Print state after insert
+        print("After insert:")
+        print(f"seq[1] id: {id(seq[1])}")
+        print(f"seq[1].id: {seq[1].id}")
+        
+        assert len(seq) == 3
+        assert seq[1] == middle_module
+
+    def test_extend(self):
+        seq = Sequential(DummyModule())
+        new_modules = [DummyModule(), DummyModule()]
+        seq.extend(new_modules)
+        assert len(seq) == 3
+        assert list(seq)[1:] == new_modules
+
+    def test_pop(self):
+        modules = [DummyModule() for _ in range(3)]
+        seq = Sequential(*modules)
+        
+        # Test pop from end
+        popped = seq.pop()
+        assert popped == modules[-1]
+        assert len(seq) == 2
+        
+        # Test pop from middle
+        seq = Sequential(*modules)
+        middle = seq.pop(1)
+        assert middle == modules[1]
+        assert len(seq) == 2
+        assert list(seq) == [modules[0], modules[2]]
+
+    def test_pop_invalid_index(self):
+        seq = Sequential(DummyModule())
+        with pytest.raises(IndexError):
+            seq.pop(5)
+
+    def test_empty_sequential(self):
+        seq = Sequential()
+        assert len(seq) == 0
+        
+    def test_nested_sequential(self):
+        inner_seq = Sequential(DummyModule(1), DummyModule(2))
+        outer_seq = Sequential(inner_seq, DummyModule(3))
+        x = Tensor(np.array([0]))
+        assert outer_seq(x).data == 6  # 0 + 1 + 2 + 3
