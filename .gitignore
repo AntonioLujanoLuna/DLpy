@@ -40,3 +40,5 @@ python_files_inventory.txt
 *4_CNN
 *5_RNN_Transformers
 help_linters.txt
+
+*sqlite3
