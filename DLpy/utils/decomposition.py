@@ -1,36 +1,39 @@
 # DLpy/utils/decomposition.py
 
+from typing import List, Tuple
+
 import numpy as np
-from typing import List, Tuple, Optional
+
 from ..core import Tensor
+
 
 class TensorDecomposition:
     """
     Implementation of various tensor decomposition methods.
-    
+
     This class provides implementations of three major tensor decomposition methods:
     1. CP (CANDECOMP/PARAFAC) Decomposition
     2. Tucker Decomposition
     3. Tensor Train Decomposition
-    
+
     Each method decomposes a high-order tensor into simpler components while
     maintaining different properties and trade-offs.
-    
+
     Attributes:
         tensor (Tensor): The input tensor to be decomposed
         shape (Tuple[int, ...]): Shape of the input tensor
     """
-    
+
     def __init__(self, tensor: Tensor):
         """
         Initialize the decomposition object with an input tensor.
-        
+
         Args:
             tensor: Input tensor to be decomposed
         """
         self.tensor = tensor
         self.shape = tensor.shape
-        
+
     def cp_decomposition(
         self,
         rank: int,
@@ -50,7 +53,7 @@ class TensorDecomposition:
             tol (float): Convergence tolerance for relative error change.
             n_restarts (int): Number of independent runs with different inits.
                             The best (lowest-error) factor set is returned.
-            init (str): Initialization method: 
+            init (str): Initialization method:
                         - "svd" uses truncated SVD on each mode-unfolding.
                         - "hosvd" uses multilinear SVD (Tucker-based) to build initial factors.
                         - "random" samples random initial factors.
@@ -75,7 +78,7 @@ class TensorDecomposition:
 
         # 2) We'll do multiple restarts and track the best solution
         best_factors: List[Tensor] = []
-        best_error = float('inf')
+        best_error = float("inf")
 
         # --- Helper: do a single ALS pass from an initial factor set ---
         def run_als(factors_init: List[Tensor]) -> Tuple[List[Tensor], float]:
@@ -170,8 +173,10 @@ class TensorDecomposition:
                 return inits
 
             else:
-                raise ValueError(f"Unrecognized init method '{init_mode}'. "
-                                "Use one of ['svd', 'hosvd', 'random'].")
+                raise ValueError(
+                    f"Unrecognized init method '{init_mode}'. "
+                    "Use one of ['svd', 'hosvd', 'random']."
+                )
 
         # 3) Do n_restarts with the chosen initialization
         for _attempt in range(n_restarts):
@@ -188,11 +193,11 @@ class TensorDecomposition:
 
         # Return the best factors we found
         return best_factors
-        
+
     def tensor_train(self, ranks: List[int]) -> List[Tensor]:
         """
         Implement Tensor Train decomposition with careful dimension tracking.
-        
+
         This version maintains proper shape calculations throughout the process
         and ensures ranks are properly handled.
         """
@@ -200,17 +205,17 @@ class TensorDecomposition:
             raise ValueError("Number of ranks must be number of dimensions + 1")
         if ranks[0] != 1 or ranks[-1] != 1:
             raise ValueError("First and last ranks must be 1")
-        
+
         # Convert tensor to numpy array and make a copy to avoid modifying original
         current = self.tensor.numpy().copy()
         n_dims = len(self.shape)
         cores = []
-        
+
         # First core initialization
         n1 = self.shape[0]
         n2 = np.prod(self.shape[1:])
         matrix = current.reshape(n1, n2)
-        
+
         # Process each dimension sequentially
         r_prev = 1
         for k in range(n_dims - 1):
@@ -219,36 +224,36 @@ class TensorDecomposition:
                 matrix = current.reshape(n1, -1)
             else:
                 matrix = current.reshape(r_prev * self.shape[k], -1)
-            
+
             # Compute SVD
             U, S, V = np.linalg.svd(matrix, full_matrices=False)
-            
+
             # Determine rank (minimum of desired and available)
             r = min(ranks[k + 1], len(S))
-            
+
             # Truncate SVD matrices
             U = U[:, :r]
             S = S[:r]
             V = V[:r, :]
-            
+
             # Reshape U into core tensor
             if k == 0:
                 core = U.reshape(1, self.shape[k], r)
             else:
                 core = U.reshape(r_prev, self.shape[k], r)
-            
+
             cores.append(Tensor(core))
-            
+
             # Update for next iteration
             r_prev = r
             current = np.diag(S) @ V
-        
+
         # Handle last core carefully
         last_core = current.reshape(r_prev, self.shape[-1], 1)
         cores.append(Tensor(last_core))
-        
+
         return cores
-    
+
     def _mode_n_product(self, tensor: np.ndarray, matrix: np.ndarray, mode: int) -> np.ndarray:
         """
         Perform the mode-n product of a tensor with a matrix.
@@ -314,91 +319,91 @@ class TensorDecomposition:
     def tucker_decomposition(self, ranks: List[int]) -> Tuple[Tensor, List[Tensor]]:
         """
         Implement Tucker decomposition using Higher-Order SVD (HOSVD).
-        
+
         Args:
             ranks: List of ranks for each mode
-            
+
         Returns:
             Tuple of (core tensor, list of factor matrices)
-            
+
         Raises:
             ValueError: If requested ranks exceed tensor dimensions
         """
         # Validate ranks
         if any(r > s for r, s in zip(ranks, self.shape)):
             raise ValueError("Requested ranks exceed tensor dimensions")
-            
+
         # Initialize factor matrices using truncated SVD
         factors = []
         for mode, rank in enumerate(ranks):
             # Unfold tensor along current mode
             unfolded = self._unfold(self.tensor, mode)
-            
+
             # Compute truncated SVD
             U, S, Vt = np.linalg.svd(unfolded, full_matrices=False)
             U_truncated = U[:, :rank]
             factors.append(Tensor(U_truncated))
-            
+
         # Compute core tensor by contracting with factor matrices
         core = self._tucker_core(self.tensor, factors)
-        
+
         return core, factors
-        
+
     def _unfold(self, tensor: Tensor, mode: int) -> np.ndarray:
         """
         Unfold/matricize a tensor along specified mode.
-        
+
         This operation reshapes the tensor into a matrix where the specified mode
         becomes the first dimension and all other dimensions are combined.
-        
+
         Args:
             tensor: Input tensor
             mode: Mode along which to unfold
-            
+
         Returns:
             Unfolded tensor as a 2D array
         """
         arr = tensor.numpy()
         # Move specified mode to first dimension and flatten others
         return np.moveaxis(arr, mode, 0).reshape(arr.shape[mode], -1)
-        
+
     def _khatri_rao(self, matrices: List[Tensor]) -> np.ndarray:
         """
         Compute Khatri-Rao product of a list of matrices.
-        
+
         The Khatri-Rao product is a columnwise Kronecker product. For matrices
         with the same number of columns, it gives a matrix whose columns are
         Kronecker products of the corresponding columns.
-        
+
         Args:
             matrices: List of matrices as Tensor objects
-            
+
         Returns:
             numpy.ndarray: Khatri-Rao product
         """
         if not matrices:
             return None
-        
+
         n_cols = matrices[0].shape[1]
         n_matrices = len(matrices)
-        
+
         # Initialize result with the numpy array from first tensor
         result = matrices[0].numpy()
-        
+
         # Compute product sequentially
         for i in range(1, n_matrices):
             n_rows = result.shape[0]
             next_matrix = matrices[i].numpy()
-            
+
             # Compute Khatri-Rao product for current pair of matrices
             next_rows = next_matrix.shape[0]
-            result = (result.reshape(-1, 1, n_cols) * 
-                    next_matrix.reshape(1, -1, n_cols)).reshape(n_rows * next_rows, n_cols)
-        
+            result = (result.reshape(-1, 1, n_cols) * next_matrix.reshape(1, -1, n_cols)).reshape(
+                n_rows * next_rows, n_cols
+            )
+
         return result
-        
-    def _converged(self, current: List[Tensor], previous: List[Tensor], 
-              tol: float) -> bool:
+
+    def _converged(self, current: List[Tensor], previous: List[Tensor], tol: float) -> bool:
         """
         Check convergence of ALS iterations with improved metric.
         """
@@ -410,65 +415,63 @@ class TensorDecomposition:
             if prev_norm == 0:
                 changes.append(curr_norm > tol)
             else:
-                changes.append(
-                    np.linalg.norm(curr.numpy() - prev.numpy()) / prev_norm
-                )
-        
+                changes.append(np.linalg.norm(curr.numpy() - prev.numpy()) / prev_norm)
+
         return all(change < tol for change in changes)
-    
+
     def reconstruct_cp(self, factors: List[Tensor]) -> Tensor:
         """
         Reconstruct tensor from CP decomposition factors.
-        
+
         Uses an efficient implementation that properly handles the outer products
         for reconstruction.
         """
         # Get rank from factor shapes
         rank = factors[0].shape[1]
         result = np.zeros(self.shape)
-        
+
         # Build rank-1 components and sum them
         for r in range(rank):
             # Extract rank-r vectors
-            component = factors[0].numpy()[:, r:r+1]
-            
+            component = factors[0].numpy()[:, r : r + 1]
+
             # Build through successive outer products
             for factor in factors[1:]:
-                component = component[..., np.newaxis] * factor.numpy()[:, r:r+1]
-                
+                component = component[..., np.newaxis] * factor.numpy()[:, r : r + 1]
+
             result += component.reshape(self.shape)
-        
+
         return Tensor(result)
 
     def reconstruct_tt(self, cores: List[Tensor]) -> Tensor:
         """
         Reconstruct a tensor from its Tensor Train decomposition.
-        
+
         This method rebuilds the tensor by sequentially contracting the cores
         along their shared edges.
-        
+
         Args:
             cores: List of core tensors from TT decomposition
-            
+
         Returns:
             Reconstructed tensor
         """
         # Start with first core
         result = cores[0].numpy()
-        
+
         # Contract cores sequentially
         for core in cores[1:]:
             # Reshape result for contraction
             left_rank = result.shape[-1]
             result = result.reshape(-1, left_rank)
-            
+
             # Reshape core for contraction
             core_data = core.numpy()
             right_shape = core_data.shape[1:]
             core_matrix = core_data.reshape(left_rank, -1)
-            
+
             # Contract and reshape
             result = result @ core_matrix
             result = result.reshape(*result.shape[:-1], *right_shape)
-        
+
         return Tensor(result)

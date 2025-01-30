@@ -1,7 +1,14 @@
 Metadata-Version: 2.2
 Name: DLpy
 Version: 0.1.0
+Summary: A deep learning library built on NumPy for educational purposes.
 Author: Antonio Lujano Luna
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Education
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
 Requires-Python: >=3.8
 License-File: LICENSE
 Requires-Dist: numpy>=1.20.0
@@ -12,7 +19,5 @@ Requires-Dist: pytest-xdist>=3.0.0; extra == "dev"
 Requires-Dist: black>=22.0.0; extra == "dev"
 Requires-Dist: isort>=5.0.0; extra == "dev"
 Requires-Dist: mypy>=1.0.0; extra == "dev"
-Dynamic: author
-Dynamic: provides-extra
-Dynamic: requires-dist
+Requires-Dist: flake8>=6.1.0; extra == "dev"
 Dynamic: requires-python

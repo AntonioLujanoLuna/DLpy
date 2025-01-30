@@ -4,20 +4,12 @@ Optimization algorithms for DLpy.
 This module implements various optimization algorithms used in deep learning.
 """
 
-from .optimizer import Optimizer
-from .sgd import SGD
-from .adam import Adam
-from .rmsprop import RMSprop
-from .adagrad import AdaGrad
 from .adadelta import AdaDelta
+from .adagrad import AdaGrad
+from .adam import Adam
 from .adamax import AdaMax
+from .optimizer import Optimizer
+from .rmsprop import RMSprop
+from .sgd import SGD
 
-__all__ = [
-    'Optimizer',
-    'SGD',
-    'Adam',
-    'RMSprop',
-    'AdaGrad',
-    'AdaDelta',
-    'AdaMax'
-]
+__all__ = ["Optimizer", "SGD", "Adam", "RMSprop", "AdaGrad", "AdaDelta", "AdaMax"]

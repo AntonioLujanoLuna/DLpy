@@ -2,6 +2,35 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "DLpy"
+version = "0.1.0"
+description = "A deep learning library built on NumPy for educational purposes."
+authors = [{name = "Antonio Lujano Luna"}]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Education",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "flake8>=6.1.0"
+]
+
 [tool.pytest.ini_options]
 addopts = "-ra -q --cov=DLpy"
 testpaths = ["tests"]
@@ -14,3 +43,20 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["DLpy"]
 omit = ["tests/*"]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.8"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true

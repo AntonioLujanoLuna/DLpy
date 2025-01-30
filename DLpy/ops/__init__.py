@@ -4,83 +4,66 @@ Operations module for DLpy.
 This module contains all the mathematical operations that can be performed on tensors.
 """
 
-from .basic import Add, Multiply, MatMul, Softmax, Clip
-from .reshape import Reshape
-from .power import Power, Divide
-from .elementwise import Log, Exp
-from .reduction import Sum, Mean, Max, Min
-from .matrix import (
-    Transpose,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-    Equal,
-    NotEqual
-)
+from .basic import Add, Clip, MatMul, Multiply, Softmax
+from .cnn import Conv2dFunction
+from .elementwise import Exp, Log
 from .loss import (
-    MSELoss,
-    CrossEntropyLoss,
     BinaryCrossEntropyLoss,
-    L1Loss,
+    CosineSimilarityLoss,
+    CrossEntropyLoss,
+    FocalLoss,
+    HingeLoss,
     HuberLoss,
     KLDivLoss,
-    CosineSimilarityLoss,
-    HingeLoss,
-    FocalLoss
+    L1Loss,
+    MSELoss,
 )
-
-from .cnn import Conv2dFunction
-from .pooling import MaxPool2dFunction, AvgPool2dFunction
+from .matrix import Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual, Transpose
+from .pooling import AvgPool2dFunction, MaxPool2dFunction
+from .power import Divide, Power
+from .reduction import Max, Mean, Sum
+from .reshape import Reshape
 
 __all__ = [
     # Basic operations
-    'Add',
-    'Multiply',
-    'MatMul',
-    'Reshape',
-    'Softmax',
-    'Clip',
-    
+    "Add",
+    "Multiply",
+    "MatMul",
+    "Reshape",
+    "Softmax",
+    "Clip",
     # Power operations
-    'Power',
-    'Divide',
-    
+    "Power",
+    "Divide",
     # Element-wise operations
-    'Log',
-    'Exp',
-    
+    "Log",
+    "Exp",
     # Reduction operations
-    'Sum',
-    'Mean',
-    'Max',
-    
+    "Sum",
+    "Mean",
+    "Max",
     # Matrix operations
-    'Transpose',
-    
+    "Transpose",
     # Comparison operations
-    'Greater',
-    'GreaterEqual',
-    'Less',
-    'LessEqual',
-    'Equal',
-    'NotEqual',
-
+    "Greater",
+    "GreaterEqual",
+    "Less",
+    "LessEqual",
+    "Equal",
+    "NotEqual",
     # Loss functions
-    'MSELoss',
-    'CrossEntropyLoss',
-    'BinaryCrossEntropyLoss',
-    'L1Loss',
-    'HuberLoss',
-    'KLDivLoss',
-    'CosineSimilarityLoss',
-    'HingeLoss',
-    'FocalLoss',
-
+    "MSELoss",
+    "CrossEntropyLoss",
+    "BinaryCrossEntropyLoss",
+    "L1Loss",
+    "HuberLoss",
+    "KLDivLoss",
+    "CosineSimilarityLoss",
+    "HingeLoss",
+    "FocalLoss",
     # CNN operations
-    'Conv2dFunction',
-
+    "Conv2dFunction",
     # Pooling operations
-    'MaxPool2dFunction',
-    'AvgPool2dFunction'
+    "MaxPool2dFunction",
+    "AvgPool2dFunction",
 ]

@@ -72,3 +72,4 @@ tests/test_rnn.py
 tests/test_serialization.py
 tests/test_tensor.py
 tests/test_transformer.py
+tests/test_utils.py

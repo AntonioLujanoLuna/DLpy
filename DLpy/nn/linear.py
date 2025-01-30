@@ -1,54 +1,57 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
+
 import numpy as np
-from ..core import Tensor, Function, Module
+
+from ..core import Function, Module, Tensor
+
 
 class Linear(Module):
     """
     Applies a linear transformation to the incoming data: y = xW^T + b
-    
+
     Args:
         in_features: size of each input sample
         out_features: size of each output sample
         bias: If set to False, the layer will not learn an additive bias
     """
-    
+
     def __init__(self, in_features: int, out_features: int, bias: bool = True):
         super().__init__()
-        
+
         self.in_features = in_features
         self.out_features = out_features
-        
+
         # Initialize weights using He initialization
         bound = np.sqrt(2.0 / in_features)
         weight = Tensor(
-            np.random.uniform(-bound, bound, (out_features, in_features)),
-            requires_grad=True
+            np.random.uniform(-bound, bound, (out_features, in_features)), requires_grad=True
         )
-        self.register_parameter('weight', weight)
-        
+        self.register_parameter("weight", weight)
+
         if bias:
             bias = Tensor(np.zeros(out_features), requires_grad=True)
-            self.register_parameter('bias', bias)
+            self.register_parameter("bias", bias)
         else:
-            self.register_parameter('bias', None)
-            
+            self.register_parameter("bias", None)
+
     def forward(self, input: Tensor) -> Tensor:
         """Forward pass of the linear layer."""
         return LinearFunction.apply(input, self.weight, self.bias)
+
 
 class LinearFunction(Function):
     @staticmethod
     def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
         # Save tensors needed for backward pass
         ctx.save_for_backward(input, weight, bias)
-        
+
         # Compute output: y = xW^T + b
         output = input.data @ weight.data.T
         if bias is not None:
             output = output + bias.data
-            
+
         return Tensor(output)
-    
+
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         input, weight, bias = ctx.saved_tensors
@@ -66,7 +69,7 @@ class LinearFunction(Function):
                 input_data = input.data.reshape(-1, input.data.shape[-1])
             else:
                 input_data = input.data
-                
+
             grad_dict[id(weight)] = input_data.T @ grad_output
 
         if bias is not None and bias.requires_grad:
