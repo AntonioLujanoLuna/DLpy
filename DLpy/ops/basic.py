@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core.function import Function
 from ..core.tensor import Tensor
@@ -38,7 +39,7 @@ class Add(Function):
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -98,7 +99,7 @@ class Multiply(Function):
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -149,7 +150,7 @@ class MatMul(Function):
         return Tensor(np.matmul(a.data, b.data))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -213,7 +214,7 @@ class Softmax(Function):
         return Tensor(softmax_out)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         x, softmax_out = ctx.saved_tensors
         dim = ctx.dim  # Get dim from context as regular integer
 
@@ -246,7 +247,7 @@ class Clip(Function):
         return Tensor(np.clip(x.data, min_val, max_val))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         min_val = ctx.min_val
         max_val = ctx.max_val

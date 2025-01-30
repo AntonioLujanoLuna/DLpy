@@ -1,9 +1,10 @@
-from typing import Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 
-def calculate_fan_in_fan_out(tensor: np.ndarray) -> Tuple[int, int]:
+def calculate_fan_in_fan_out(tensor: NDArray[Any]) -> Tuple[int, int]:
     """
     Calculate fan-in and fan-out of a tensor.
 

@@ -1,10 +1,21 @@
 # DLpy/ops/reshape.py
-from typing import Dict
 
-import numpy as np
+# DLpy/ops/reshape.py
+# DLpy/ops/reshape.py
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+from numpy.typing import NDArray
 
 from ..core.function import Function
 from ..core.tensor import Tensor
+
+# DLpy/ops/reshape.py
+
+
+# DLpy/ops/reshape.py
+
+
+# DLpy/ops/reshape.py
 
 
 class Reshape(Function):
@@ -18,7 +29,7 @@ class Reshape(Function):
         return Tensor(tensor.data.reshape(final_shape))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (original_tensor,) = ctx.saved_tensors
         if original_tensor.requires_grad:
             grad_dict[id(original_tensor)] = grad_output.reshape(original_tensor.shape)

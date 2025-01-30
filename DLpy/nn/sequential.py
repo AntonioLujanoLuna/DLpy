@@ -1,9 +1,23 @@
 # DLpy/nn/sequential.py
 
 from collections import OrderedDict
-from typing import Iterator, List, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 from ..core import Module, Tensor
+
+# DLpy/nn/sequential.py
+
+
+# DLpy/nn/sequential.py
+
+
+# DLpy/nn/sequential.py
+
+
+# DLpy/nn/sequential.py
+
+
+# DLpy/nn/sequential.py
 
 
 class Sequential(Module):

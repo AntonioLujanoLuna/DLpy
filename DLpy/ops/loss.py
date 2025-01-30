@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 
@@ -43,7 +44,7 @@ class MSELoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
 
@@ -101,7 +102,7 @@ class CrossEntropyLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         log_softmax = ctx.saved_arguments["log_softmax"]
@@ -160,7 +161,7 @@ class BinaryCrossEntropyLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         eps = ctx.saved_arguments["eps"]
@@ -218,7 +219,7 @@ class L1Loss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
 
@@ -275,7 +276,7 @@ class KLDivLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         log_target = ctx.saved_arguments["log_target"]
@@ -346,7 +347,7 @@ class CosineSimilarityLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         x1, x2 = ctx.saved_tensors
         ctx.saved_arguments["dim"]
         ctx.saved_arguments["eps"]
@@ -406,7 +407,7 @@ class HingeLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         margin = ctx.saved_arguments["margin"]
         reduction = ctx.saved_arguments["reduction"]
@@ -477,7 +478,7 @@ class FocalLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         ctx.saved_arguments["alpha"]
         gamma = ctx.saved_arguments["gamma"]
@@ -540,7 +541,7 @@ class HuberLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         predictions, targets = ctx.saved_tensors
         delta = ctx.saved_arguments["delta"]
         reduction = ctx.saved_arguments["reduction"]

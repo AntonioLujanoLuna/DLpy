@@ -1,6 +1,7 @@
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Module, Tensor
 
@@ -53,7 +54,7 @@ class LinearFunction(Function):
         return Tensor(output)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         input, weight, bias = ctx.saved_tensors
 
         if input.requires_grad:

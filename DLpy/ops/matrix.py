@@ -1,6 +1,7 @@
-from typing import Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 
@@ -19,7 +20,7 @@ class Transpose(Function):
         return Tensor(np.transpose(x.data, axes))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         axes = ctx.saved_arguments["axes"]
 
@@ -46,7 +47,7 @@ class Compare(Function):
         return Tensor(op(x1.data, x2.data))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         # Comparison operations have no gradient
         pass
 

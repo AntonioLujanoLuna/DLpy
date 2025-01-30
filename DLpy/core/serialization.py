@@ -1,12 +1,25 @@
 # DLpy/core/serialization.py
 
+# DLpy/core/serialization.py
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Module
+
+# DLpy/core/serialization.py
+
+
+# DLpy/core/serialization.py
+
+
+# DLpy/core/serialization.py
+
+
+# DLpy/core/serialization.py
 
 
 class ModelSaver:
@@ -42,19 +55,21 @@ class ModelSaver:
                 name: module.__class__.__name__ for name, module in model._modules.items()
             }
 
-        with open(path, "wb") as f:
+        with path.open("wb") as f:
             if optimize:
                 pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
             else:
                 pickle.dump(state, f)
 
     @staticmethod
-    def load_model(path: Union[str, Path], custom_classes: Dict[str, type] = None) -> Module:
+    def load_model(
+        path: Union[str, Path], custom_classes: Optional[Dict[str, type]] = None
+    ) -> Module:
         """
         Load complete model (architecture + parameters).
         """
         path = Path(path)
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             state = pickle.load(f)
 
         # Get model class - first try custom classes if provided
@@ -128,10 +143,10 @@ class ModelSaver:
     def save_checkpoint(
         path: Union[str, Path],
         model: Module,
-        optimizer: Any = None,
-        epoch: int = None,
-        loss: float = None,
-        additional_data: Dict[str, Any] = None,
+        optimizer: Optional[Any] = None,
+        epoch: Optional[int] = None,
+        loss: Optional[float] = None,
+        additional_data: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Save a training checkpoint including model, optimizer and training state.
@@ -153,12 +168,12 @@ class ModelSaver:
             "additional_data": additional_data or {},
         }
 
-        with open(path, "wb") as f:
+        with path.open("wb") as f:
             pickle.dump(checkpoint, f)
 
     @staticmethod
     def load_checkpoint(
-        path: Union[str, Path], model: Module, optimizer: Any = None
+        path: Union[str, Path], model: Module, optimizer: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Load a training checkpoint.
@@ -172,7 +187,7 @@ class ModelSaver:
             Dictionary containing the non-model/optimizer checkpoint data
         """
         path = Path(path)
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             checkpoint = pickle.load(f)
 
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -186,7 +201,7 @@ class ModelSaver:
         }
 
     @staticmethod
-    def get_state_dict(model: Module) -> Dict[str, np.ndarray]:
+    def get_state_dict(model: Module) -> Dict[str, NDArray[Any]]:
         """Gets the state dictionary from a model."""
         state_dict = {}
         for name, param in model.named_parameters():

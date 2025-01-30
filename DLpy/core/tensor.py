@@ -1,7 +1,8 @@
 from numbers import Number
-from typing import Callable, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 class Tensor:
@@ -23,7 +24,7 @@ class Tensor:
 
     def __init__(
         self,
-        data: Union[np.ndarray, List, Number],
+        data: Union[NDArray[Any], List, Number],
         requires_grad: bool = False,
         dtype: Optional[np.dtype] = None,
     ):
@@ -37,7 +38,7 @@ class Tensor:
         else:
             self.data = data.astype(dtype) if dtype else data
 
-        self.grad: Optional[np.ndarray] = None
+        self.grad: Optional[NDArray[Any]] = None
         self._requires_grad = requires_grad
         self._backward_fn: Optional[Callable] = None
         self._prev: Set["Tensor"] = set()
@@ -89,7 +90,7 @@ class Tensor:
         else:
             self.grad = np.zeros_like(self.data, dtype=np.float64)
 
-    def backward(self, gradient: Optional[np.ndarray] = None) -> None:
+    def backward(self, gradient: Optional[NDArray[Any]] = None) -> None:
         """
         Computes gradients of the loss with respect to this tensor.
         """
@@ -148,12 +149,12 @@ class Tensor:
         return self + (-other)
 
     # Helper methods for numpy compatibility
-    def numpy(self) -> np.ndarray:
+    def numpy(self) -> NDArray[Any]:
         """Returns the underlying numpy array."""
         return self.data
 
     @classmethod
-    def from_numpy(cls, array: np.ndarray, requires_grad: bool = False) -> "Tensor":
+    def from_numpy(cls, array: NDArray[Any], requires_grad: bool = False) -> "Tensor":
         """Creates a Tensor from a numpy array."""
         return cls(array.copy(), requires_grad=requires_grad)
 
@@ -164,7 +165,7 @@ class Tensor:
             shape = shape[0]
 
         # Convert all elements to integers (handles -1 specially)
-        processed_shape = tuple(int(d) if d != -1 else -1 for d in shape)
+        processed_shape = tuple(d if d != -1 else -1 for d in shape)
 
         from ..ops import Reshape
 
@@ -266,7 +267,7 @@ class Tensor:
         """Returns the transposed tensor."""
         from ..ops import Transpose
 
-        return Transpose.apply(self, axes if axes else None)
+        return Transpose.apply(self, axes or None)
 
     # Comparison operations
     def __gt__(self, other: Union["Tensor", float]) -> "Tensor":

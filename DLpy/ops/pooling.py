@@ -1,6 +1,7 @@
-from typing import Dict, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 from ..core.context import Context
@@ -18,7 +19,7 @@ def _compute_output_shape(
     return (H_out, W_out)
 
 
-def _pad_input(x: np.ndarray, padding: Tuple[int, int]) -> np.ndarray:
+def _pad_input(x: NDArray[Any], padding: Tuple[int, int]) -> NDArray[Any]:
     """Add padding to input tensor."""
     if padding[0] == 0 and padding[1] == 0:
         return x
@@ -78,7 +79,9 @@ class MaxPool2dFunction(Function):
         return Tensor(output)
 
     @staticmethod
-    def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         max_indices = ctx.saved_arguments["max_indices"]
 
@@ -139,7 +142,9 @@ class AvgPool2dFunction(Function):
         return Tensor(output)
 
     @staticmethod
-    def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         kernel_size = ctx.saved_arguments["kernel_size"]
         stride = ctx.saved_arguments["stride"]

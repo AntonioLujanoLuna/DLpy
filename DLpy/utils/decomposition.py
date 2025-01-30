@@ -1,10 +1,23 @@
 # DLpy/utils/decomposition.py
 
-from typing import List, Tuple
+# DLpy/utils/decomposition.py
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Tensor
+
+# DLpy/utils/decomposition.py
+
+
+# DLpy/utils/decomposition.py
+
+
+# DLpy/utils/decomposition.py
+
+
+# DLpy/utils/decomposition.py
 
 
 class TensorDecomposition:
@@ -254,17 +267,19 @@ class TensorDecomposition:
 
         return cores
 
-    def _mode_n_product(self, tensor: np.ndarray, matrix: np.ndarray, mode: int) -> np.ndarray:
+    def _mode_n_product(
+        self, tensor: NDArray[Any], matrix: NDArray[Any], mode: int
+    ) -> NDArray[Any]:
         """
         Perform the mode-n product of a tensor with a matrix.
 
         Args:
-            tensor (np.ndarray): The input tensor.
-            matrix (np.ndarray): The matrix to multiply with.
+            tensor (NDArray[Any]): The input tensor.
+            matrix (NDArray[Any]): The matrix to multiply with.
             mode (int): The mode along which to perform the multiplication.
 
         Returns:
-            np.ndarray: The resulting tensor after the mode-n product.
+            NDArray[Any]: The resulting tensor after the mode-n product.
         """
         # Move the specified mode to the first dimension
         tensor = np.moveaxis(tensor, mode, 0)
@@ -349,7 +364,7 @@ class TensorDecomposition:
 
         return core, factors
 
-    def _unfold(self, tensor: Tensor, mode: int) -> np.ndarray:
+    def _unfold(self, tensor: Tensor, mode: int) -> NDArray[Any]:
         """
         Unfold/matricize a tensor along specified mode.
 
@@ -367,7 +382,7 @@ class TensorDecomposition:
         # Move specified mode to first dimension and flatten others
         return np.moveaxis(arr, mode, 0).reshape(arr.shape[mode], -1)
 
-    def _khatri_rao(self, matrices: List[Tensor]) -> np.ndarray:
+    def _khatri_rao(self, matrices: List[Tensor]) -> NDArray[Any]:
         """
         Compute Khatri-Rao product of a list of matrices.
 
@@ -379,7 +394,7 @@ class TensorDecomposition:
             matrices: List of matrices as Tensor objects
 
         Returns:
-            numpy.ndarray: Khatri-Rao product
+            numpy.NDArray[Any]: Khatri-Rao product
         """
         if not matrices:
             return None

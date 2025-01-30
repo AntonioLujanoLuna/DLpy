@@ -1,6 +1,7 @@
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 
@@ -17,7 +18,7 @@ class Sum(Function):
         return Tensor(np.sum(x.data, axis=axis, keepdims=keepdims))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -45,7 +46,7 @@ class Mean(Function):
         return Tensor(np.mean(x.data, axis=axis, keepdims=keepdims))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -83,7 +84,7 @@ class Max(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -122,7 +123,7 @@ class Min(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]

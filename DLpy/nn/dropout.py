@@ -1,9 +1,21 @@
 # dropout.py
-from typing import Optional
+
+# dropout.py
+# dropout.py
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Module, Tensor
+
+# dropout.py
+
+
+# dropout.py
+
+
+# dropout.py
 
 
 class Dropout(Module):
@@ -66,7 +78,7 @@ class Dropout2d(Module):
             raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
         self.p = p
         self.inplace = inplace
-        self.mask: Optional[np.ndarray] = None
+        self.mask: Optional[NDArray[Any]] = None
 
     def forward(self, x: Tensor) -> Tensor:
         if self.training:

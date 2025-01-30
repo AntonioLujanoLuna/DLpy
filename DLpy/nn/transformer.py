@@ -1,6 +1,7 @@
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Module, Tensor
 from ..nn.activations import ReLU
@@ -11,7 +12,7 @@ from ..nn.sequential import Sequential
 from ..utils import calculate_fan_in_fan_out
 
 
-def get_angles(pos: np.ndarray, i: np.ndarray, d_model: int) -> np.ndarray:
+def get_angles(pos: NDArray[Any], i: NDArray[Any], d_model: int) -> NDArray[Any]:
     """
     Calculate the angles for positional encoding.
 

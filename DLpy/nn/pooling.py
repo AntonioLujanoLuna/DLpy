@@ -1,8 +1,21 @@
 # pooling.py
-from typing import Optional, Tuple, Union
+
+# pooling.py
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from ..core import Module, Tensor
 from ..ops.pooling import AvgPool2dFunction, MaxPool2dFunction
+
+# pooling.py
+
+
+# pooling.py
+
+
+# pooling.py
+
+
+# pooling.py
 
 
 class MaxPool2d(Module):

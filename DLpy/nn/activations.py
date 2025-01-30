@@ -1,14 +1,7 @@
-"""
-Activation functions module for DLpy.
-
-This module contains both Function and Module implementations of standard activation functions.
-Functions can be used directly (relu(x)), while Modules can be used in Sequential layers (ReLU()).
-Each activation function is implemented with full autograd support.
-"""
-
-from typing import Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Module, Tensor
 
@@ -32,7 +25,7 @@ class ReLUFunction(Function):
         return Tensor(np.maximum(0, x.data))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         if x.requires_grad:
             grad = grad_output * (x.data > 0)
@@ -61,7 +54,7 @@ class LeakyReLUFunction(Function):
         return Tensor(np.where(x.data > 0, x.data, negative_slope * x.data))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         negative_slope = ctx.saved_arguments["negative_slope"]
 
@@ -92,7 +85,7 @@ class ELUFunction(Function):
         return Tensor(np.where(x.data > 0, x.data, alpha * (np.exp(x.data) - 1)))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         alpha = ctx.saved_arguments["alpha"]
 
@@ -136,7 +129,7 @@ class GELUFunction(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         tanh_inner = ctx.saved_arguments["tanh_inner"]
 
@@ -181,7 +174,7 @@ class SigmoidFunction(Function):
         return Tensor(sigmoid_x)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         sigmoid_x = ctx.saved_arguments["sigmoid_x"]
 
@@ -209,7 +202,7 @@ class TanhFunction(Function):
         return Tensor(tanh_x)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         tanh_x = ctx.saved_arguments["tanh_x"]
 

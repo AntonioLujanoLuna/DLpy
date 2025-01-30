@@ -1,5 +1,7 @@
 # dataloader.py
-from typing import Any, Callable, Iterator, Optional, Sequence
+
+# dataloader.py
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -7,6 +9,17 @@ from DLpy.core.tensor import Tensor
 
 from .dataset import Dataset
 from .samplers import RandomSampler, Sampler, SequentialSampler
+
+# dataloader.py
+
+
+# dataloader.py
+
+
+# dataloader.py
+
+
+# dataloader.py
 
 
 class DataLoader:
@@ -73,7 +86,7 @@ class DataLoader:
             if len(batch) == self.batch_size:
                 yield self.collate_fn(batch)
                 batch = []
-        if len(batch) > 0 and not self.drop_last:
+        if batch and not self.drop_last:
             yield self.collate_fn(batch)
 
     def __len__(self) -> int:

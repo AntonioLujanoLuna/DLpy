@@ -1,6 +1,7 @@
-from typing import Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Context, Function, Tensor
 
@@ -109,7 +110,7 @@ def _validate_conv_params(
                 raise ValueError(f"Expected mask shape {expected_mask_shape}, got {mask.shape}")
 
 
-def _pad_input(x: np.ndarray, padding: Tuple[int, int]) -> np.ndarray:
+def _pad_input(x: NDArray[Any], padding: Tuple[int, int]) -> NDArray[Any]:
     """
     Pads input tensor with zeros.
 
@@ -164,11 +165,11 @@ def _get_output_shape(
 
 
 def _get_deformable_offsets(
-    offset_data: np.ndarray,
+    offset_data: NDArray[Any],
     kernel_size: Tuple[int, int],
     input_shape: Tuple[int, ...],
     dilation: Tuple[int, int] = (1, 1),
-) -> np.ndarray:
+) -> NDArray[Any]:
     """
     Computes sampling locations for deformable convolution.
 
@@ -204,8 +205,8 @@ def _get_deformable_offsets(
 
 
 def _bilinear_interpolate(
-    input: np.ndarray, points: np.ndarray, align_corners: bool = True
-) -> np.ndarray:
+    input: NDArray[Any], points: NDArray[Any], align_corners: bool = True
+) -> NDArray[Any]:
     """
     Performs bilinear interpolation on the input tensor at specified points.
 
@@ -271,14 +272,14 @@ def _bilinear_interpolate(
 
 
 def _im2col_dilated(
-    x: np.ndarray,
+    x: NDArray[Any],
     kernel_size: Tuple[int, int],
     stride: Tuple[int, int],
     dilation: Tuple[int, int],
     padding: Tuple[int, int],
     mode: str = ConvMode.STANDARD,
-    sampling_locations: Optional[np.ndarray] = None,
-) -> np.ndarray:
+    sampling_locations: Optional[NDArray[Any]] = None,
+) -> NDArray[Any]:
     """Rearranges dilated image blocks into columns."""
     N, C, H, W = x.shape
     kH, kW = kernel_size
@@ -341,13 +342,13 @@ def _get_output_size(
 
 
 def _col2im_dilated(
-    cols: np.ndarray,
+    cols: NDArray[Any],
     output_size: Tuple[int, ...],
     kernel_size: Tuple[int, int],
     stride: Tuple[int, int],
     dilation: Tuple[int, int],
     mode: str = ConvMode.STANDARD,
-) -> np.ndarray:
+) -> NDArray[Any]:
     """Convert columns back to dilated image."""
     N, C, H, W = output_size
     kH, kW = kernel_size
@@ -433,12 +434,12 @@ def _compute_output_padding(
 
 
 def _unfold(
-    input_tensor: np.ndarray,
+    input_tensor: NDArray[Any],
     kernel_size: Tuple[int, ...],
     dilation: Tuple[int, ...],
     padding: Tuple[int, ...],
     stride: Tuple[int, ...],
-) -> np.ndarray:
+) -> NDArray[Any]:
     """Extracts sliding local blocks from input tensor."""
     N, C, H, W = input_tensor.shape
     kH, kW = kernel_size
@@ -478,13 +479,13 @@ def _unfold(
 
 
 def _fold(
-    input: np.ndarray,
+    input: NDArray[Any],
     output_size: Tuple[int, ...],
     kernel_size: Tuple[int, ...],
     dilation: Tuple[int, ...],
     padding: Tuple[int, ...],
     stride: Tuple[int, ...],
-) -> np.ndarray:
+) -> NDArray[Any]:
     """Combines an array of sliding local blocks into a large tensor."""
     H, W = output_size
     kH, kW = kernel_size
@@ -529,7 +530,7 @@ def _fold(
     return output
 
 
-def _dilate(input: np.ndarray, dilation: Tuple[int, ...]) -> np.ndarray:
+def _dilate(input: NDArray[Any], dilation: Tuple[int, ...]) -> NDArray[Any]:
     """
     Dilates the input tensor by inserting zeros between elements.
 
@@ -556,8 +557,8 @@ def _dilate(input: np.ndarray, dilation: Tuple[int, ...]) -> np.ndarray:
 
 
 def _bilinear_interpolate(
-    input: np.ndarray, points: np.ndarray, align_corners: bool = True
-) -> np.ndarray:
+    input: NDArray[Any], points: NDArray[Any], align_corners: bool = True
+) -> NDArray[Any]:
     """
     Performs bilinear interpolation on the input tensor at specified points.
 
@@ -623,12 +624,12 @@ def _bilinear_interpolate(
 
 
 def _bilinear_interpolate_gradient(
-    grad_output: np.ndarray,
-    points: np.ndarray,
+    grad_output: NDArray[Any],
+    points: NDArray[Any],
     input_size: Tuple[int, ...],
-    input_tensor: np.ndarray,
+    input_tensor: NDArray[Any],
     align_corners: bool = True,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[NDArray[Any], NDArray[Any]]:
     """
     Computes gradients for bilinear interpolation.
 
@@ -781,7 +782,7 @@ def _bilinear_interpolate_gradient(
 
 def _generate_grid(
     batch_size: int, height: int, width: int, align_corners: bool = True
-) -> np.ndarray:
+) -> NDArray[Any]:
     """
     Generates a coordinate grid for grid sampling.
 
@@ -808,7 +809,7 @@ def _generate_grid(
     return grid
 
 
-def _deform_grid(grid: np.ndarray, offset: np.ndarray) -> np.ndarray:
+def _deform_grid(grid: NDArray[Any], offset: NDArray[Any]) -> NDArray[Any]:
     """
     Deforms a regular grid using offset values.
 
@@ -832,8 +833,8 @@ def _deform_grid(grid: np.ndarray, offset: np.ndarray) -> np.ndarray:
 
 
 def _modulated_deform_grid(
-    grid: np.ndarray, offset: np.ndarray, mask: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+    grid: NDArray[Any], offset: NDArray[Any], mask: NDArray[Any]
+) -> Tuple[NDArray[Any], NDArray[Any]]:
     """
     Deforms a regular grid using offset values and modulation mask.
     Used in Deformable ConvNets v2.
@@ -855,7 +856,9 @@ def _modulated_deform_grid(
     return deformed_grid, mask
 
 
-def _compute_indices_weights(points: np.ndarray, size: Tuple[int, int]) -> Tuple[np.ndarray, ...]:
+def _compute_indices_weights(
+    points: NDArray[Any], size: Tuple[int, int]
+) -> Tuple[NDArray[Any], ...]:
     """
     Computes indices and weights for bilinear interpolation.
 
@@ -894,14 +897,14 @@ def _compute_indices_weights(points: np.ndarray, size: Tuple[int, int]) -> Tuple
 
 
 def _apply_deform_conv(
-    input: np.ndarray,
-    weight: np.ndarray,
-    offset: np.ndarray,
+    input: NDArray[Any],
+    weight: NDArray[Any],
+    offset: NDArray[Any],
     stride: Tuple[int, int],
     padding: Tuple[int, int],
     dilation: Tuple[int, int],
-    mask: Optional[np.ndarray] = None,
-) -> np.ndarray:
+    mask: Optional[NDArray[Any]] = None,
+) -> NDArray[Any]:
     """
     Applies deformable convolution operation.
 
@@ -1098,7 +1101,7 @@ class Conv2dFunction(Function):
             return Tensor(output)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         """Backward pass of 2D convolution."""
         # Retrieve saved tensors and arguments
         saved_tensors = ctx.saved_tensors

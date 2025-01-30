@@ -1,6 +1,9 @@
-from typing import Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
+
+from .tensor import Tensor
 
 
 class Edge:
@@ -14,7 +17,7 @@ class Edge:
     def __init__(self, src: "Node", dst: "Node"):
         self.src = src
         self.dst = dst
-        self.grad: Optional[np.ndarray] = None
+        self.grad: Optional[NDArray[Any]] = None
 
 
 class Node:
@@ -72,7 +75,7 @@ class AutogradEngine:
         dst_node.in_edges.append(edge)
         self._edges.add(edge)
 
-    def backward(self, tensor: "Tensor", gradient: Optional[np.ndarray] = None) -> None:
+    def backward(self, tensor: "Tensor", gradient: Optional[NDArray[Any]] = None) -> None:
         """Executes backward pass starting from the given tensor."""
         if self._currently_computing_gradients:
             raise RuntimeError("Nested gradient computation detected")
@@ -80,7 +83,7 @@ class AutogradEngine:
         self._currently_computing_gradients = True
         try:
             # Initialize grad_dict as a regular dictionary
-            grad_dict: Dict[int, np.ndarray] = {}
+            grad_dict: Dict[int, NDArray[Any]] = {}
 
             # If no gradient is provided, assume it's 1 (for scalar outputs)
             if gradient is None:
@@ -106,7 +109,7 @@ class AutogradEngine:
                     node.tensor._backward_fn(current_grad, grad_dict)
 
                 # Accumulate gradients for leaf nodes
-                if len(node.in_edges) == 0 and node.tensor.requires_grad:
+                if not node.in_edges and node.tensor.requires_grad:
                     if node.tensor.grad is None:
                         node.tensor.grad = current_grad
                     else:

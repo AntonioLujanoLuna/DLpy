@@ -1,7 +1,7 @@
 from collections import OrderedDict
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
-import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Tensor
 
@@ -92,7 +92,7 @@ class Module:
     def __setattr__(self, name: str, value: Any) -> None:
         """Custom setattr that handles parameter registration."""
         # Handle special module attributes first
-        if name in ["training"]:
+        if name == "training":
             object.__setattr__(self, name, value)
             return
 
@@ -182,7 +182,7 @@ class Module:
                 state[name] = buf.data
         return state
 
-    def load_state_dict(self, state_dict: Dict[str, np.ndarray]) -> None:
+    def load_state_dict(self, state_dict: Dict[str, NDArray[Any]]) -> None:
         """
         Loads module state from state_dict.
 

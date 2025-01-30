@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .context import Context
 from .tensor import Tensor  # This will be implemented next
@@ -39,7 +40,9 @@ class Function(ABC):
 
     @staticmethod
     @abstractmethod
-    def backward(ctx: Context, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         """
         Computes gradients of the operation with respect to its inputs.
 
@@ -71,7 +74,7 @@ class Function(ABC):
 
         if needs_grad:
 
-            def backward_fn(grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+            def backward_fn(grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
                 cls.backward(ctx, grad_output, grad_dict)
 
             result._backward_fn = backward_fn
@@ -89,7 +92,7 @@ class Function(ABC):
 
     @staticmethod
     def verify_backward(
-        forward_fn: Any, backward_fn: Any, inputs: Tuple[np.ndarray, ...], epsilon: float = 1e-6
+        forward_fn: Any, backward_fn: Any, inputs: Tuple[NDArray[Any], ...], epsilon: float = 1e-6
     ) -> bool:
         """
         Verifies backward pass implementation using numerical gradients.
@@ -107,7 +110,7 @@ class Function(ABC):
             True if gradients match within tolerance, False otherwise
         """
 
-        def compute_numerical_gradient(idx: int, inp: np.ndarray) -> np.ndarray:
+        def compute_numerical_gradient(idx: int, inp: NDArray[Any]) -> NDArray[Any]:
             grad = np.zeros_like(inp)
             it = np.nditer(inp, flags=["multi_index"])
 

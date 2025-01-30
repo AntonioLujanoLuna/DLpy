@@ -1,4 +1,3 @@
-# lint.ps1
 $ErrorActionPreference = "Stop"
 
 function Write-Step {
@@ -247,11 +246,24 @@ try {
     black DLpy/
     if ($LASTEXITCODE -ne 0) { throw "black failed" }
 
-    $proceed = Read-Host "`nStage 1 complete. Check autograd.py for no_grad export. Proceed? (y/n)"
+    $proceed = Read-Host "`nStage 1 complete. Proceed? (y/n)"
     if ($proceed -ne "y") {
         Write-Host "Stopping after Stage 1." -ForegroundColor Yellow
         exit 0
     }
+
+    #
+    # Stage 2: Type fixes
+    #
+    Write-Step "Stage 2: Type Fixes"
+    Write-Host "Applying type annotation fixes..." -ForegroundColor Gray
+    Get-ChildItem -Path "DLpy" -Recurse -Filter "*.py" | ForEach-Object {
+        Fix-TypeAnnotations $_.FullName
+    }
+
+    Write-Host "Re-running formatters after type fixes..." -ForegroundColor Gray
+    isort DLpy/
+    black DLpy/
 
     #
     # Stage 3: Run single test
@@ -297,31 +309,36 @@ try {
     isort DLpy/
     black DLpy/
 
-    #
-    # Type fixes with our function, then mypy checks
-    #
-    Write-Step "Running type fixes and checks"
-    Get-ChildItem -Path "DLpy" -Recurse -Filter "*.py" | ForEach-Object {
-        Fix-TypeAnnotations $_.FullName
-    }
-
     Write-Host "`nRunning basic type checks..." -ForegroundColor Gray
-    mypy --ignore-missing-imports DLpy/
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Basic type checks passed, running with stricter options..." -ForegroundColor Green
-        mypy --strict-optional --warn-redundant-casts --warn-unused-ignores --warn-return-any DLpy/
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Stricter checks passed, running with full enforcement..." -ForegroundColor Green
-            mypy --strict-optional --warn-redundant-casts --warn-unused-ignores --warn-return-any --disallow-untyped-defs DLpy/
+    Write-Step "Running Mypy checks folder by folder"
+
+    # Define the subfolders you want to check individually.
+    $mypyFolders = @("core", "nn", "ops", "utils")
+
+    foreach ($folder in $mypyFolders) {
+        Write-Host "mypy --disallow-untyped-defs --follow-imports=skip DLpy/$folder" -ForegroundColor Gray
+        mypy --disallow-untyped-defs --follow-imports=skip "DLpy/$folder"
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Type checking failed for subfolder $folder." -ForegroundColor Yellow
+            $proceed = Read-Host "Would you like to continue to the next subfolder? (y/n)"
+            if ($proceed -ne "y") {
+                throw "mypy failed on subfolder $folder"
+            }
         }
     }
+
+    Write-Host "Folder-by-folder type checks complete. Proceeding with full DLpy check..." -ForegroundColor Green
+
+    Write-Step "Final Mypy pass on all of DLpy"
+    Write-Host "mypy --disallow-untyped-defs DLpy/" -ForegroundColor Gray
+    mypy --disallow-untyped-defs DLpy/
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Type checking failed. Fix the above errors before proceeding." -ForegroundColor Yellow
-        $proceed = Read-Host "Would you like to continue with the remaining checks? (y/n)"
-        if ($proceed -ne "y") {
-            throw "mypy failed"
-        }
+        Write-Host "Final type checking pass failed on DLpy/." -ForegroundColor Red
+        throw "mypy failed on final pass"
+    } else {
+        Write-Host "Final mypy pass succeeded." -ForegroundColor Green
     }
 
     Write-Step "Running style checks with flake8"

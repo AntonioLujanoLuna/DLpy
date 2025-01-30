@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 
@@ -26,7 +27,7 @@ class Log(Function):
         return Tensor(np.log(x.data))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         if x.requires_grad:
             # d/dx(log(x)) = 1/x
@@ -52,7 +53,7 @@ class Exp(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (x,) = ctx.saved_tensors
         exp_x = ctx.saved_arguments["exp_x"]
 

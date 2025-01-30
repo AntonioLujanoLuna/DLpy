@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core import Function, Tensor
 
@@ -26,7 +27,7 @@ class Power(Function):
         return Tensor(np.power(base.data, exponent))
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         (base,) = ctx.saved_tensors
         exponent = ctx.saved_arguments["exponent"]
 
@@ -52,7 +53,7 @@ class Divide(Function):
         return Tensor(numerator.data / denominator.data)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
+    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
         numerator, denominator = ctx.saved_tensors
 
         if numerator.requires_grad:
