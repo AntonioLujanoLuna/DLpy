@@ -1,5 +1,5 @@
 from numbers import Number
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray

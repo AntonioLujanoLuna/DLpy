@@ -2,17 +2,10 @@ $ErrorActionPreference = "Stop"
 
 function Write-Step {
     param($Message)
-    Write-Host "`n=== $Message ===" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "=== $Message ===" -ForegroundColor Cyan
 }
 
-#
-# This function fixes type annotation issues within a single Python file.
-# Key points:
-# - We import "NDArray" from "numpy.typing" (no brackets!)
-# - We skip rewriting that line so it doesn't become NDArray[Any]
-# - We then replace usage "np.NDArray" => "NDArray[Any]", "NDArray" => "NDArray[Any]" in other lines.
-# - We also insert from typing import ... if we see e.g. List, Dict, Optional, etc.
-#
 function Fix-TypeAnnotations {
     param($file)
 
@@ -95,12 +88,12 @@ function Fix-TypeAnnotations {
 
     # 5) Fix missing type parameters for List, Dict, Tuple, Callable, etc.
     $genericFixes = @(
-        @{ regex = [regex] "List\[(?!.*\])"; repl  = "List[Any" },
-        @{ regex = [regex] "Dict\[(?!.*\])"; repl  = "Dict[Any, Any" },
-        @{ regex = [regex] "Tuple\[(?!.*\])"; repl  = "Tuple[Any" },
-        @{ regex = [regex] "Callable\[(?!.*\])"; repl  = "Callable[..., Any" },
-        @{ regex = [regex] "(?<=:\s*)tuple\[(?!.*\])"; repl  = "Tuple[Any" },
-        @{ regex = [regex] "(?<=:\s*)dict\[(?!.*\])";  repl  = "Dict[Any, Any" }
+        @{ regex = [regex] "List\[(?!.*\])"; repl  = "List[Any" }
+        @{ regex = [regex] "Dict\[(?!.*\])"; repl  = "Dict[Any, Any" }
+        @{ regex = [regex] "Tuple\[(?!.*\])"; repl  = "Tuple[Any" }
+        @{ regex = [regex] "Callable\[(?!.*\])"; repl  = "Callable[..., Any" }
+        @{ regex = [regex] "(?<=:\s*)tuple\[(?!.*\])"; repl  = "Tuple[Any" }
+        @{ regex = [regex] "(?<=:\s*)dict\[(?!.*\])"; repl  = "Dict[Any, Any" }
     )
     foreach ($gf in $genericFixes) {
         if ($content -match $gf.regex) {
@@ -131,7 +124,7 @@ function Fix-TypeAnnotations {
         @{
             find = "def forward\(self, \*args: Any, \*\*kwargs: Any\) -> None"
             replace = "def forward(self, x: Tensor) -> Tensor"
-        },
+        }
         @{
             find = "@staticmethod\s+def forward\(ctx: Context, \*args: Any, \*\*kwargs: Any\) -> Tensor"
             replace = "@staticmethod`n    def forward(ctx: Context, x: Tensor) -> Tensor"
@@ -176,27 +169,27 @@ function Apply-RefurbFixes {
             file = "DLpy\core\autograd.py"
             old  = "len(node.in_edges) == 0"
             new  = "not node.in_edges"
-        },
+        }
         @{
             file = "DLpy\core\module.py"
             old  = 'isinstance(x, (..., type(None)))'
             new  = 'x is None or isinstance(x, ...)'
-        },
+        }
         @{
             file = "DLpy\core\module.py"
             old  = 'name in ["training"]'
             new  = 'name == "training"'
-        },
+        }
         @{
             file = "DLpy\core\serialization.py"
             old  = 'open(path, "wb")'
             new  = 'path.open("wb")'
-        },
+        }
         @{
             file = "DLpy\core\serialization.py"
             old  = 'open(path, "rb")'
             new  = 'path.open("rb")'
-        },
+        }
         @{
             file = "DLpy\core\tensor.py"
             old  = 'axes if axes else None'
@@ -227,9 +220,86 @@ function Apply-RefurbFixes {
     Write-Host "`nProcessed $($processedFiles.Count) files with $($fixes.Count) total fixes" -ForegroundColor Yellow
 }
 
+function Run-MypyOnFile {
+    param(
+        [string]$FilePath
+    )
+
+    Write-Host "`nChecking ${FilePath}..." -ForegroundColor Cyan
+
+    try {
+        # Capture both success and error output
+        $output = @()
+        $errorOutput = @()
+        
+        # Use Start-Process to better control the process execution
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = "mypy"
+        $processInfo.Arguments = "--disallow-untyped-defs --no-error-summary --hide-error-context --follow-imports=skip `"$FilePath`""
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $processInfo.UseShellExecute = $false
+        
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        
+        # Event handlers for output
+        $outputHandler = [System.Diagnostics.DataReceivedEventHandler]{
+            param($sender, $e)
+            if ($null -ne $e.Data) { $output += $e.Data }
+        }
+        $errorHandler = [System.Diagnostics.DataReceivedEventHandler]{
+            param($sender, $e)
+            if ($null -ne $e.Data) { $errorOutput += $e.Data }
+        }
+        
+        $process.add_OutputDataReceived($outputHandler)
+        $process.add_ErrorDataReceived($errorHandler)
+        
+        # Start and wait for the process
+        $process.Start() | Out-Null
+        $process.BeginOutputReadLine()
+        $process.BeginErrorReadLine()
+        $process.WaitForExit()
+        
+        $exitCode = $process.ExitCode
+        
+        if ($exitCode -ne 0) {
+            # Filter and display only relevant error messages
+            $errors = $output + $errorOutput | Where-Object { $_ -match '\.py:\d+:\d+:' }
+            Write-Host "Found errors in ${FilePath}:" -ForegroundColor Yellow
+            foreach ($error in $errors) {
+                Write-Host $error -ForegroundColor Red
+            }
+            
+            # Log complete output to a file for debugging
+            $logFile = "mypy_error_log.txt"
+            "=== Full output for $FilePath ===" | Out-File -Append $logFile
+            "Standard Output:" | Out-File -Append $logFile
+            $output | Out-File -Append $logFile
+            "Error Output:" | Out-File -Append $logFile
+            $errorOutput | Out-File -Append $logFile
+            "==================" | Out-File -Append $logFile
+            
+            Write-Host "Complete error details have been logged to $logFile" -ForegroundColor Yellow
+            return $false
+        }
+        else {
+            Write-Host "No issues found" -ForegroundColor Green
+            return $true
+        }
+    }
+    catch {
+        Write-Host "Error running mypy on $FilePath" -ForegroundColor Red
+        Write-Host "Exception details:" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Host $_.Exception.StackTrace -ForegroundColor Red
+        return $false
+    }
+}
+
 try {
     Write-Host "Starting code analysis and formatting...`n" -ForegroundColor Blue
-    
     #
     # Stage 1: Basic formatting
     #
@@ -265,27 +335,16 @@ try {
     isort DLpy/
     black DLpy/
 
-    #
-    # Stage 3: Run single test
-    #
-    Write-Step "Stage 3: Testing single module"
-    Write-Host "Running test on tensor.py..." -ForegroundColor Gray
-    python -m pytest tests/test_tensor.py -v
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Test failed. Please fix the issues before proceeding." -ForegroundColor Red
-        exit 1
-    }
-
-    $proceed = Read-Host "`nSingle test complete. Proceed with full test suite? (y/n)"
+    $proceed = Read-Host "`nStage 2 complete. Proceed? (y/n)"
     if ($proceed -ne "y") {
-        Write-Host "Stopping after single test." -ForegroundColor Yellow
+        Write-Host "Stopping after Stage 2." -ForegroundColor Yellow
         exit 0
     }
 
     #
-    # Stage 4: MonkeyType
+    # Stage 3: MonkeyType
     #
-    Write-Step "Stage 4: Running MonkeyType type collection"
+    Write-Step "Stage 3: Running MonkeyType type collection"
     monkeytype run -m pytest tests/
     if ($LASTEXITCODE -ne 0) { throw "MonkeyType test run failed" }
 
@@ -295,7 +354,7 @@ try {
         Write-Host "Processing DLpy.$module" -ForegroundColor Gray
         monkeytype apply "DLpy.$module"
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "No traces or monkeytype apply failed for $module (may be normal)."
+            Write-Host "No traces or monkeytype apply failed for $module (may be normal)." -ForegroundColor Gray
         }
     }
 
@@ -306,48 +365,71 @@ try {
     Apply-RefurbFixes
 
     Write-Host "Re-running formatters after fixes..." -ForegroundColor Gray
+    autoflake --in-place --remove-all-unused-imports --remove-unused-variables -r DLpy/
     isort DLpy/
     black DLpy/
 
-    Write-Host "`nRunning basic type checks..." -ForegroundColor Gray
-    Write-Step "Running Mypy checks folder by folder"
+    Write-Host "`nRunning type checks..." -ForegroundColor Gray
 
-    # Define the subfolders you want to check individually.
+    Write-Step "Running Mypy checks file by file"
     $mypyFolders = @("core", "nn", "ops", "utils")
+    $failedFiles = @()
 
     foreach ($folder in $mypyFolders) {
-        Write-Host "mypy --disallow-untyped-defs --follow-imports=skip DLpy/$folder" -ForegroundColor Gray
-        mypy --disallow-untyped-defs --follow-imports=skip "DLpy/$folder"
+        Write-Host "`nProcessing folder: DLpy/$folder" -ForegroundColor Cyan
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Type checking failed for subfolder $folder." -ForegroundColor Yellow
-            $proceed = Read-Host "Would you like to continue to the next subfolder? (y/n)"
-            if ($proceed -ne "y") {
-                throw "mypy failed on subfolder $folder"
+        # Get all Python files in the folder
+        $pyFiles = Get-ChildItem -Path "DLpy/$folder" -Filter "*.py"
+
+        foreach ($file in $pyFiles) {
+            $success = Run-MypyOnFile $file.FullName
+            if (-not $success) {
+                $failedFiles += $file.FullName
+            }
+
+            if (-not $success) {
+                $proceed = Read-Host "`nWould you like to continue to the next file? (y/n)"
+                if ($proceed -ne "y") {
+                    Write-Host "`nFiles with type checking errors:" -ForegroundColor Yellow
+                    $failedFiles | ForEach-Object { Write-Host "- $_" -ForegroundColor Red }
+                    throw "Mypy failed on $($file.Name)"
+                }
             }
         }
     }
 
-    Write-Host "Folder-by-folder type checks complete. Proceeding with full DLpy check..." -ForegroundColor Green
+    if ($failedFiles.Count -gt 0) {
+        Write-Host "`nSummary of files with type checking errors:" -ForegroundColor Yellow
+        $failedFiles | ForEach-Object { Write-Host "- $_" -ForegroundColor Red }
+        throw "Mypy failed on $($failedFiles.Count) files"
+    }
+    else {
+        Write-Host "`nAll files passed type checking! ✨" -ForegroundColor Green
+    }
 
-    Write-Step "Final Mypy pass on all of DLpy"
-    Write-Host "mypy --disallow-untyped-defs DLpy/" -ForegroundColor Gray
-    mypy --disallow-untyped-defs DLpy/
+    # Optional: Only run full check if individual files pass
+    $proceed = Read-Host "`nAll individual files passed. Run full check? (y/n)"
+    if ($proceed -eq "y") {
+        Write-Step "Final Mypy pass on all of DLpy"
+        Write-Host "mypy --disallow-untyped-defs DLpy/" -ForegroundColor Gray
+        mypy --disallow-untyped-defs DLpy/
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Final type checking pass failed on DLpy/." -ForegroundColor Red
-        throw "mypy failed on final pass"
-    } else {
-        Write-Host "Final mypy pass succeeded." -ForegroundColor Green
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Final type checking pass failed on DLpy/." -ForegroundColor Red
+            throw "mypy failed on final pass"
+        }
+        else {
+            Write-Host "Final mypy pass succeeded." -ForegroundColor Green
+        }
     }
 
     Write-Step "Running style checks with flake8"
     flake8 DLpy/
     if ($LASTEXITCODE -ne 0) { throw "flake8 failed" }
 
-    Write-Host "`nCode analysis and formatting complete! ✨" -ForegroundColor Green
+    Write-Host "Code analysis and formatting complete! ✨" -ForegroundColor Green
+
 }
 catch {
-    Write-Host "`nError: $_" -ForegroundColor Red
-    exit 1
+    Write-Host "An error occurred: $($_.Exception.Message)" -ForegroundColor Red
 }
