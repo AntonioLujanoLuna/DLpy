@@ -348,8 +348,8 @@ class CosineSimilarityLoss(Function):
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         x1, x2 = ctx.saved_tensors
-        dim = ctx.saved_arguments["dim"]
-        eps = ctx.saved_arguments["eps"]
+        ctx.saved_arguments["dim"]
+        ctx.saved_arguments["eps"]
         reduction = ctx.saved_arguments["reduction"]
         x1_normalized = ctx.saved_arguments["x1_normalized"]
         x2_normalized = ctx.saved_arguments["x2_normalized"]
@@ -479,7 +479,7 @@ class FocalLoss(Function):
     @staticmethod
     def backward(ctx, grad_output: np.ndarray, grad_dict: Dict[int, np.ndarray]) -> None:
         predictions, targets = ctx.saved_tensors
-        alpha = ctx.saved_arguments["alpha"]
+        ctx.saved_arguments["alpha"]
         gamma = ctx.saved_arguments["gamma"]
         reduction = ctx.saved_arguments["reduction"]
         pt = ctx.saved_arguments["pt"]

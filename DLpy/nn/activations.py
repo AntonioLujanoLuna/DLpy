@@ -146,7 +146,7 @@ class GELUFunction(Function):
 
             # Compute derivative
             x_cubed = x.data**3
-            inner = sqrt_2_over_pi * (x.data + coeff * x_cubed)
+            sqrt_2_over_pi * (x.data + coeff * x_cubed)
 
             # d/dx[GELU(x)] = 0.5 * (1 + tanh(inner)) +
             #                 0.5x * (1 - tanh²(inner)) * sqrt(2/π) * (1 + 3 * 0.044715x²)

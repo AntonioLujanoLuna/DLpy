@@ -139,7 +139,7 @@ class TensorDecomposition:
             for the factor matrices in CP decomposition, each shaped (dim[mode], rank).
             """
             modes = len(self.shape)
-            arr = self.tensor.numpy()
+            self.tensor.numpy()
 
             if init_mode == "svd":
                 # Truncated SVD on each mode's unfolding

@@ -111,23 +111,10 @@ class AdaGrad(Optimizer):
             state["sum"] = np.full_like(group.data, initial_accumulator_value, dtype=np.float64)
 
     def state_dict(self) -> Dict:
-        """
-        Returns the state of the optimizer as a Dict.
-
-        The returned state dict contains two entries:
-            * state - a dict holding current optimization state. Its content
-                differs between optimizer classes.
-            * param_groups - a dict containing all parameter groups
-        """
+        """Returns the state of the optimizer as a Dict."""
         return {"state": self.state, "defaults": self.defaults}
 
     def load_state_dict(self, state_dict: Dict) -> None:
-        """
-        Loads the optimizer state.
-
-        Args:
-            state_dict (dict): Optimizer state. Should be an object returned
-                from a call to state_dict().
-        """
+        """Loads the optimizer state."""
         self.state = state_dict["state"]
         self.defaults = state_dict["defaults"]

@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from .optimizer import Optimizer
@@ -81,3 +80,12 @@ class SGD(Optimizer):
 
             # Store updated momentum buffer
             self.state[id(p)]["momentum_buffer"] = buf
+
+    def state_dict(self) -> Dict:
+        """Returns the state of the optimizer as a Dict."""
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict) -> None:
+        """Loads the optimizer state."""
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]

@@ -143,7 +143,7 @@ class AvgPool2dFunction(Function):
         (x,) = ctx.saved_tensors
         kernel_size = ctx.saved_arguments["kernel_size"]
         stride = ctx.saved_arguments["stride"]
-        padding = ctx.saved_arguments["padding"]
+        ctx.saved_arguments["padding"]
 
         if x.requires_grad:
             kH, kW = kernel_size

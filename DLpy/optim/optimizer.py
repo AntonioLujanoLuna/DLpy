@@ -51,20 +51,11 @@ class Optimizer:
                 self.state[id(param)] = {}
             self._params.append(param)
 
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state.
-
-        Args:
-            state_dict (dict): Optimizer state dict
-        """
-        self.state = state_dict["state"]
-
     def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a dict.
+        """Returns the state of the optimizer as a Dict."""
+        return {"state": self.state, "defaults": self.defaults}
 
-        Returns:
-            dict: The state of the optimizer
-        """
-        return {
-            "state": self.state,
-        }
+    def load_state_dict(self, state_dict: Dict) -> None:
+        """Loads the optimizer state."""
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]

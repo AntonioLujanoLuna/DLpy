@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from .optimizer import Optimizer
@@ -96,3 +95,12 @@ class Adam(Optimizer):
             state["exp_avg_sq"] = exp_avg_sq
             if self.defaults["amsgrad"]:
                 state["max_exp_avg_sq"] = max_exp_avg_sq
+
+    def state_dict(self) -> Dict:
+        """Returns the state of the optimizer as a Dict."""
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict) -> None:
+        """Loads the optimizer state."""
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]

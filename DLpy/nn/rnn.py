@@ -332,7 +332,7 @@ class LSTMCell(Module):
             gates = gates + self.bias_hh
 
         # Split into individual gates
-        chunk_size = gates.shape[-1] // 4
+        gates.shape[-1] // 4
         i, f, g, o = np.split(gates.data, 4, axis=-1)
 
         # Apply gate activations
@@ -402,7 +402,7 @@ class GRUCell(Module):
             gates_h = gates_h + self.bias_hh
 
         # Split into individual gates
-        chunk_size = gates_x.shape[-1] // 3
+        gates_x.shape[-1] // 3
         r_x, z_x, n_x = np.split(gates_x.data, 3, axis=-1)  # reset, update, new
         r_h, z_h, n_h = np.split(gates_h.data, 3, axis=-1)
 

@@ -66,11 +66,10 @@ class BatchNorm1d(Module):
         if self.training or not self.track_running_stats:
             mean = x.data.mean(axis=0)
             var = x.data.var(axis=0, ddof=0)
-            n = x.data.shape[0]
+            x.data.shape[0]
         else:
             mean = self.running_mean.data
             var = self.running_var.data
-            n = None
 
         # Update running stats if tracking
         if self.training and self.track_running_stats:
