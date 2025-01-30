@@ -35,4 +35,7 @@ Thumbs.db
 python_files_inventory.txt
 
 # For now
-*2_Optimizers.ipynb
+*2_Optmizers.ipynb
+*3_MLP
+*4_CNN
+*5_RNN_Transformers
