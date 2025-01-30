@@ -33,3 +33,6 @@ venv/
 Thumbs.db
 
 python_files_inventory.txt
+
+# For now
+*2_Optimizers.ipynb
