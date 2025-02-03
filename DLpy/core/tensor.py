@@ -2,7 +2,7 @@ from numbers import Number
 from typing import Any, Callable, List, Optional, Set, Tuple, Union
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import DTypeLike, NDArray
 
 
 class Tensor:
@@ -24,9 +24,9 @@ class Tensor:
 
     def __init__(
         self,
-        data: Union[NDArray[Any], List, Number],
+        data: Union[NDArray[Any], List[Any], Number],
         requires_grad: bool = False,
-        dtype: Optional[np.dtype] = None,
+        dtype: Optional[DTypeLike] = None,
     ):
         # Convert scalars to scalar arrays with shape ()
         if isinstance(data, (int, float)):
@@ -35,12 +35,14 @@ class Tensor:
             self.data = data.data
         elif isinstance(data, list):
             self.data = np.array(data, dtype=dtype)
+        if isinstance(data, (int, float)):
+            self.data = np.array(data, dtype=dtype) if dtype else np.array(data)
         else:
             self.data = data.astype(dtype) if dtype else data
 
         self.grad: Optional[NDArray[Any]] = None
         self._requires_grad = requires_grad
-        self._backward_fn: Optional[Callable] = None
+        self._backward_fn: Optional[Callable[[], None]] = None
         self._prev: Set["Tensor"] = set()
         self._is_leaf = True
 
@@ -55,20 +57,18 @@ class Tensor:
 
     @property
     def shape(self) -> Tuple[int, ...]:
-        """Returns the shape of the tensor."""
-        return self.data.shape
+        return tuple(int(x) for x in self.data.shape)
 
     @property
-    def dtype(self) -> np.dtype:
-        """Returns the data type of the tensor."""
-        return self.data.dtype
+    def dtype(self) -> np.dtype[Any]:
+        return np.dtype(self.data.dtype)
 
     @property
     def requires_grad(self) -> bool:
         """Returns whether the tensor requires gradient computation."""
         return self._requires_grad
 
-    def __getitem__(self, index) -> "Tensor":
+    def __getitem__(self, index: Union[int, slice, Tuple[Union[int, slice], ...]]) -> "Tensor":
         """Enable indexing for tensors."""
         return Tensor(self.data[index], requires_grad=self.requires_grad)
 
@@ -143,10 +143,15 @@ class Tensor:
         return MatMul.apply(self, other)
 
     def __neg__(self) -> "Tensor":
-        return self * (-1)
+        from ..ops.basic import Multiply
+
+        return Multiply.apply(self, Tensor(-1))
 
     def __sub__(self, other: Union["Tensor", Number]) -> "Tensor":
-        return self + (-other)
+        if isinstance(other, Tensor):
+            return self + (-other)
+        else:
+            return self + Tensor(-other)
 
     # Helper methods for numpy compatibility
     def numpy(self) -> NDArray[Any]:
@@ -209,13 +214,13 @@ class Tensor:
 
     def sigmoid(self) -> "Tensor":
         """Returns the sigmoid of the tensor."""
-        from ..ops import Sigmoid
+        from ..nn.activations import Sigmoid
 
         return Sigmoid.apply(self)
 
     def tanh(self) -> "Tensor":
         """Returns the hyperbolic tangent of the tensor."""
-        from ..ops import Tanh
+        from ..nn.activations import Tanh
 
         return Tanh.apply(self)
 

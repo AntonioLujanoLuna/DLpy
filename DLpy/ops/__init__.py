@@ -21,7 +21,7 @@ from .loss import (
 from .matrix import Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual, Transpose
 from .pooling import AvgPool2dFunction, MaxPool2dFunction
 from .power import Divide, Power
-from .reduction import Max, Mean, Sum
+from .reduction import Max, Min, Mean, Sum
 from .reshape import Reshape
 
 __all__ = [
@@ -42,6 +42,7 @@ __all__ = [
     "Sum",
     "Mean",
     "Max",
+    "Min",
     # Matrix operations
     "Transpose",
     # Comparison operations
