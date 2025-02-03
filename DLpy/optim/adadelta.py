@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -13,30 +14,75 @@ class AdaDelta(Optimizer):
     moving window of gradient updates, instead of accumulating all past squared gradients.
     The main advantage is that it doesn't need an initial learning rate.
 
+    It works by maintaining two running averages:
+    1. A running average of squared gradients (similar to RMSprop)
+    2. A running average of squared parameter updates
+
+    These averages allow AdaDelta to automatically adapt its learning rate for each parameter,
+    making it particularly useful when the optimal learning rate is hard to determine.
+
     Args:
-        params: Iterable of parameters to optimize
-        rho (float): Coefficient for computing a running average of squared gradients (default: 0.9)
-        eps (float): Term added to denominator to improve numerical stability (default: 1e-6)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
+        params: List or Iterator of parameters to optimize
+        rho: Coefficient for computing running averages (default: 0.9)
+        eps: Term added to denominator for numerical stability (default: 1e-6)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
     """
 
-    def __init__(self, params, rho: float = 0.9, eps: float = 1e-6, weight_decay: float = 0):
+    def __init__(
+        self,
+        params: Union[Iterator[Tensor], List[Tensor]],
+        rho: float = 0.9,
+        eps: float = 1e-6,
+        weight_decay: float = 0,
+    ) -> None:
+        # Validate input parameters with descriptive error messages
         if not 0.0 <= rho <= 1.0:
-            raise ValueError(f"Invalid rho value: {rho}")
+            raise ValueError(f"Invalid rho value: {rho}. Must be between 0 and 1")
         if not 0.0 <= eps:
-            raise ValueError(f"Invalid epsilon value: {eps}")
+            raise ValueError(f"Invalid epsilon value: {eps}. Must be non-negative")
         if not 0.0 <= weight_decay:
-            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+            raise ValueError(f"Invalid weight_decay value: {weight_decay}. Must be non-negative")
 
-        defaults = dict(rho=rho, eps=eps, weight_decay=weight_decay)
+        # Create defaults dictionary with explicit type annotation
+        # All values in this dictionary are floats
+        defaults: Dict[str, float] = dict(rho=rho, eps=eps, weight_decay=weight_decay)
         super().__init__(params, defaults)
 
-        # Initialize state for each parameter
+        # Initialize state for each parameter with proper typing
         for group in self._params:
             state = self.state[id(group)]
             state["step"] = 0
+            # Use float64 for better numerical precision in running averages
             state["square_avg"] = np.zeros_like(group.data, dtype=np.float64)  # E[g^2]
             state["acc_delta"] = np.zeros_like(group.data, dtype=np.float64)  # E[Δx^2]
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        The state dictionary contains:
+        - 'state': A dictionary mapping parameter IDs to their optimization state
+                  (including running averages of squared gradients and updates)
+        - 'defaults': The optimizer's hyperparameters (rho, epsilon, weight decay)
+
+        Returns:
+            A dictionary containing the complete optimizer state
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state from a dictionary.
+
+        This method enables saving and restoring optimizer state during training,
+        which is essential for checkpointing and resuming training sessions.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters.
+                       Must have 'state' and 'defaults' keys.
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """
@@ -84,12 +130,3 @@ class AdaDelta(Optimizer):
 
             # Apply update
             p.data -= update
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]

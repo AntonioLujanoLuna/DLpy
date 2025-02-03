@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -10,23 +11,23 @@ class SGD(Optimizer):
     Implements stochastic gradient descent with momentum.
 
     Args:
-        params: Iterable of parameters to optimize
-        lr (float): Learning rate (default: 0.1)
-        momentum (float): Momentum factor (default: 0)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
-        dampening (float): Dampening for momentum (default: 0)
-        nesterov (bool): Enables Nesterov momentum (default: False)
+        params: List or Iterator of parameters to optimize
+        lr: Learning rate (default: 0.1)
+        momentum: Momentum factor (default: 0)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
+        dampening: Dampening for momentum (default: 0)
+        nesterov: Enables Nesterov momentum (default: False)
     """
 
     def __init__(
         self,
-        params,
+        params: Union[Iterator[Tensor], List[Tensor]],
         lr: float = 0.1,
         momentum: float = 0.0,
         weight_decay: float = 0.0,
         dampening: float = 0.0,
         nesterov: bool = False,
-    ):
+    ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if momentum < 0.0:
@@ -34,7 +35,7 @@ class SGD(Optimizer):
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
-        defaults = dict(
+        defaults: Dict[str, Union[float, bool]] = dict(
             lr=lr,
             momentum=momentum,
             weight_decay=weight_decay,
@@ -42,6 +43,26 @@ class SGD(Optimizer):
             nesterov=nesterov,
         )
         super().__init__(params, defaults)
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        Returns a dictionary containing:
+        - 'state': Dict mapping parameter IDs to their optimization state
+        - 'defaults': Dict of optimizer hyperparameters
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """Performs a single optimization step."""
@@ -82,12 +103,3 @@ class SGD(Optimizer):
 
             # Store updated momentum buffer
             self.state[id(p)]["momentum_buffer"] = buf
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]

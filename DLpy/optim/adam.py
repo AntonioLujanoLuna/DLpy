@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Tuple, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -9,25 +10,31 @@ class Adam(Optimizer):
     """
     Implements Adam algorithm.
 
+    The Adam optimizer combines ideas from RMSprop and momentum optimization:
+    - It uses exponential moving averages of gradients (like momentum)
+    - It uses exponential moving averages of squared gradients (like RMSprop)
+    - It includes bias correction for more accurate initial steps
+
     Args:
-        params: Iterable of parameters to optimize
-        lr (float): Learning rate (default: 0.001)
-        betas (tuple): Coefficients for computing running averages of gradient and its square
+        params: List or Iterator of parameters to optimize
+        lr: Learning rate (default: 0.001)
+        betas: Coefficients for computing running averages of gradient and its square
             (default: (0.9, 0.999))
-        eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
-        amsgrad (bool): Whether to use the AMSGrad variant (default: False)
+        eps: Term added to denominator to improve numerical stability (default: 1e-8)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
+        amsgrad: Whether to use the AMSGrad variant (default: False)
     """
 
     def __init__(
         self,
-        params,
+        params: Union[Iterator[Tensor], List[Tensor]],
         lr: float = 0.001,
-        betas: tuple = (0.9, 0.999),
+        betas: Tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,
         weight_decay: float = 0,
         amsgrad: bool = False,
-    ):
+    ) -> None:
+        # Input validation with descriptive error messages
         if not 0.0 <= lr:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= eps:
@@ -39,8 +46,40 @@ class Adam(Optimizer):
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad)
+        # Create defaults dictionary with explicit type annotation
+        # Note that values can be float, tuple of floats, or boolean
+        defaults: Dict[str, Union[float, Tuple[float, float], bool]] = dict(
+            lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad
+        )
         super().__init__(params, defaults)
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        The state dictionary contains:
+        - 'state': A dictionary mapping parameter IDs to their optimization state
+                  (including momentum and adaptive learning rate information)
+        - 'defaults': The optimizer's hyperparameters
+
+        Returns:
+            A dictionary containing the complete optimizer state
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state from a dictionary.
+
+        This method allows saving and restoring optimizer state during training,
+        which is useful for checkpointing or resuming training.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters.
+                       Must have 'state' and 'defaults' keys.
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """Performs a single optimization step."""
@@ -97,12 +136,3 @@ class Adam(Optimizer):
             state["exp_avg_sq"] = exp_avg_sq
             if self.defaults["amsgrad"]:
                 state["max_exp_avg_sq"] = max_exp_avg_sq
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]

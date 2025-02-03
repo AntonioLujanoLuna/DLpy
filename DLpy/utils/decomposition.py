@@ -108,7 +108,7 @@ class TensorDecomposition:
 
                 # Check reconstruction error
                 reconstructed = self.reconstruct_cp(factors).numpy()
-                error = np.linalg.norm(reconstructed - tensor_data)
+                error = float(np.linalg.norm(reconstructed - tensor_data))
 
                 if prev_error is not None and np.isfinite(error) and np.isfinite(prev_error):
                     rel_change = abs(error - prev_error) / (max(abs(prev_error), 1e-12) + 1e-12)
@@ -405,18 +405,15 @@ class TensorDecomposition:
         return result
 
     def _converged(self, current: List[Tensor], previous: List[Tensor], tol: float) -> bool:
-        """
-        Check convergence of ALS iterations with improved metric.
-        """
-        # Compute relative change in factors
         changes = []
         for curr, prev in zip(current, previous):
             curr_norm = np.linalg.norm(curr.numpy())
             prev_norm = np.linalg.norm(prev.numpy())
             if prev_norm == 0:
-                changes.append(curr_norm > tol)
+                changes.append(bool(curr_norm > tol))
             else:
-                changes.append(np.linalg.norm(curr.numpy() - prev.numpy()) / prev_norm)
+                relative_change = np.linalg.norm(curr.numpy() - prev.numpy()) / prev_norm
+                changes.append(bool(relative_change < tol))  # Compare with tolerance to get boolean
 
         return all(change < tol for change in changes)
 

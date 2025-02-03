@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -10,26 +11,29 @@ class AdaGrad(Optimizer):
     Implements AdaGrad algorithm.
 
     AdaGrad is an optimizer with parameter-specific learning rates,
-    which are adapted based on historical gradient information.
+    which are adapted based on historical gradient information. It performs
+    smaller updates for frequently occurring features and larger updates
+    for infrequent ones.
 
     Args:
-        params: Iterable of parameters to optimize
-        lr (float): Learning rate (default: 1e-2)
-        lr_decay (float): Learning rate decay (default: 0)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
-        eps (float): Term added to denominator to improve numerical stability (default: 1e-10)
-        initial_accumulator_value (float): Initial value for accumulator (default: 0)
+        params: List or Iterator of parameters to optimize
+        lr: Learning rate (default: 1e-2)
+        lr_decay: Learning rate decay (default: 0)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
+        eps: Term added to denominator to improve numerical stability (default: 1e-10)
+        initial_accumulator_value: Initial value for accumulator (default: 0)
     """
 
     def __init__(
         self,
-        params,
+        params: Union[Iterator[Tensor], List[Tensor]],
         lr: float = 1e-2,
         lr_decay: float = 0,
         weight_decay: float = 0,
         initial_accumulator_value: float = 0,
         eps: float = 1e-10,
-    ):
+    ) -> None:
+        # Input validation with descriptive error messages
         if not 0.0 <= lr:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= lr_decay:
@@ -43,7 +47,9 @@ class AdaGrad(Optimizer):
         if not 0.0 <= eps:
             raise ValueError(f"Invalid epsilon value: {eps}")
 
-        defaults = dict(
+        # Create defaults dictionary with explicit type annotation
+        # All values in this dictionary are floats
+        defaults: Dict[str, float] = dict(
             lr=lr,
             lr_decay=lr_decay,
             eps=eps,
@@ -52,10 +58,40 @@ class AdaGrad(Optimizer):
         )
         super().__init__(params, defaults)
 
+        # Initialize state for each parameter
         for group in self._params:
             state = self.state[id(group)]
             state["step"] = 0
+            # Use np.float64 for better numerical precision in accumulator
             state["sum"] = np.full_like(group.data, initial_accumulator_value, dtype=np.float64)
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        The state dictionary contains:
+        - 'state': A dictionary mapping parameter IDs to their optimization state
+                  (including step counts and accumulated squared gradients)
+        - 'defaults': The optimizer's hyperparameters
+
+        Returns:
+            A dictionary containing the complete optimizer state
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state from a dictionary.
+
+        This method allows saving and restoring optimizer state during training,
+        which is useful for checkpointing or resuming training.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters.
+                       Must have 'state' and 'defaults' keys.
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """
@@ -109,12 +145,3 @@ class AdaGrad(Optimizer):
             state = self.state[id(group)]
             state["step"] = 0
             state["sum"] = np.full_like(group.data, initial_accumulator_value, dtype=np.float64)
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]

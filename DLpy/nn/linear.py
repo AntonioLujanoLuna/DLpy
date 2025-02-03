@@ -16,7 +16,7 @@ class Linear(Module):
         bias: If set to False, the layer will not learn an additive bias
     """
 
-    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+    def __init__(self, in_features: int, out_features: int, has_bias: bool = True):
         super().__init__()
 
         self.in_features = in_features
@@ -29,9 +29,9 @@ class Linear(Module):
         )
         self.register_parameter("weight", weight)
 
-        if bias:
-            bias = Tensor(np.zeros(out_features), requires_grad=True)
-            self.register_parameter("bias", bias)
+        if has_bias:  # Changed variable name to avoid conflict
+            bias_tensor = Tensor(np.zeros(out_features), requires_grad=True)
+            self.register_parameter("bias", bias_tensor)
         else:
             self.register_parameter("bias", None)
 
@@ -42,7 +42,12 @@ class Linear(Module):
 
 class LinearFunction(Function):
     @staticmethod
-    def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        ctx: Any,  # Type hint for context
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor] = None,
+    ) -> Tensor:
         # Save tensors needed for backward pass
         ctx.save_for_backward(input, weight, bias)
 
@@ -54,7 +59,11 @@ class LinearFunction(Function):
         return Tensor(output)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Any,  # Type hint for context
+        grad_output: NDArray[Any],
+        grad_dict: Dict[int, NDArray[Any]],
+    ) -> None:
         input, weight, bias = ctx.saved_tensors
 
         if input.requires_grad:

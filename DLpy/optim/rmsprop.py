@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -10,25 +11,26 @@ class RMSprop(Optimizer):
     Implements RMSprop algorithm.
 
     Args:
-        params: Iterable of parameters to optimize
-        lr (float): Learning rate (default: 0.01)
-        alpha (float): Smoothing constant (default: 0.99)
-        eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
-        momentum (float): Momentum factor (default: 0)
-        centered (bool): If True, compute centered RMSprop, gradients normalized by their variance
+        params: List or Iterator of parameters to optimize
+        lr: Learning rate (default: 0.01)
+        alpha: Smoothing constant (default: 0.99)
+        eps: Term added to denominator for numerical stability (default: 1e-8)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
+        momentum: Momentum factor (default: 0)
+        centered: If True, compute centered RMSprop with variance-normalized gradients
     """
 
     def __init__(
         self,
-        params,
+        params: Union[Iterator[Tensor], List[Tensor]],
         lr: float = 0.01,
         alpha: float = 0.99,
         eps: float = 1e-8,
         weight_decay: float = 0,
         momentum: float = 0,
         centered: bool = False,
-    ):
+    ) -> None:
+        # Parameter validation remains the same
         if not 0.0 <= lr:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= eps:
@@ -40,7 +42,8 @@ class RMSprop(Optimizer):
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
-        defaults = dict(
+        # Create defaults dictionary with explicit type annotation
+        defaults: Dict[str, Union[float, bool]] = dict(
             lr=lr,
             alpha=alpha,
             eps=eps,
@@ -49,6 +52,28 @@ class RMSprop(Optimizer):
             centered=centered,
         )
         super().__init__(params, defaults)
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        Returns:
+            A dictionary containing:
+                - 'state': Dict mapping parameter IDs to their optimization state
+                - 'defaults': Dict of optimizer hyperparameters
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters.
+                       Should have 'state' and 'defaults' keys.
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """Performs a single optimization step."""
@@ -98,12 +123,3 @@ class RMSprop(Optimizer):
 
             # Save state
             state["square_avg"] = square_avg
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]

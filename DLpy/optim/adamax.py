@@ -1,7 +1,8 @@
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Tuple, Union
 
 import numpy as np
 
+from ..core import Tensor
 from .optimizer import Optimizer
 
 
@@ -13,21 +14,22 @@ class AdaMax(Optimizer):
     It tends to be more stable than Adam in some cases.
 
     Args:
-        params: Iterable of parameters to optimize
-        lr (float): Learning rate (default: 0.002)
-        betas (tuple): Coefficients for computing running averages (default: (0.9, 0.999))
-        eps (float): Term added to denominator to improve numerical stability (default: 1e-8)
-        weight_decay (float): Weight decay (L2 penalty) (default: 0)
+        params: List or Iterator of parameters to optimize
+        lr: Learning rate (default: 0.002)
+        betas: Coefficients for computing running averages (default: (0.9, 0.999))
+        eps: Term added to denominator to improve numerical stability (default: 1e-8)
+        weight_decay: Weight decay (L2 penalty) (default: 0)
     """
 
     def __init__(
         self,
-        params,
+        params: Union[Iterator[Tensor], List[Tensor]],
         lr: float = 0.002,
-        betas: tuple = (0.9, 0.999),
+        betas: Tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,
         weight_decay: float = 0,
-    ):
+    ) -> None:
+        # Validate input parameters
         if not 0.0 <= lr:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= eps:
@@ -39,15 +41,41 @@ class AdaMax(Optimizer):
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        # Create defaults dictionary with explicit type annotation
+        defaults: Dict[str, Union[float, Tuple[float, float]]] = dict(
+            lr=lr, betas=betas, eps=eps, weight_decay=weight_decay
+        )
         super().__init__(params, defaults)
 
         # Initialize state for each parameter
         for group in self._params:
             state = self.state[id(group)]
             state["step"] = 0
+            # Note: we explicitly specify dtype for numerical stability
             state["exp_avg"] = np.zeros_like(group.data, dtype=np.float64)  # m_t
             state["exp_inf"] = np.zeros_like(group.data, dtype=np.float64)  # u_t
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Returns the state of the optimizer as a Dict.
+
+        Returns:
+            A dictionary containing optimizer state and default parameters:
+                - 'state': Dict mapping parameter IDs to their optimization state
+                - 'defaults': Dict of optimizer hyperparameters
+        """
+        return {"state": self.state, "defaults": self.defaults}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Loads the optimizer state.
+
+        Args:
+            state_dict: Dictionary containing optimizer state and parameters.
+                       Should have 'state' and 'defaults' keys.
+        """
+        self.state = state_dict["state"]
+        self.defaults = state_dict["defaults"]
 
     def step(self) -> None:
         """
@@ -95,12 +123,3 @@ class AdaMax(Optimizer):
 
             # Update parameters
             p.data -= step_size * exp_avg / (exp_inf + eps)
-
-    def state_dict(self) -> Dict:
-        """Returns the state of the optimizer as a Dict."""
-        return {"state": self.state, "defaults": self.defaults}
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        """Loads the optimizer state."""
-        self.state = state_dict["state"]
-        self.defaults = state_dict["defaults"]
