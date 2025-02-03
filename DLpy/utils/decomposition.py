@@ -1,44 +1,9 @@
-# DLpy/utils/decomposition.py
-
-# DLpy/utils/decomposition.py
 from typing import Any, List, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..core import Tensor
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
-
-
-# DLpy/utils/decomposition.py
 
 
 class TensorDecomposition:

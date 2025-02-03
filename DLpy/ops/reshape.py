@@ -1,42 +1,9 @@
-# DLpy/ops/reshape.py
-
-# DLpy/ops/reshape.py
-# DLpy/ops/reshape.py
 from typing import Any, Dict
 
 from numpy.typing import NDArray
 
 from ..core.function import Function
 from ..core.tensor import Tensor
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
-
-
-# DLpy/ops/reshape.py
 
 
 class Reshape(Function):

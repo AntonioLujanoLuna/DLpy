@@ -1,6 +1,3 @@
-# dataloader.py
-
-# dataloader.py
 from typing import Any, Callable, Iterator, Optional, Sequence
 
 import numpy as np
@@ -9,38 +6,6 @@ from DLpy.core.tensor import Tensor
 
 from .dataset import Dataset
 from .samplers import RandomSampler, Sampler, SequentialSampler
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
-
-
-# dataloader.py
 
 
 class DataLoader:

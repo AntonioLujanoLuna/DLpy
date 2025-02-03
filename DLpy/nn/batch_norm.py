@@ -1,44 +1,6 @@
-# batch_norm.py
-
-
 import numpy as np
 
 from ..core import Module, Tensor
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
-
-
-# batch_norm.py
 
 
 class BatchNorm1d(Module):

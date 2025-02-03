@@ -1,43 +1,8 @@
-# layer_norm.py
-
-# layer_norm.py
 from typing import List
 
 import numpy as np
 
 from ..core import Module, Tensor
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
-
-
-# layer_norm.py
 
 
 class LayerNorm(Module):
