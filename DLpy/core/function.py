@@ -153,7 +153,7 @@ class Function(ABC):
         # Compare gradients
         for analytical, numerical in zip(analytical_grads, numerical_grads):
             if analytical is not None:
-                rel_error = np.max(
+                rel_error: float = np.max(
                     np.abs(analytical - numerical)
                     / (np.maximum(np.abs(analytical), np.abs(numerical)) + epsilon)
                 )

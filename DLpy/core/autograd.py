@@ -44,7 +44,7 @@ class AutogradEngine:
     graph manipulation and visualization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._nodes: Dict[int, Node] = {}
         self._edges: Set[Edge] = set()
         self._currently_computing_gradients = False

@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 from numpy.typing import NDArray
 
@@ -15,8 +15,12 @@ class Module:
     a tree structure.
     """
 
-    def __init__(self):
-        """Initialize the module."""
+    def __init__(self) -> None:
+        """Initialize the module.
+
+        Sets up the initial state of the module with empty OrderedDict containers
+        for parameters, buffers, and submodules.
+        """
         # First set these directly to avoid triggering __setattr__
         object.__setattr__(self, "training", True)
         object.__setattr__(self, "_parameters", OrderedDict())
@@ -116,9 +120,13 @@ class Module:
             if module is not None:
                 yield from module.parameters()
 
-    def named_parameters(self) -> Iterator[tuple[str, Tensor]]:
+    def named_parameters(self) -> Iterator[Tuple[str, Tensor]]:
         """Returns an iterator over module parameters, yielding both the
-        name of the parameter as well as the parameter itself."""
+        name of the parameter as well as the parameter itself.
+
+        Returns:
+            Iterator yielding tuples of (parameter_name, parameter_tensor)
+        """
         for name, param in self._parameters.items():
             if param is not None:
                 yield name, param
@@ -139,15 +147,47 @@ class Module:
         """Sets the module in evaluation mode."""
         return self.train(False)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Makes the module callable like a function.
+
+        Args:
+            *args: Variable positional arguments passed to forward
+            **kwargs: Variable keyword arguments passed to forward
+
+        Returns:
+            The output of the forward pass
+        """
         return self.forward(*args, **kwargs)
 
-    def forward(self, *args, **kwargs):
-        """Define the computation performed at every call."""
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Define the computation performed at every call.
+
+        This method should be overridden by all subclasses.
+
+        Args:
+            *args: Variable positional arguments
+            **kwargs: Variable keyword arguments
+
+        Returns:
+            The output of the forward computation
+
+        Raises:
+            NotImplementedError: If not overridden by subclass
+        """
         raise NotImplementedError
 
-    def __repr__(self):
-        """Returns a string representation of the module."""
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the module.
+
+        The representation includes the module name, extra representation string,
+        and nested representation of child modules.
+
+        Returns:
+            A formatted string representing the module structure
+        """
         extra_lines = []
         extra_repr = self.extra_repr()
         if extra_repr:

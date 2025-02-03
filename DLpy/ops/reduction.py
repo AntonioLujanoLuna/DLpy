@@ -3,12 +3,17 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Function, Tensor
+from ..core import Context, Function, Tensor
 
 
 class Sum(Function):
     @staticmethod
-    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+    def forward(
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        axis: Optional[Union[int, Tuple[int, ...]]] = None,
+        keepdims: bool = False,
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -18,7 +23,9 @@ class Sum(Function):
         return Tensor(np.sum(x.data, axis=axis, keepdims=keepdims))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -36,7 +43,12 @@ class Sum(Function):
 
 class Mean(Function):
     @staticmethod
-    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+    def forward(
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        axis: Optional[Union[int, Tuple[int, ...]]] = None,
+        keepdims: bool = False,
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -46,7 +58,9 @@ class Mean(Function):
         return Tensor(np.mean(x.data, axis=axis, keepdims=keepdims))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -70,7 +84,12 @@ class Mean(Function):
 
 class Max(Function):
     @staticmethod
-    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+    def forward(
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        axis: Optional[Union[int, Tuple[int, ...]]] = None,
+        keepdims: bool = False,
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -84,7 +103,9 @@ class Max(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]
@@ -107,7 +128,12 @@ class Max(Function):
 
 class Min(Function):
     @staticmethod
-    def forward(ctx, x, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False):
+    def forward(
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        axis: Optional[Union[int, Tuple[int, ...]]] = None,
+        keepdims: bool = False,
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -123,7 +149,9 @@ class Min(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         axis = ctx.saved_arguments["axis"]
         keepdims = ctx.saved_arguments["keepdims"]

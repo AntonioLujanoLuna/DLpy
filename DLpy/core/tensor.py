@@ -1,5 +1,5 @@
 from numbers import Number
-from typing import Any, Callable, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, overload
 
 import numpy as np
 from numpy.typing import DTypeLike, NDArray
@@ -37,12 +37,15 @@ class Tensor:
             self.data = np.array(data, dtype=dtype)
         if isinstance(data, (int, float)):
             self.data = np.array(data, dtype=dtype) if dtype else np.array(data)
-        else:
+        if isinstance(data, np.ndarray):
             self.data = data.astype(dtype) if dtype else data
+        else:
+            self.data = np.array(data, dtype=dtype)
 
         self.grad: Optional[NDArray[Any]] = None
         self._requires_grad = requires_grad
-        self._backward_fn: Optional[Callable[[], None]] = None
+        self._backward_fn: Optional[Callable[[NDArray[Any], Dict[int, NDArray[Any]]], None]] = None
+
         self._prev: Set["Tensor"] = set()
         self._is_leaf = True
 
@@ -60,8 +63,8 @@ class Tensor:
         return tuple(int(x) for x in self.data.shape)
 
     @property
-    def dtype(self) -> np.dtype[Any]:
-        return np.dtype(self.data.dtype)
+    def dtype(self) -> np.dtype[np.float64]:
+        return np.dtype("float64")
 
     @property
     def requires_grad(self) -> bool:
@@ -148,10 +151,14 @@ class Tensor:
         return Multiply.apply(self, Tensor(-1))
 
     def __sub__(self, other: Union["Tensor", Number]) -> "Tensor":
-        if isinstance(other, Tensor):
+        if isinstance(other, (int, float)):  # Only handle concrete numeric types
+            return self + Tensor(-other)  # No need for float() conversion
+        elif isinstance(other, complex):
+            raise TypeError("Cannot convert complex number to tensor")
+        elif isinstance(other, Tensor):
             return self + (-other)
         else:
-            return self + Tensor(-other)
+            raise TypeError(f"Cannot subtract {type(other).__name__} from Tensor")
 
     # Helper methods for numpy compatibility
     def numpy(self) -> NDArray[Any]:
@@ -213,16 +220,14 @@ class Tensor:
         return Softmax.apply(self, dim)
 
     def sigmoid(self) -> "Tensor":
-        """Returns the sigmoid of the tensor."""
-        from ..nn.activations import Sigmoid
+        from ..nn.activations import SigmoidFunction
 
-        return Sigmoid.apply(self)
+        return SigmoidFunction.apply(self)
 
     def tanh(self) -> "Tensor":
-        """Returns the hyperbolic tangent of the tensor."""
-        from ..nn.activations import Tanh
+        from ..nn.activations import TanhFunction
 
-        return Tanh.apply(self)
+        return TanhFunction.apply(self)
 
     def clip(self, min_val: Union[float, int], max_val: Union[float, int]) -> "Tensor":
         """Clips tensor values between minimum and maximum."""
@@ -295,15 +300,28 @@ class Tensor:
 
         return LessEqual.apply(self, other)
 
-    def __eq__(self, other: Union["Tensor", float]) -> "Tensor":
-        from ..ops import Equal
+    @overload
+    def __eq__(self, other: Union["Tensor", float]) -> "Tensor": ...
+    @overload
+    def __eq__(self, other: Any) -> bool: ...  # Use Any instead of object for the fallback case
 
-        return Equal.apply(self, other)
+    def __eq__(self, other: Any) -> Union["Tensor", bool]:
+        if isinstance(other, (Tensor, float)):
+            from ..ops import Equal
 
-    def __ne__(self, other: Union["Tensor", float]) -> "Tensor":
-        from ..ops import NotEqual
+            return Equal.apply(self, other)
+        return NotImplemented
 
-        return NotEqual.apply(self, other)
+    def __ne__(self, other: Any) -> Any:  # Use Any for maximum flexibility
+        """
+        Implements != operator for tensors. Returns a new tensor for tensor operations,
+        and delegates to Python's default behavior for non-tensor types.
+        """
+        if isinstance(other, (Tensor, float)):
+            from ..ops import NotEqual
+
+            return NotEqual.apply(self, other)
+        return NotImplemented
 
     def __truediv__(self, other: Union["Tensor", float]) -> "Tensor":
         """Implements division using the / operator."""

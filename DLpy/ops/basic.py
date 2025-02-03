@@ -1,15 +1,18 @@
-from typing import Any, Dict
+from typing import Any, Dict, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ..core.context import Context
 from ..core.function import Function
 from ..core.tensor import Tensor
 
 
 class Add(Function):
     @staticmethod
-    def forward(ctx, a, b):
+    def forward(
+        ctx: Context, a: Union[Tensor, NDArray[Any]], b: Union[Tensor, NDArray[Any]]
+    ) -> Tensor:
         if not isinstance(a, Tensor):
             a = Tensor(a)
         if not isinstance(b, Tensor):
@@ -39,7 +42,9 @@ class Add(Function):
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -48,7 +53,7 @@ class Add(Function):
             if id(a) not in grad_dict or grad_dict[id(a)] is None:
                 grad_dict[id(a)] = grad_a
             else:
-                grad_dict[id(a)] += grad_a  # Accumulate gradients
+                grad_dict[id(a)] += grad_a
 
         if b.requires_grad:
             grad_b = grad_output
@@ -59,15 +64,22 @@ class Add(Function):
                 grad_dict[id(b)] += grad_b  # Accumulate gradients
 
     @staticmethod
-    def _reduce_grad(grad, target_shape):
+    def _reduce_grad(
+        grad: NDArray[Any], target_shape: Union[Tuple[int, ...], NDArray[Any]]
+    ) -> NDArray[Any]:
         """
         Reduces the gradient to match the target shape by summing over broadcasted dimensions.
+
+        Args:
+            grad: The gradient to be reduced
+            target_shape: The desired shape of the output gradient
+
+        Returns:
+            The reduced gradient with the target shape
         """
-        # Convert target_shape to a tuple if it's not
         if not isinstance(target_shape, tuple):
             target_shape = tuple(target_shape)
 
-        # Align the dimensions by prepending 1s if necessary
         grad_shape = grad.shape
         target_shape = (1,) * (len(grad_shape) - len(target_shape)) + target_shape
         for axis, (grad_dim, target_dim) in enumerate(zip(grad_shape, target_shape)):
@@ -78,7 +90,9 @@ class Add(Function):
 
 class Multiply(Function):
     @staticmethod
-    def forward(ctx, a, b):
+    def forward(
+        ctx: Context, a: Union[Tensor, NDArray[Any]], b: Union[Tensor, NDArray[Any]]
+    ) -> Tensor:
         if not isinstance(a, Tensor):
             a = Tensor(a)
         if not isinstance(b, Tensor):
@@ -99,7 +113,9 @@ class Multiply(Function):
             raise ValueError(f"Cannot broadcast shape {shape_a} with {shape_b}")
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -119,7 +135,9 @@ class Multiply(Function):
                 grad_dict[id(b)] += grad_b  # Accumulate gradients
 
     @staticmethod
-    def _reduce_grad(grad, target_shape):
+    def _reduce_grad(
+        grad: NDArray[Any], target_shape: Union[Tuple[int, ...], NDArray[Any]]
+    ) -> NDArray[Any]:
         """
         Reduces the gradient to match the target shape by summing over broadcasted dimensions.
         """
@@ -140,7 +158,9 @@ class MatMul(Function):
     """Matrix multiplication operation with support for batched operations."""
 
     @staticmethod
-    def forward(ctx, a, b):
+    def forward(
+        ctx: Context, a: Union[Tensor, NDArray[Any]], b: Union[Tensor, NDArray[Any]]
+    ) -> Tensor:
         if not isinstance(a, Tensor):
             a = Tensor(a)
         if not isinstance(b, Tensor):
@@ -150,7 +170,9 @@ class MatMul(Function):
         return Tensor(np.matmul(a.data, b.data))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         a, b = ctx.saved_tensors
 
         if a.requires_grad:
@@ -194,7 +216,7 @@ class Softmax(Function):
     """Softmax activation function operation."""
 
     @staticmethod
-    def forward(ctx, x, dim=-1):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]], dim: int = -1) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -209,18 +231,20 @@ class Softmax(Function):
 
         # Save inputs and outputs for backward pass
         ctx.save_for_backward(x, Tensor(softmax_out))
-        ctx.dim = dim  # Save dim as a regular integer
+        # Use save_arguments instead of direct attribute assignment
+        ctx.save_arguments(dim=dim)
 
         return Tensor(softmax_out)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         x, softmax_out = ctx.saved_tensors
-        dim = ctx.dim  # Get dim from context as regular integer
+        # Get dim from saved arguments
+        dim = ctx.saved_arguments["dim"]
 
         if x.requires_grad:
-            # Gradient of softmax:
-            # dsoftmax_i/dx_j = softmax_i * (1{i=j} - softmax_j)
             grad_x = softmax_out.data * (
                 grad_output - np.sum(grad_output * softmax_out.data, axis=dim, keepdims=True)
             )
@@ -235,22 +259,31 @@ class Clip(Function):
     """Clips tensor values between minimum and maximum."""
 
     @staticmethod
-    def forward(ctx, x, min_val, max_val):
+    def forward(
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        min_val: Union[float, int],
+        max_val: Union[float, int],
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
         # Save input and clip values for backward pass
         ctx.save_for_backward(x)
-        ctx.min_val = min_val
-        ctx.max_val = max_val
+        # Use save_arguments instead of direct attribute assignment
+        ctx.save_arguments(min_val=min_val, max_val=max_val)
 
         return Tensor(np.clip(x.data, min_val, max_val))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
-        min_val = ctx.min_val
-        max_val = ctx.max_val
+        # Get min_val and max_val from saved arguments
+        saved_args = ctx.saved_arguments
+        min_val = saved_args["min_val"]
+        max_val = saved_args["max_val"]
 
         if x.requires_grad:
             # Gradient is zero where input was clipped
@@ -259,4 +292,4 @@ class Clip(Function):
             if id(x) not in grad_dict:
                 grad_dict[id(x)] = grad
             else:
-                grad_dict[id(x)] += grad  # Accumulate gradients
+                grad_dict[id(x)] += grad
