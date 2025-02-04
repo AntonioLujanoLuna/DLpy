@@ -75,7 +75,9 @@ class AutogradEngine:
         dst_node.in_edges.append(edge)
         self._edges.add(edge)
 
-    def backward(self, tensor: "Tensor", gradient: Optional[NDArray[Any]] = None) -> None:
+    def backward(
+        self, tensor: "Tensor", gradient: Optional[NDArray[Any]] = None
+    ) -> None:
         """Executes backward pass starting from the given tensor."""
         if self._currently_computing_gradients:
             raise RuntimeError("Nested gradient computation detected")
@@ -117,7 +119,9 @@ class AutogradEngine:
                             node.tensor.grad += current_grad
                         except ValueError:
                             # If shapes don't match, reshape current_grad
-                            node.tensor.grad += current_grad.reshape(node.tensor.grad.shape)
+                            node.tensor.grad += current_grad.reshape(
+                                node.tensor.grad.shape
+                            )
         finally:
             self._currently_computing_gradients = False
 
@@ -197,7 +201,9 @@ class AutogradEngine:
 
         # Add appropriate warnings
         if unconnected_nodes:
-            warnings.append(f"Found {len(unconnected_nodes)} nodes not connected to any output")
+            warnings.append(
+                f"Found {len(unconnected_nodes)} nodes not connected to any output"
+            )
 
         if isolated_nodes:
             warnings.append(f"Found {len(isolated_nodes)} isolated nodes")
@@ -209,7 +215,9 @@ class AutogradEngine:
                 grad_shape = edge.grad.shape
                 if src_shape != grad_shape:
                     warnings.append(
-                        f"Gradient shape mismatch: grad shape {grad_shape} vs tensor shape {src_shape}"
+                        f"Gradient shape mismatch: "
+                        f"grad shape {grad_shape} "
+                        f"vs tensor shape {src_shape}"
                     )
 
         return warnings

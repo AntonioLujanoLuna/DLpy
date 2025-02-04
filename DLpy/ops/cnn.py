@@ -36,9 +36,13 @@ def _validate_conv_params(
 
     # Validate groups configuration
     if C_in % groups != 0:
-        raise ValueError(f"Input channels ({C_in}) must be divisible by groups ({groups})")
+        raise ValueError(
+            f"Input channels ({C_in}) must be divisible by groups ({groups})"
+        )
     if C_out % groups != 0:
-        raise ValueError(f"Output channels ({C_out}) must be divisible by groups ({groups})")
+        raise ValueError(
+            f"Output channels ({C_out}) must be divisible by groups ({groups})"
+        )
 
     # Validate kernel dimensions
     if kH <= 0 or kW <= 0:
@@ -61,7 +65,8 @@ def _validate_conv_params(
         # - C_in from x should match C_in_per_group * groups from weight
         if C_in_per_group != C_in // groups:
             raise ValueError(
-                f"For transposed conv, expected {C_in // groups} input channels per group, "
+                f"For transposed conv, expected {C_in // groups} "
+                "input channels per group, "
                 f"got {C_in_per_group}"
             )
 
@@ -70,21 +75,25 @@ def _validate_conv_params(
         W_out = (W - 1) * stride[1] - 2 * padding[1] + kW
         if H_out <= 0 or W_out <= 0:
             raise ValueError(
-                f"Transposed conv output size would be negative or zero: ({H_out}, {W_out})"
+                "Transposed conv output size would be negative or "
+                f"zero: ({H_out}, {W_out})"
             )
 
     else:  # Standard and deformable validation
         # Validate channels per group
         if C_in_per_group != C_in // groups:
             raise ValueError(
-                f"Expected {C_in // groups} input channels per group, got {C_in_per_group}"
+                f"Expected {C_in // groups} input channels per group, "
+                f"got {C_in_per_group}"
             )
 
         # Calculate and validate output size
         H_out = ((H + 2 * padding[0] - dilation[0] * (kH - 1) - 1) // stride[0]) + 1
         W_out = ((W + 2 * padding[1] - dilation[1] * (kW - 1) - 1) // stride[1]) + 1
         if H_out <= 0 or W_out <= 0:
-            raise ValueError(f"Conv output size would be negative or zero: ({H_out}, {W_out})")
+            raise ValueError(
+                f"Conv output size would be negative or zero: ({H_out}, {W_out})"
+            )
 
     if mode == ConvMode.DEFORMABLE:
         # Validate offset tensor presence and shape
@@ -101,13 +110,17 @@ def _validate_conv_params(
         # Validate offset tensor shape
         expected_offset_shape = (N, 2 * kH * kW, H_out, W_out)
         if offset.shape != expected_offset_shape:
-            raise ValueError(f"Expected offset shape {expected_offset_shape}, got {offset.shape}")
+            raise ValueError(
+                f"Expected offset shape {expected_offset_shape}, got {offset.shape}"
+            )
 
         # Validate mask tensor if present
         if mask is not None:
             expected_mask_shape = (N, kH * kW, H_out, W_out)
             if mask.shape != expected_mask_shape:
-                raise ValueError(f"Expected mask shape {expected_mask_shape}, got {mask.shape}")
+                raise ValueError(
+                    f"Expected mask shape {expected_mask_shape}, got {mask.shape}"
+                )
 
 
 def _pad_input(x: NDArray[Any], padding: Tuple[int, int]) -> NDArray[Any]:
@@ -149,15 +162,25 @@ def _get_output_shape(
         Tuple of output height and width (H_out, W_out)
     """
     if mode == ConvMode.STANDARD:
-        H = (input_shape[2] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
-            0
-        ] + 1
-        W = (input_shape[3] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
-            1
-        ] + 1
+        H = (
+            input_shape[2] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+        ) // stride[0] + 1
+        W = (
+            input_shape[3] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+        ) // stride[1] + 1
     elif mode == ConvMode.TRANSPOSED:
-        H = (input_shape[2] - 1) * stride[0] - 2 * padding[0] + kernel_size[0] + output_padding[0]
-        W = (input_shape[3] - 1) * stride[1] - 2 * padding[1] + kernel_size[1] + output_padding[1]
+        H = (
+            (input_shape[2] - 1) * stride[0]
+            - 2 * padding[0]
+            + kernel_size[0]
+            + output_padding[0]
+        )
+        W = (
+            (input_shape[3] - 1) * stride[1]
+            - 2 * padding[1]
+            + kernel_size[1]
+            + output_padding[1]
+        )
     else:  # Deformable follows standard conv shape
         H = (input_shape[2] + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
         W = (input_shape[3] + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
@@ -223,7 +246,8 @@ def _im2col_dilated(
 
     # Initialize output array
     # For standard convolution:
-    # - Each column represents a dot product of the kernel with a specific output position
+    # - Each column represents a dot product of the kernel with a specific
+    #       output position
     # - Number of rows = C * kH * kW (all values needed for one output value)
     # - Number of columns = N * H_out * W_out (total number of output values)
     cols = np.zeros((C * kH * kW, N * H_out * W_out))
@@ -238,7 +262,9 @@ def _im2col_dilated(
                 h_offset = kh * dilation[0]
                 w_offset = kw * dilation[1]
 
-                h_pos, w_pos = np.meshgrid(h_start + h_offset, w_start + w_offset, indexing="ij")
+                h_pos, w_pos = np.meshgrid(
+                    h_start + h_offset, w_start + w_offset, indexing="ij"
+                )
                 h_pos = h_pos.reshape(-1)
                 w_pos = w_pos.reshape(-1)
 
@@ -311,7 +337,9 @@ def _col2im_dilated(
                                 row_idx = h * W + w
 
                                 for n in range(N):
-                                    output[n, c, h_out, w_out] += cols[col_idx, n * H * W + row_idx]
+                                    output[n, c, h_out, w_out] += cols[
+                                        col_idx, n * H * W + row_idx
+                                    ]
                                     weights[n, c, h_out, w_out] += 1
     else:
         for h_out in range(H_out):
@@ -359,10 +387,17 @@ def _compute_conv_grad_input_padding(
 
 
 def _compute_output_padding(
-    input_size: int, output_size: int, kernel_size: int, stride: int, padding: int, dilation: int
+    input_size: int,
+    output_size: int,
+    kernel_size: int,
+    stride: int,
+    padding: int,
+    dilation: int,
 ) -> int:
     """Computes additional padding needed for transposed convolution."""
-    expected_output = (input_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1
+    expected_output = (
+        (input_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1
+    )
     return output_size - expected_output
 
 
@@ -401,7 +436,9 @@ def _unfold(
                     w_start = w * stride[1] + j * dilation[1]
 
                     # Extract patch for all channels and batches
-                    patch = input_tensor[:, :, h_start : h_start + 1, w_start : w_start + 1]
+                    patch = input_tensor[
+                        :, :, h_start : h_start + 1, w_start : w_start + 1
+                    ]
 
                     # Place in output array
                     row_idx = (i * kW + j) * C + np.arange(C)
@@ -423,7 +460,9 @@ def _fold(
     H, W = output_size
     kH, kW = kernel_size
     C = input.shape[0] // (kH * kW)
-    N = input.shape[1] // ((H + 2 * padding[0] - kH + 1) * (W + 2 * padding[1] - kW + 1))
+    N = input.shape[1] // (
+        (H + 2 * padding[0] - kH + 1) * (W + 2 * padding[1] - kW + 1)
+    )
 
     # Initialize output tensor
     output = np.zeros((N, C, H + 2 * padding[0], W + 2 * padding[1]))
@@ -567,7 +606,8 @@ def _bilinear_interpolate_gradient(
     Computes gradients for bilinear interpolation.
 
     Args:
-        grad_output: Gradient of loss with respect to interpolated values (can be any shape)
+        grad_output: Gradient of loss with respect to interpolated values
+            (can be any shape)
         points: Points that were sampled (N, P, 2) in normalized coordinates [-1, 1]
         input_size: Size of the input tensor (H, W)
         input_tensor: The input tensor being sampled from (N, C, H, W)
@@ -596,10 +636,13 @@ def _bilinear_interpolate_gradient(
 
     # Broadcast grad_output to match number of points if necessary
     if grad_output.shape[2] == 1:
-        grad_output = np.broadcast_to(grad_output, (grad_output.shape[0], grad_output.shape[1], P))
+        grad_output = np.broadcast_to(
+            grad_output, (grad_output.shape[0], grad_output.shape[1], P)
+        )
     elif grad_output.shape[2] != P:
         raise ValueError(
-            f"Gradient shape {grad_output.shape} cannot be broadcast to number of points {P}"
+            f"Gradient shape {grad_output.shape} cannot be broadcast to "
+            f"number of points {P}"
         )
 
     C = grad_output.shape[1]
@@ -917,7 +960,16 @@ class Conv2dFunction(Function):
         """Forward pass of flexible 2D convolution."""
         # Validate parameters
         _validate_conv_params(
-            x.shape, weight.shape, stride, padding, dilation, groups, mode, offset, weight, mask
+            x.shape,
+            weight.shape,
+            stride,
+            padding,
+            dilation,
+            groups,
+            mode,
+            offset,
+            weight,
+            mask,
         )
 
         # Save tensors and info for backward pass
@@ -981,9 +1033,13 @@ class Conv2dFunction(Function):
                                             h_out = h_start + kh
                                             w_out = w_start + kw
 
-                                            if 0 <= h_out < H_out and 0 <= w_out < W_out:
+                                            if (
+                                                0 <= h_out < H_out
+                                                and 0 <= w_out < W_out
+                                            ):
                                                 output_g[n, c_out, h_out, w_out] += (
-                                                    x_val[c_in] * w_g[c_in, c_out, kh, kw]
+                                                    x_val[c_in]
+                                                    * w_g[c_in, c_out, kh, kw]
                                                 )
 
                 # Add this group's output to the final output
@@ -1025,7 +1081,9 @@ class Conv2dFunction(Function):
                 out = w_reshaped @ x_cols
 
                 out = out.reshape(C_out_per_group, H_out * W_out, x.shape[0])
-                out = out.transpose(2, 0, 1).reshape(x.shape[0], C_out_per_group, H_out, W_out)
+                out = out.transpose(2, 0, 1).reshape(
+                    x.shape[0], C_out_per_group, H_out, W_out
+                )
                 output[:, g * C_out_per_group : (g + 1) * C_out_per_group] = out
 
             if bias is not None:
@@ -1067,7 +1125,9 @@ class Conv2dFunction(Function):
         C_out, _, kH, kW = weight.shape
         C_in_per_group = C_in // groups
         C_out_per_group = C_out // groups
-        H_out, W_out = _get_output_shape(x.shape, weight.shape[2:], stride, padding, dilation, mode)
+        H_out, W_out = _get_output_shape(
+            x.shape, weight.shape[2:], stride, padding, dilation, mode
+        )
 
         # Initialize gradients based on requires_grad flags
         grad_x = None
@@ -1241,7 +1301,9 @@ class Conv2dFunction(Function):
 
             # Convert columns back to image format
             if grad_x_padded is not None:
-                grad_x_padded[:, g * C_in_per_group : (g + 1) * C_in_per_group] += _col2im_dilated(
+                grad_x_padded[
+                    :, g * C_in_per_group : (g + 1) * C_in_per_group
+                ] += _col2im_dilated(
                     grad_cols, x_padded.shape, (kH, kW), stride, dilation
                 )
 
@@ -1276,7 +1338,9 @@ class Conv2dFunction(Function):
         for g in range(groups):
             # Slice weights and grad_output for the current group
             w_g = weight.data[g * C_out_per_group : (g + 1) * C_out_per_group]
-            grad_out_g = grad_output_padded[:, g * C_out_per_group : (g + 1) * C_out_per_group]
+            grad_out_g = grad_output_padded[
+                :, g * C_out_per_group : (g + 1) * C_out_per_group
+            ]
 
             # Reshape weights for gradient computation
             w_flipped = np.flip(np.flip(w_g, 2), 3).transpose(1, 0, 2, 3)  # Flip kernel
@@ -1315,7 +1379,8 @@ class Conv2dFunction(Function):
                 )  # Shape: (C_out_per_group, H_out * W_out)
                 if grad_weight is not None:
                     grad_weight[g * C_out_per_group : (g + 1) * C_out_per_group] += (
-                        grad_out_n @ x_cols[:, n * H_out * W_out : (n + 1) * H_out * W_out].T
+                        grad_out_n
+                        @ x_cols[:, n * H_out * W_out : (n + 1) * H_out * W_out].T
                     ).reshape(C_out_per_group, C_in_per_group, kH, kW)
 
         # Compute gradient for bias
@@ -1352,7 +1417,8 @@ class Conv2dFunction(Function):
         """Backward pass for deformable convolution."""
 
         if sampling_locations is None and offset_tensor is not None:
-            # If sampling_locations weren't provided but we have offset tensor, compute them
+            # If sampling_locations weren't provided but we have offset tensor,
+            #   compute them
             sampling_locations = _get_deformable_offsets(
                 offset_tensor.data, (kH, kW), x_padded.shape, dilation
             )
@@ -1388,15 +1454,26 @@ class Conv2dFunction(Function):
                                                 # Update gradients
                                                 if grad_x_padded is not None:
                                                     grad_x_padded[
-                                                        n, g * C_in_per_group + c_in, h_in, w_in
-                                                    ] += (grad * w_g[c_out, c_in, kh, kw])
+                                                        n,
+                                                        g * C_in_per_group + c_in,
+                                                        h_in,
+                                                        w_in,
+                                                    ] += (
+                                                        grad * w_g[c_out, c_in, kh, kw]
+                                                    )
                                                 if grad_weight is not None:
                                                     grad_weight[
-                                                        g * C_out_per_group + c_out, c_in, kh, kw
+                                                        g * C_out_per_group + c_out,
+                                                        c_in,
+                                                        kh,
+                                                        kw,
                                                     ] += (
                                                         grad
                                                         * x_padded[
-                                                            n, g * C_in_per_group + c_in, h_in, w_in
+                                                            n,
+                                                            g * C_in_per_group + c_in,
+                                                            h_in,
+                                                            w_in,
                                                         ]
                                                     )
 

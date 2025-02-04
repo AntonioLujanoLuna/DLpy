@@ -44,7 +44,9 @@ class LSTM(Module):
     ):
         super().__init__()
         if dropout < 0 or dropout > 1:
-            raise ValueError(f"Dropout probability has to be between 0 and 1, but got {dropout}")
+            raise ValueError(
+                f"Dropout probability has to be between 0 and 1, but got {dropout}"
+            )
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -59,7 +61,9 @@ class LSTM(Module):
         self.cell_list = []
         for layer in range(num_layers):
             for direction in range(num_directions):
-                layer_input_size = input_size if layer == 0 else hidden_size * num_directions
+                layer_input_size = (
+                    input_size if layer == 0 else hidden_size * num_directions
+                )
                 cell = LSTMCell(layer_input_size, hidden_size, bias)
                 name = f"cell_{layer}_{direction}"
                 setattr(self, name, cell)
@@ -77,16 +81,29 @@ class LSTM(Module):
         num_directions = 2 if self.bidirectional else 1
 
         if hx is None:
-            h_0 = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
-            c_0 = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
+            h_0 = Tensor(
+                np.zeros(
+                    (self.num_layers * num_directions, batch_size, self.hidden_size)
+                )
+            )
+            c_0 = Tensor(
+                np.zeros(
+                    (self.num_layers * num_directions, batch_size, self.hidden_size)
+                )
+            )
             hx = (h_0, c_0)
         else:
             # Validate hidden state dimensions
             h_0, c_0 = hx
-            expected_shape = (self.num_layers * num_directions, batch_size, self.hidden_size)
+            expected_shape = (
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            )
             if h_0.shape != expected_shape or c_0.shape != expected_shape:
                 raise ValueError(
-                    f"Expected hidden size {expected_shape}, got {h_0.shape} and {c_0.shape}"
+                    f"Expected hidden size {expected_shape}, "
+                    f"got {h_0.shape} and {c_0.shape}"
                 )
 
         h_n, c_n = hx
@@ -131,7 +148,9 @@ class LSTM(Module):
 
             # Apply dropout except for last layer
             if layer < self.num_layers - 1 and self.training and self.dropout > 0:
-                mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(np.float64)
+                mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(
+                    np.float64
+                )
                 layer_output = Tensor(layer_output.data * mask / (1 - self.dropout))
 
             new_h.append(h_forward.data)
@@ -189,7 +208,9 @@ class GRU(Module):
     ):
         super().__init__()
         if dropout < 0 or dropout > 1:
-            raise ValueError(f"Dropout probability has to be between 0 and 1, but got {dropout}")
+            raise ValueError(
+                f"Dropout probability has to be between 0 and 1, but got {dropout}"
+            )
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -204,7 +225,9 @@ class GRU(Module):
         self.cell_list = []
         for layer in range(num_layers):
             for direction in range(num_directions):
-                layer_input_size = input_size if layer == 0 else hidden_size * num_directions
+                layer_input_size = (
+                    input_size if layer == 0 else hidden_size * num_directions
+                )
                 cell = GRUCell(layer_input_size, hidden_size, bias)
                 name = f"cell_{layer}_{direction}"
                 setattr(self, name, cell)
@@ -220,12 +243,22 @@ class GRU(Module):
         num_directions = 2 if self.bidirectional else 1
 
         if hx is None:
-            hx = Tensor(np.zeros((self.num_layers * num_directions, batch_size, self.hidden_size)))
+            hx = Tensor(
+                np.zeros(
+                    (self.num_layers * num_directions, batch_size, self.hidden_size)
+                )
+            )
         else:
             # Validate hidden state dimensions
-            expected_shape = (self.num_layers * num_directions, batch_size, self.hidden_size)
+            expected_shape = (
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            )
             if hx.shape != expected_shape:
-                raise ValueError(f"Expected hidden size {expected_shape}, got {hx.shape}")
+                raise ValueError(
+                    f"Expected hidden size {expected_shape}, got {hx.shape}"
+                )
 
         layer_output = x
         new_h = []
@@ -237,7 +270,9 @@ class GRU(Module):
 
             # Forward direction
             for t in range(seq_len):
-                h_forward = self.cell_list[layer * num_directions](layer_output[t], h_forward)
+                h_forward = self.cell_list[layer * num_directions](
+                    layer_output[t], h_forward
+                )
                 layer_h_list.append(h_forward)
 
             if self.bidirectional:
@@ -263,7 +298,9 @@ class GRU(Module):
 
             # Apply dropout except for last layer
             if layer < self.num_layers - 1 and self.training and self.dropout > 0:
-                mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(np.float64)
+                mask = (np.random.rand(*layer_output.shape) > self.dropout).astype(
+                    np.float64
+                )
                 layer_output = Tensor(layer_output.data * mask / (1 - self.dropout))
 
             new_h.append(h_forward.data)
@@ -297,10 +334,12 @@ class LSTMCell(Module):
 
         # Create weight matrices for the four gates
         self.weight_ih = Tensor(
-            np.random.randn(4 * hidden_size, input_size) / np.sqrt(input_size), requires_grad=True
+            np.random.randn(4 * hidden_size, input_size) / np.sqrt(input_size),
+            requires_grad=True,
         )
         self.weight_hh = Tensor(
-            np.random.randn(4 * hidden_size, hidden_size) / np.sqrt(hidden_size), requires_grad=True
+            np.random.randn(4 * hidden_size, hidden_size) / np.sqrt(hidden_size),
+            requires_grad=True,
         )
 
         if bias:
@@ -365,10 +404,12 @@ class GRUCell(Module):
 
         # Create weight matrices for the three gates (reset, update, new)
         self.weight_ih = Tensor(
-            np.random.randn(3 * hidden_size, input_size) / np.sqrt(input_size), requires_grad=True
+            np.random.randn(3 * hidden_size, input_size) / np.sqrt(input_size),
+            requires_grad=True,
         )
         self.weight_hh = Tensor(
-            np.random.randn(3 * hidden_size, hidden_size) / np.sqrt(hidden_size), requires_grad=True
+            np.random.randn(3 * hidden_size, hidden_size) / np.sqrt(hidden_size),
+            requires_grad=True,
         )
 
         if bias:

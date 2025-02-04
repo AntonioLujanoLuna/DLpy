@@ -1,5 +1,16 @@
 from numbers import Number
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+    overload,
+)
 
 import numpy as np
 from numpy.typing import DTypeLike, NDArray
@@ -22,30 +33,33 @@ class Tensor:
         _is_leaf: Whether this tensor is a leaf node (created by user)
     """
 
+    data: NDArray[Any]
+
     def __init__(
         self,
         data: Union[NDArray[Any], List[Any], Number],
         requires_grad: bool = False,
         dtype: Optional[DTypeLike] = None,
     ):
-        # Convert scalars to scalar arrays with shape ()
-        if isinstance(data, (int, float)):
-            self.data = np.array(data, dtype=dtype or np.float64)  # Will have shape ()
-        elif isinstance(data, Tensor):
-            self.data = data.data
+        # Handle different input types
+        if isinstance(data, Tensor):
+            self.data = data.data.astype(dtype) if dtype else data.data
+        elif isinstance(data, (int, float)):
+            self.data = np.array(data, dtype=dtype or np.float64)
         elif isinstance(data, list):
             self.data = np.array(data, dtype=dtype)
-        if isinstance(data, (int, float)):
-            self.data = np.array(data, dtype=dtype) if dtype else np.array(data)
-        if isinstance(data, np.ndarray):
+        elif isinstance(data, np.ndarray):
             self.data = data.astype(dtype) if dtype else data
         else:
             self.data = np.array(data, dtype=dtype)
 
+        self.data = self._convert_to_array(data, dtype)
+
         self.grad: Optional[NDArray[Any]] = None
         self._requires_grad = requires_grad
-        self._backward_fn: Optional[Callable[[NDArray[Any], Dict[int, NDArray[Any]]], None]] = None
-
+        self._backward_fn: Optional[
+            Callable[[NDArray[Any], Dict[int, NDArray[Any]]], None]
+        ] = None
         self._prev: Set["Tensor"] = set()
         self._is_leaf = True
 
@@ -58,20 +72,36 @@ class Tensor:
         if requires_grad:
             self.zero_grad()
 
+    def _convert_to_array(
+        self,
+        data: Union[NDArray[Any], List[Any], Number, "Tensor"],
+        dtype: Optional[DTypeLike],
+    ) -> NDArray[Any]:
+        """Convert input data to numpy array with proper dtype."""
+        if isinstance(data, Tensor):
+            return data.data.astype(dtype) if dtype else data.data
+
+        # For all other types, let numpy handle the conversion
+        arr = np.asarray(data, dtype=dtype or np.float64)
+        return arr
+
     @property
     def shape(self) -> Tuple[int, ...]:
         return tuple(int(x) for x in self.data.shape)
 
     @property
-    def dtype(self) -> np.dtype[np.float64]:
-        return np.dtype("float64")
+    def dtype(self) -> np.dtype[Union[np.number, np.bool_, np.object_]]:
+        """Returns the dtype of the underlying data."""
+        return cast(np.dtype[Union[np.number, np.bool_, np.object_]], self.data.dtype)
 
     @property
     def requires_grad(self) -> bool:
         """Returns whether the tensor requires gradient computation."""
         return self._requires_grad
 
-    def __getitem__(self, index: Union[int, slice, Tuple[Union[int, slice], ...]]) -> "Tensor":
+    def __getitem__(
+        self, index: Union[int, slice, Tuple[Union[int, slice], ...]]
+    ) -> "Tensor":
         """Enable indexing for tensors."""
         return Tensor(self.data[index], requires_grad=self.requires_grad)
 
@@ -108,7 +138,9 @@ class Tensor:
                 else:
                     gradient = np.ones(self.shape)
             else:
-                raise RuntimeError("grad can be implicitly created only for scalar outputs")
+                raise RuntimeError(
+                    "grad can be implicitly created only for scalar outputs"
+                )
 
         # Ensure gradient is numpy array
         if isinstance(gradient, (int, float)):
@@ -302,8 +334,11 @@ class Tensor:
 
     @overload
     def __eq__(self, other: Union["Tensor", float]) -> "Tensor": ...
+
     @overload
-    def __eq__(self, other: Any) -> bool: ...  # Use Any instead of object for the fallback case
+    def __eq__(
+        self, other: Any
+    ) -> bool: ...  # Use Any instead of object for the fallback case
 
     def __eq__(self, other: Any) -> Union["Tensor", bool]:
         if isinstance(other, (Tensor, float)):

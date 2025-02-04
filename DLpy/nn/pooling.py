@@ -30,7 +30,11 @@ class MaxPool2d(Module):
         return MaxPool2dFunction.apply(x, self.kernel_size, self.stride, self.padding)
 
     def extra_repr(self) -> str:
-        return f"kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}"
+        return (
+            f"kernel_size={self.kernel_size}, "
+            f"stride={self.stride}, "
+            f"padding={self.padding}"
+        )
 
 
 class AvgPool2d(Module):
@@ -59,4 +63,8 @@ class AvgPool2d(Module):
         return AvgPool2dFunction.apply(x, self.kernel_size, self.stride, self.padding)
 
     def extra_repr(self) -> str:
-        return f"kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}"
+        return (
+            f"kernel_size={self.kernel_size}, "
+            f"stride={self.stride}, "
+            f"padding={self.padding}"
+        )

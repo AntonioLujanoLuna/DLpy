@@ -123,9 +123,13 @@ class Adam(Optimizer):
                 # Maintains the maximum of all 2nd moment running avg. till now
                 max_exp_avg_sq = np.maximum(max_exp_avg_sq, exp_avg_sq)
                 # Use the max. for normalizing running avg. of gradient
-                denom = (np.sqrt(max_exp_avg_sq) / np.sqrt(bias_correction2)) + self.defaults["eps"]
+                denom = (
+                    np.sqrt(max_exp_avg_sq) / np.sqrt(bias_correction2)
+                ) + self.defaults["eps"]
             else:
-                denom = (np.sqrt(exp_avg_sq) / np.sqrt(bias_correction2)) + self.defaults["eps"]
+                denom = (
+                    np.sqrt(exp_avg_sq) / np.sqrt(bias_correction2)
+                ) + self.defaults["eps"]
 
             step_size = self.defaults["lr"] / bias_correction1
 

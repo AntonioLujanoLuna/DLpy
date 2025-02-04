@@ -16,6 +16,8 @@ setup(
             "black>=22.0.0",
             "isort>=5.0.0",
             "mypy>=1.0.0",
+            "flake8>=6.1.0",
+            "pylint"
         ],
     },
     python_requires=">=3.8",

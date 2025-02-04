@@ -68,15 +68,16 @@ class InstanceNorm2d(Module):
 
         # Apply affine transform if enabled
         if self.affine:
-            x_norm = x_norm * self.weight.data.reshape(1, -1, 1, 1) + self.bias.data.reshape(
+            x_norm = x_norm * self.weight.data.reshape(
                 1, -1, 1, 1
-            )
+            ) + self.bias.data.reshape(1, -1, 1, 1)
 
         return Tensor(x_norm, requires_grad=x.requires_grad)
 
     def extra_repr(self) -> str:
         return (
-            f"num_features={self.num_features}, eps={self.eps}, momentum={self.momentum}, "
+            f"num_features={self.num_features}, eps={self.eps}, "
+            f"momentum={self.momentum}, "
             f"affine={self.affine}, track_running_stats={self.track_running_stats}"
         )
 
@@ -95,7 +96,9 @@ class GroupNorm(Module):
         affine: If True, use learnable affine parameters
     """
 
-    def __init__(self, num_groups: int, num_channels: int, eps: float = 1e-5, affine: bool = True):
+    def __init__(
+        self, num_groups: int, num_channels: int, eps: float = 1e-5, affine: bool = True
+    ):
         super().__init__()
 
         if num_channels % num_groups != 0:
@@ -137,9 +140,9 @@ class GroupNorm(Module):
 
         # Apply affine transform if specified
         if self.affine:
-            x_norm = x_norm * self.weight.data.reshape(1, -1, 1, 1) + self.bias.data.reshape(
+            x_norm = x_norm * self.weight.data.reshape(
                 1, -1, 1, 1
-            )
+            ) + self.bias.data.reshape(1, -1, 1, 1)
 
         return Tensor(x_norm, requires_grad=x.requires_grad)
 

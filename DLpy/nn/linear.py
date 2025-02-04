@@ -25,7 +25,8 @@ class Linear(Module):
         # Initialize weights using He initialization
         bound = np.sqrt(2.0 / in_features)
         weight = Tensor(
-            np.random.uniform(-bound, bound, (out_features, in_features)), requires_grad=True
+            np.random.uniform(-bound, bound, (out_features, in_features)),
+            requires_grad=True,
         )
         self.register_parameter("weight", weight)
 
@@ -67,11 +68,13 @@ class LinearFunction(Function):
         input, weight, bias = ctx.saved_tensors
 
         if input.requires_grad:
-            # For input gradient: (batch_size, out_features) @ (out_features, in_features)
+            # For input gradient: (batch_size, out_features) @
+            #   (out_features, in_features)
             grad_dict[id(input)] = grad_output @ weight.data
 
         if weight.requires_grad:
-            # For weight gradient: (in_features, batch_size) @ (batch_size, out_features)
+            # For weight gradient: (in_features, batch_size) @
+            #   (batch_size, out_features)
             # Reshape grad_output to (batch_size, out_features) if needed
             if len(grad_output.shape) == 3:
                 batch_size, seq_len, out_features = grad_output.shape

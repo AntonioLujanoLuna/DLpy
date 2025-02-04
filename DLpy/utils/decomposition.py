@@ -54,7 +54,8 @@ class TensorDecomposition:
                             The best (lowest-error) factor set is returned.
             init (str): Initialization method:
                         - "svd" uses truncated SVD on each mode-unfolding.
-                        - "hosvd" uses multilinear SVD (Tucker-based) to build initial factors.
+                        - "hosvd" uses multilinear SVD (Tucker-based) to build
+                            initial factors.
                         - "random" samples random initial factors.
             stall_patience (int): How many consecutive ALS iterations can stall
                                 (no improvement) before we terminate early.
@@ -73,7 +74,9 @@ class TensorDecomposition:
         if rank < 1:
             raise ValueError(f"Rank must be >= 1, got {rank}.")
         if rank > max_rank:
-            raise ValueError(f"Requested rank={rank} exceeds maximum possible {max_rank}.")
+            raise ValueError(
+                f"Requested rank={rank} exceeds maximum possible {max_rank}."
+            )
 
         # 2) We'll do multiple restarts and track the best solution
         best_factors: List[Tensor] = []
@@ -95,7 +98,9 @@ class TensorDecomposition:
                 # Update each mode in turn
                 for mode in range(len(self.shape)):
                     # Unfold the tensor along this mode
-                    unfolded = self._unfold(self.tensor, mode)  # shape=(shape[mode], -1)
+                    unfolded = self._unfold(
+                        self.tensor, mode
+                    )  # shape=(shape[mode], -1)
                     # Build Khatri-Rao product of all other factors
                     other = [factors[m] for m in range(len(self.shape)) if m != mode]
                     kr = self._khatri_rao(other)  # shape=(product_of_dims, rank)
@@ -110,8 +115,14 @@ class TensorDecomposition:
                 reconstructed = self.reconstruct_cp(factors).numpy()
                 error = float(np.linalg.norm(reconstructed - tensor_data))
 
-                if prev_error is not None and np.isfinite(error) and np.isfinite(prev_error):
-                    rel_change = abs(error - prev_error) / (max(abs(prev_error), 1e-12) + 1e-12)
+                if (
+                    prev_error is not None
+                    and np.isfinite(error)
+                    and np.isfinite(prev_error)
+                ):
+                    rel_change = abs(error - prev_error) / (
+                        max(abs(prev_error), 1e-12) + 1e-12
+                    )
 
                     if rel_change < tol:
                         # Converged by relative error threshold
@@ -296,7 +307,8 @@ class TensorDecomposition:
         """
         core = tensor.numpy()
         for mode, factor in enumerate(factors):
-            # Multiply the core tensor with the transpose of the factor matrix along the current mode
+            # Multiply the core tensor with the transpose of the factor matrix
+            #   along the current mode
             core = self._mode_n_product(core, factor.numpy().T, mode)
         return Tensor(core)
 
@@ -398,22 +410,25 @@ class TensorDecomposition:
 
             # Compute Khatri-Rao product for current pair of matrices
             next_rows = next_matrix.shape[0]
-            result = (result.reshape(-1, 1, n_cols) * next_matrix.reshape(1, -1, n_cols)).reshape(
-                n_rows * next_rows, n_cols
-            )
+            result = (
+                result.reshape(-1, 1, n_cols) * next_matrix.reshape(1, -1, n_cols)
+            ).reshape(n_rows * next_rows, n_cols)
 
         return result
 
-    def _converged(self, current: List[Tensor], previous: List[Tensor], tol: float) -> bool:
+    def _converged(
+        self, current: List[Tensor], previous: List[Tensor], tol: float
+    ) -> bool:
         changes = []
         for curr, prev in zip(current, previous):
             curr_norm = np.linalg.norm(curr.numpy())
             prev_norm = np.linalg.norm(prev.numpy())
             if prev_norm == 0:
-                changes.append(bool(curr_norm > tol))
+                changes.append(curr_norm)
             else:
-                relative_change = np.linalg.norm(curr.numpy() - prev.numpy()) / prev_norm
-                changes.append(bool(relative_change < tol))  # Compare with tolerance to get boolean
+                diff = np.linalg.norm(curr.numpy() - prev.numpy())
+                relative_change = diff / prev_norm
+                changes.append(relative_change)
 
         return all(change < tol for change in changes)
 

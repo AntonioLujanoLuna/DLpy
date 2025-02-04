@@ -10,16 +10,18 @@ class AdaDelta(Optimizer):
     """
     Implements AdaDelta algorithm.
 
-    AdaDelta is a more robust extension of AdaGrad that adapts learning rates based on a
-    moving window of gradient updates, instead of accumulating all past squared gradients.
-    The main advantage is that it doesn't need an initial learning rate.
+    AdaDelta is a more robust extension of AdaGrad that adapts learning rates
+    based on a moving window of gradient updates, instead of accumulating all
+    past squared gradients. The main advantage is that it doesn't need an
+    initial learning rate.
 
     It works by maintaining two running averages:
     1. A running average of squared gradients (similar to RMSprop)
     2. A running average of squared parameter updates
 
-    These averages allow AdaDelta to automatically adapt its learning rate for each parameter,
-    making it particularly useful when the optimal learning rate is hard to determine.
+    These averages allow AdaDelta to automatically adapt its learning rate for
+    each parameter, making it particularly useful when the optimal learning rate
+    is hard to determine.
 
     Args:
         params: List or Iterator of parameters to optimize
@@ -41,7 +43,9 @@ class AdaDelta(Optimizer):
         if not 0.0 <= eps:
             raise ValueError(f"Invalid epsilon value: {eps}. Must be non-negative")
         if not 0.0 <= weight_decay:
-            raise ValueError(f"Invalid weight_decay value: {weight_decay}. Must be non-negative")
+            raise ValueError(
+                f"Invalid weight_decay value: {weight_decay}. Must be non-negative"
+            )
 
         # Create defaults dictionary with explicit type annotation
         # All values in this dictionary are floats

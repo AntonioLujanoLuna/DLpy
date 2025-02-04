@@ -12,7 +12,8 @@ class Context:
     to maintain state between the two passes.
 
     Attributes:
-        _saved_tensors: List of tensors saved during forward pass for use in backward pass
+        _saved_tensors: List of tensors saved during forward pass for use in backward
+            pass
         _non_tensor_args: Dictionary of additional arguments needed for backward pass
         _intermediate_values: Dictionary storing intermediate computations
     """

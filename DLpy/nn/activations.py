@@ -75,11 +75,14 @@ class ELUFunction(Function):
     Backward: f'(x) = 1 if x > 0 else alpha * exp(x)
 
     Args:
-        alpha: Controls the value to which an ELU saturates for negative inputs. Default: 1.0
+        alpha: Controls the value to which an ELU saturates for negative inputs.
+            Default: 1.0
     """
 
     @staticmethod
-    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]], alpha: float = 1.0) -> Tensor:
+    def forward(
+        ctx: Context, x: Union[Tensor, NDArray[Any]], alpha: float = 1.0
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -150,10 +153,15 @@ class GELUFunction(Function):
             sqrt_2_over_pi * (x.data + coeff * x_cubed)
 
             # d/dx[GELU(x)] = 0.5 * (1 + tanh(inner)) +
-            #                 0.5x * (1 - tanh²(inner)) * sqrt(2/π) * (1 + 3 * 0.044715x²)
+            #                 0.5x * (1 - tanh²(inner)) * sqrt(2/π) *
+            #                 (1 + 3 * 0.044715x²)
             grad = 0.5 * (1 + tanh_inner)
             grad += (
-                0.5 * x.data * (1 - tanh_inner**2) * sqrt_2_over_pi * (1 + 3 * coeff * x.data**2)
+                0.5
+                * x.data
+                * (1 - tanh_inner**2)
+                * sqrt_2_over_pi
+                * (1 + 3 * coeff * x.data**2)
             )
 
             grad_dict[id(x)] = grad_output * grad
@@ -175,7 +183,9 @@ class SigmoidFunction(Function):
         # Compute sigmoid with numerical stability
         x_data = x.data
         exp_neg_x = np.exp(-np.abs(x_data))
-        sigmoid_x = np.where(x_data >= 0, 1 / (1 + exp_neg_x), exp_neg_x / (1 + exp_neg_x))
+        sigmoid_x = np.where(
+            x_data >= 0, 1 / (1 + exp_neg_x), exp_neg_x / (1 + exp_neg_x)
+        )
 
         ctx.save_for_backward(x)
         ctx.save_arguments(sigmoid_x=sigmoid_x)

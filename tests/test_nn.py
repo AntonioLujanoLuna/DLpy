@@ -24,7 +24,7 @@ class TestLinearLayer:
         assert layer.bias.requires_grad
         
         # Test layer without bias
-        layer_no_bias = Linear(in_features, out_features, bias=False)
+        layer_no_bias = Linear(in_features, out_features, has_bias=False)
         assert layer_no_bias.bias is None
 
     def test_linear_forward(self):

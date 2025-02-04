@@ -91,7 +91,9 @@ class Module:
             if name in modules:
                 return modules[name]
 
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Custom setattr that handles parameter registration."""
@@ -102,7 +104,9 @@ class Module:
 
         if isinstance(value, Tensor):
             if not hasattr(self, "_parameters"):
-                raise TypeError("cannot assign parameters before Module.__init__() call")
+                raise TypeError(
+                    "cannot assign parameters before Module.__init__() call"
+                )
             self.register_parameter(name, value)
         elif isinstance(value, Module):
             if not hasattr(self, "_modules"):
@@ -234,7 +238,8 @@ class Module:
             if name in state_dict:
                 if param.data.shape != state_dict[name].shape:
                     raise ValueError(
-                        f"Parameter {name} shape mismatch: expected {param.data.shape}, "
+                        f"Parameter {name} shape mismatch: expected "
+                        f"{param.data.shape}, "
                         f"got {state_dict[name].shape}"
                     )
                 param.data = state_dict[name]

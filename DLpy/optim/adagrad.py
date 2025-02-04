@@ -63,7 +63,9 @@ class AdaGrad(Optimizer):
             state = self.state[id(group)]
             state["step"] = 0
             # Use np.float64 for better numerical precision in accumulator
-            state["sum"] = np.full_like(group.data, initial_accumulator_value, dtype=np.float64)
+            state["sum"] = np.full_like(
+                group.data, initial_accumulator_value, dtype=np.float64
+            )
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -125,7 +127,9 @@ class AdaGrad(Optimizer):
 
             # Apply learning rate decay if specified
             if self.defaults["lr_decay"] != 0:
-                lr = self.defaults["lr"] / (1 + (state["step"] - 1) * self.defaults["lr_decay"])
+                lr = self.defaults["lr"] / (
+                    1 + (state["step"] - 1) * self.defaults["lr_decay"]
+                )
             else:
                 lr = self.defaults["lr"]
 
@@ -144,4 +148,6 @@ class AdaGrad(Optimizer):
         for group in self._params:
             state = self.state[id(group)]
             state["step"] = 0
-            state["sum"] = np.full_like(group.data, initial_accumulator_value, dtype=np.float64)
+            state["sum"] = np.full_like(
+                group.data, initial_accumulator_value, dtype=np.float64
+            )

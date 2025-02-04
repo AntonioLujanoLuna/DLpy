@@ -45,12 +45,15 @@ class MultiHeadAttention(Module):
         bias (bool): If True, use bias in linear layers
     """
 
-    def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0, bias: bool = True):
+    def __init__(
+        self, embed_dim: int, num_heads: int, dropout: float = 0.0, bias: bool = True
+    ):
         super().__init__()
 
         if embed_dim % num_heads != 0:
             raise ValueError(
-                f"Embedding dimension {embed_dim} not divisible by num_heads {num_heads}"
+                f"Embedding dimension {embed_dim} not divisible "
+                f"by num_heads {num_heads}"
             )
 
         self.embed_dim = embed_dim
@@ -76,7 +79,11 @@ class MultiHeadAttention(Module):
         return x
 
     def forward(
-        self, query: Tensor, key: Tensor, value: Tensor, attention_mask: Optional[Tensor] = None
+        self,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        attention_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         """
         Forward pass of multi-head attention.
@@ -85,7 +92,8 @@ class MultiHeadAttention(Module):
             query: Query tensor of shape (batch_size, query_len, embed_dim)
             key: Key tensor of shape (batch_size, key_len, embed_dim)
             value: Value tensor of shape (batch_size, key_len, embed_dim)
-            attention_mask: Optional mask tensor of shape (batch_size, num_heads, query_len, key_len)
+            attention_mask: Optional mask tensor of shape (batch_size, num_heads,
+                query_len, key_len)
 
         Returns:
             Tuple of:
@@ -120,7 +128,9 @@ class MultiHeadAttention(Module):
 
         # Apply numerical stabilization after masking
         # This prevents overflow while maintaining masked positions
-        attention_scores = attention_scores - attention_scores.max(axis=-1, keepdims=True)
+        attention_scores = attention_scores - attention_scores.max(
+            axis=-1, keepdims=True
+        )
 
         # Clip values for additional numerical stability
         attention_scores = attention_scores.clip(-1e30, 1e30)
@@ -137,7 +147,9 @@ class MultiHeadAttention(Module):
 
         # Reshape back to original dimensions
         # First transpose to get heads dimension next to head_dim
-        output = output.transpose(0, 2, 1, 3)  # (batch_size, query_len, num_heads, head_dim)
+        output = output.transpose(
+            0, 2, 1, 3
+        )  # (batch_size, query_len, num_heads, head_dim)
         # Then combine heads with head_dim to get back to embed_dim
         output = output.reshape(batch_size, query_len, self.embed_dim)
 
@@ -176,9 +188,13 @@ class TransformerEncoderLayer(Module):
         layer_norm_eps: float = 1e-5,
     ):
         if d_model % nhead != 0:
-            raise ValueError(f"d_model must be divisible by nhead. Got {d_model} and {nhead}")
+            raise ValueError(
+                f"d_model must be divisible by nhead. Got {d_model} and {nhead}"
+            )
         if dim_feedforward < d_model:
-            raise ValueError(f"dim_feedforward ({dim_feedforward}) < d_model ({d_model})")
+            raise ValueError(
+                f"dim_feedforward ({dim_feedforward}) < d_model ({d_model})"
+            )
 
         super().__init__()
         # Create single instances of dropout layers
@@ -195,7 +211,9 @@ class TransformerEncoderLayer(Module):
         self.ff = Sequential(
             Linear(d_model, dim_feedforward),
             self.activation,
-            Dropout(dropout),  # This is fine as Sequential handles the instance properly
+            Dropout(
+                dropout
+            ),  # This is fine as Sequential handles the instance properly
             Linear(dim_feedforward, d_model),
         )
 
@@ -205,7 +223,9 @@ class TransformerEncoderLayer(Module):
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         # Self attention block
         attn_output, _ = self.self_attn(x, x, x, mask)
-        attn_output = self.attn_dropout(attn_output)  # Apply dropout to attention output
+        attn_output = self.attn_dropout(
+            attn_output
+        )  # Apply dropout to attention output
         x = x + self.dropout1(attn_output)  # Apply dropout to residual
         x = self.norm1(x)
         # Feedforward block
@@ -273,7 +293,10 @@ class TransformerEncoder(Module):
     """
 
     def __init__(
-        self, encoder_layer: TransformerEncoderLayer, num_layers: int, norm: Optional[Module] = None
+        self,
+        encoder_layer: TransformerEncoderLayer,
+        num_layers: int,
+        norm: Optional[Module] = None,
     ):
         super().__init__()
         self.layers = Sequential(*[encoder_layer for _ in range(num_layers)])
@@ -410,7 +433,10 @@ class TransformerDecoder(Module):
     """
 
     def __init__(
-        self, decoder_layer: TransformerDecoderLayer, num_layers: int, norm: Optional[Module] = None
+        self,
+        decoder_layer: TransformerDecoderLayer,
+        num_layers: int,
+        norm: Optional[Module] = None,
     ):
         super().__init__()
         self.layers = Sequential(*[decoder_layer for _ in range(num_layers)])
@@ -498,14 +524,18 @@ class Transformer(Module):
             d_model, nhead, dim_feedforward, dropout, activation, layer_norm_eps
         )
         encoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
-        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+        self.encoder = TransformerEncoder(
+            encoder_layer, num_encoder_layers, encoder_norm
+        )
 
         # Create decoder layer and full decoder
         decoder_layer = TransformerDecoderLayer(
             d_model, nhead, dim_feedforward, dropout, activation, layer_norm_eps
         )
         decoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
-        self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm)
+        self.decoder = TransformerDecoder(
+            decoder_layer, num_decoder_layers, decoder_norm
+        )
 
         # Initialize parameters
         self._reset_parameters()

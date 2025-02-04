@@ -72,7 +72,10 @@ class MaxPool2dFunction(Function):
                         window = x_padded[n, c, h_start:h_end, w_start:w_end]
                         output[n, c, h, w] = np.max(window)
                         max_idx = np.unravel_index(np.argmax(window), window.shape)
-                        max_indices[n, c, h, w] = [h_start + max_idx[0], w_start + max_idx[1]]
+                        max_indices[n, c, h, w] = [
+                            h_start + max_idx[0],
+                            w_start + max_idx[1],
+                        ]
 
         ctx.save_for_backward(x)
         ctx.save_arguments(max_indices=max_indices)

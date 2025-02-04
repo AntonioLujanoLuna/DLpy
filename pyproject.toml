@@ -45,11 +45,11 @@ source = ["DLpy"]
 omit = ["tests/*"]
 
 [tool.black]
-line-length = 100
+line-length = 88
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 88
 skip = ["__init__.py"]
 
 [tool.mypy]

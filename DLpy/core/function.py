@@ -74,7 +74,9 @@ class Function(ABC):
 
         if needs_grad:
 
-            def backward_fn(grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+            def backward_fn(
+                grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+            ) -> None:
                 cls.backward(ctx, grad_output, grad_dict)
 
             result._backward_fn = backward_fn
@@ -92,7 +94,10 @@ class Function(ABC):
 
     @staticmethod
     def verify_backward(
-        forward_fn: Any, backward_fn: Any, inputs: Tuple[NDArray[Any], ...], epsilon: float = 1e-6
+        forward_fn: Any,
+        backward_fn: Any,
+        inputs: Tuple[NDArray[Any], ...],
+        epsilon: float = 1e-6,
     ) -> bool:
         """
         Verifies backward pass implementation using numerical gradients.

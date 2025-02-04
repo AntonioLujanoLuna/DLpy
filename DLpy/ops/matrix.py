@@ -10,7 +10,9 @@ from ..core.context import Context  # Make sure to import Context
 class Transpose(Function):
     @staticmethod
     def forward(
-        ctx: Context, x: Union[Tensor, NDArray[Any]], axes: Optional[Tuple[int, ...]] = None
+        ctx: Context,
+        x: Union[Tensor, NDArray[Any]],
+        axes: Optional[Tuple[int, ...]] = None,
     ) -> Tensor:
         """
         Transposes a tensor along specified axes.

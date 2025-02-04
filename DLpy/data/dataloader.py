@@ -43,7 +43,9 @@ class DataLoader:
         self.batch_size = batch_size  # Now guaranteed to be an int
         self.drop_last = drop_last
         # Store collate function, using default if none provided
-        self.collate_fn = collate_fn if collate_fn is not None else self._default_collate
+        self.collate_fn = (
+            collate_fn if collate_fn is not None else self._default_collate
+        )
 
         # Set up the sampler based on input parameters
         if sampler is not None:
@@ -80,13 +82,15 @@ class DataLoader:
             # Convert scalar values to a flat tensor
             return Tensor(np.array(batch))
         elif isinstance(elem, tuple) and hasattr(elem, "_fields"):  # namedtuple
-            return type(elem)(*(self._default_collate(samples) for samples in zip(*batch)))
+            return type(elem)(
+                *(self._default_collate(samples) for samples in zip(*batch))
+            )
         elif isinstance(elem, (list, tuple)):
             return [self._default_collate(samples) for samples in zip(*batch)]
         else:
             try:
                 return Tensor(np.array(batch))
-            except:
+            except Exception:
                 return batch
 
     def __iter__(self) -> Iterator[Any]:

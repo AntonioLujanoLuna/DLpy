@@ -29,7 +29,8 @@ class MSELoss(Function):
 
         if predictions.shape != targets.shape:
             raise ValueError(
-                f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}"
+                f"Shape mismatch: predictions {predictions.shape} vs "
+                f"targets {targets.shape}"
             )
 
         diff = predictions.data - targets.data
@@ -226,7 +227,8 @@ class L1Loss(Function):
 
         if predictions.shape != targets.shape:
             raise ValueError(
-                f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}"
+                f"Shape mismatch: predictions {predictions.shape} vs "
+                f"targets {targets.shape}"
             )
 
         diff = predictions.data - targets.data
@@ -455,7 +457,9 @@ class HingeLoss(Function):
             raise ValueError(f"Invalid reduction method: {reduction}")
 
         ctx.save_for_backward(predictions, targets)
-        ctx.save_arguments(margin=margin, reduction=reduction, signed_targets=signed_targets)
+        ctx.save_arguments(
+            margin=margin, reduction=reduction, signed_targets=signed_targets
+        )
         return Tensor(result)
 
     @staticmethod
@@ -509,7 +513,9 @@ class FocalLoss(Function):
         predictions_clipped = np.clip(predictions.data, eps, 1 - eps)
 
         # Compute pt (probability of target class)
-        pt = predictions_clipped * targets.data + (1 - predictions_clipped) * (1 - targets.data)
+        pt = predictions_clipped * targets.data + (1 - predictions_clipped) * (
+            1 - targets.data
+        )
 
         # Compute focal weight
         focal_weight = alpha * ((1 - pt) ** gamma)
@@ -534,7 +540,11 @@ class FocalLoss(Function):
 
         ctx.save_for_backward(predictions, targets)
         ctx.save_arguments(
-            alpha=alpha, gamma=gamma, reduction=reduction, pt=pt, focal_weight=focal_weight
+            alpha=alpha,
+            gamma=gamma,
+            reduction=reduction,
+            pt=pt,
+            focal_weight=focal_weight,
         )
         return Tensor(result)
 
@@ -550,7 +560,9 @@ class FocalLoss(Function):
         focal_weight = ctx.saved_arguments["focal_weight"]
 
         # Compute gradient
-        grad = grad_output * focal_weight * (gamma * pt * np.log(pt) + pt - targets.data)
+        grad = (
+            grad_output * focal_weight * (gamma * pt * np.log(pt) + pt - targets.data)
+        )
 
         if reduction == "mean":
             grad = grad / np.prod(predictions.shape)
@@ -561,7 +573,9 @@ class FocalLoss(Function):
 
 class HuberLoss(Function):
     """
-    Huber Loss: L = 0.5 * (y - ŷ)² if |y - ŷ| <= delta else delta * |y - ŷ| - 0.5 * delta²
+    Huber Loss:
+        L = 0.5 * (y - ŷ)² if |y - ŷ| <= delta
+        else delta * |y - ŷ| - 0.5 * delta²
 
     This loss combines the best properties of MSE and L1 loss.
     For small errors it behaves like MSE, for large errors it behaves like L1.
@@ -587,7 +601,8 @@ class HuberLoss(Function):
 
         if predictions.shape != targets.shape:
             raise ValueError(
-                f"Shape mismatch: predictions {predictions.shape} vs targets {targets.shape}"
+                f"Shape mismatch: predictions {predictions.shape} vs "
+                f"targets {targets.shape}"
             )
 
         diff = predictions.data - targets.data

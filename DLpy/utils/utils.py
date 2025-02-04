@@ -15,8 +15,12 @@ def calculate_fan_in_fan_out(tensor: NDArray[Any]) -> Tuple[int, int]:
         Tuple of (fan_in, fan_out)
 
     Note:
-        For linear layers: fan_in is input dimensions, fan_out is output dimensions
-        For conv layers: fan_in is (channels_in * kernel_size), fan_out is (channels_out * kernel_size)
+        For linear layers:
+            fan_in is input dimensions,
+            fan_out is output dimensions
+        For conv layers:
+            fan_in is (channels_in * kernel_size),
+            fan_out is (channels_out * kernel_size)
     """
     dimensions = tensor.shape
 
@@ -29,6 +33,8 @@ def calculate_fan_in_fan_out(tensor: NDArray[Any]) -> Tuple[int, int]:
         fan_out = dimensions[0] * receptive_field_size  # channels_out * kernel_size
 
     else:
-        raise ValueError(f"tensor.shape should have at least 2 dimensions, got {dimensions}")
+        raise ValueError(
+            f"tensor.shape should have at least 2 dimensions, got {dimensions}"
+        )
 
     return fan_in, fan_out

@@ -18,7 +18,9 @@ class Dropout(Module):
     def __init__(self, p: float = 0.5, inplace: bool = False):
         super().__init__()
         if p < 0 or p > 1:
-            raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+            raise ValueError(
+                f"dropout probability has to be between 0 and 1, but got {p}"
+            )
         self.p = p
         self.inplace = inplace
 
@@ -53,7 +55,8 @@ class Dropout2d(Module):
     """
     Randomly zero out entire channels (a channel is a 2D feature map,
     e.g., the j-th channel of the i-th sample in the batch input) of the input tensor.
-    Each channel will be zeroed out independently on every forward call with probability p.
+    Each channel will be zeroed out independently on every forward call
+    with probability p.
 
     Args:
         p: Probability of a channel to be zeroed. Default: 0.5
@@ -63,7 +66,9 @@ class Dropout2d(Module):
     def __init__(self, p: float = 0.5, inplace: bool = False):
         super().__init__()
         if p < 0 or p > 1:
-            raise ValueError(f"dropout probability has to be between 0 and 1, but got {p}")
+            raise ValueError(
+                f"dropout probability has to be between 0 and 1, but got {p}"
+            )
         self.p = p
         self.inplace = inplace
         self.mask: Optional[NDArray[Any]] = None
@@ -73,7 +78,9 @@ class Dropout2d(Module):
             assert len(x.shape) == 4, f"expected 4D input, got {len(x.shape)}D input"
 
             # Generate mask for entire channels
-            mask = (np.random.rand(x.shape[0], x.shape[1], 1, 1) > self.p).astype(np.float64)
+            mask = (np.random.rand(x.shape[0], x.shape[1], 1, 1) > self.p).astype(
+                np.float64
+            )
             self.mask = np.broadcast_to(mask, x.shape)
 
             # Scale up by 1/(1-p) to maintain expected value

@@ -10,33 +10,49 @@ class Sequential(Module):
     Modules are executed in the order they are passed to the constructor.
 
     The container can be initialized in two ways:
-    1. With individual modules: Sequential(Linear(10, 5), ReLU(), Linear(5, 1))
-    2. With an OrderedDict: Sequential(OrderedDict([('fc1', Linear(10, 5)), ('relu', ReLU())]))
+    1. With individual modules:
+            Sequential(Linear(10, 5), ReLU(), Linear(5, 1))
+    2. With an OrderedDict:
+            Sequential(OrderedDict([('fc1', Linear(10, 5)), ('relu', ReLU())]))
     """
 
-    def __init__(self, first_arg: Union[Module, OrderedDict[str, Module]], *rest: Module) -> None:
+    def __init__(
+        self,
+        first_arg: Union[Module, OrderedDict[str, Module], None] = None,
+        *rest: Module,
+    ) -> None:
         """
         Initialize the sequential container with modules.
 
         Args:
-            first_arg: Either an OrderedDict mapping names to modules, or the first module
+            first_arg: Either an OrderedDict mapping names to modules,
+                the first module, or None for empty initialization
             *rest: Additional modules when not using OrderedDict initialization
-
-        Raises:
-            TypeError: If the arguments don't match either initialization pattern
         """
         super().__init__()
+
+        if first_arg is None:
+            # Handle empty initialization
+            if rest:
+                raise TypeError(
+                    "When initializing empty Sequential, no additional arguments "
+                    "should be provided"
+                )
+            return
 
         if isinstance(first_arg, OrderedDict):
             # If we got an OrderedDict, we shouldn't have any additional arguments
             if rest:
                 raise TypeError(
-                    "When using OrderedDict initialization, no additional arguments should be provided"
+                    "When using OrderedDict initialization, no additional arguments "
+                    "should be provided"
                 )
             # Handle OrderedDict initialization
             for key, module in first_arg.items():
                 if not isinstance(module, Module):
-                    raise TypeError(f"Value in OrderedDict must be Module, got {type(module)}")
+                    raise TypeError(
+                        f"Value in OrderedDict must be Module, got {type(module)}"
+                    )
                 self.add_module(key, module)
         else:
             # Handle sequential Module initialization

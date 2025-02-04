@@ -140,7 +140,9 @@ class Min(Function):
         # Compute min with keepdims=True for backward compatibility
         result = np.amin(x.data, axis=axis, keepdims=True)
         ctx.save_for_backward(x)
-        ctx.save_arguments(axis=axis, keepdims=keepdims, min_vals=result)  # Fixed key name
+        ctx.save_arguments(
+            axis=axis, keepdims=keepdims, min_vals=result
+        )  # Fixed key name
 
         # Squeeze if keepdims=False
         if not keepdims:

@@ -19,7 +19,9 @@ class ModelSaver:
     """
 
     @staticmethod
-    def save_model(model: Module, path: Union[str, Path], optimize: bool = True) -> None:
+    def save_model(
+        model: Module, path: Union[str, Path], optimize: bool = True
+    ) -> None:
         """
         Save complete model (architecture + parameters).
 
@@ -38,7 +40,8 @@ class ModelSaver:
         # Save module hierarchy for reconstruction
         if hasattr(model, "_modules"):
             state["modules"] = {
-                name: module.__class__.__name__ for name, module in model._modules.items()
+                name: module.__class__.__name__
+                for name, module in model._modules.items()
             }
 
         with path.open("wb") as f:
@@ -76,7 +79,9 @@ class ModelSaver:
                 test_module_names = ["__main__", "tests.test_serialization"]
                 for module_name in test_module_names:
                     if module_name in sys.modules:
-                        model_class = getattr(sys.modules[module_name], state["model_class"], None)
+                        model_class = getattr(
+                            sys.modules[module_name], state["model_class"], None
+                        )
                         if model_class is not None:
                             break
 
@@ -95,7 +100,9 @@ class ModelSaver:
         model.load_state_dict(state["state_dict"])
 
         if not isinstance(model, Module):
-            raise TypeError(f"Loaded model must be an instance of Module, got {type(model)}")
+            raise TypeError(
+                f"Loaded model must be an instance of Module, got {type(model)}"
+            )
 
         return model
 

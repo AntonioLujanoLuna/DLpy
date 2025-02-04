@@ -68,7 +68,8 @@ class Add(Function):
         grad: NDArray[Any], target_shape: Union[Tuple[int, ...], NDArray[Any]]
     ) -> NDArray[Any]:
         """
-        Reduces the gradient to match the target shape by summing over broadcasted dimensions.
+        Reduces the gradient to match the target shape by summing over broadcasted
+            dimensions.
 
         Args:
             grad: The gradient to be reduced
@@ -139,7 +140,8 @@ class Multiply(Function):
         grad: NDArray[Any], target_shape: Union[Tuple[int, ...], NDArray[Any]]
     ) -> NDArray[Any]:
         """
-        Reduces the gradient to match the target shape by summing over broadcasted dimensions.
+        Reduces the gradient to match the target shape by summing over broadcasted
+            dimensions.
         """
         # Convert target_shape to a tuple if it's not
         if not isinstance(target_shape, tuple):
@@ -246,7 +248,8 @@ class Softmax(Function):
 
         if x.requires_grad:
             grad_x = softmax_out.data * (
-                grad_output - np.sum(grad_output * softmax_out.data, axis=dim, keepdims=True)
+                grad_output
+                - np.sum(grad_output * softmax_out.data, axis=dim, keepdims=True)
             )
 
             if id(x) not in grad_dict:

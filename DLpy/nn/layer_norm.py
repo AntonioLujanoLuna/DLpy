@@ -16,7 +16,10 @@ class LayerNorm(Module):
     """
 
     def __init__(
-        self, normalized_shape: List[int], eps: float = 1e-5, elementwise_affine: bool = True
+        self,
+        normalized_shape: List[int],
+        eps: float = 1e-5,
+        elementwise_affine: bool = True,
     ):
         super().__init__()
         if isinstance(normalized_shape, int):
@@ -39,7 +42,9 @@ class LayerNorm(Module):
         normalized_ndim = len(self.normalized_shape)
 
         if ndim < normalized_ndim:
-            raise ValueError(f"Expected {normalized_ndim}D or higher input, got {ndim}D input")
+            raise ValueError(
+                f"Expected {normalized_ndim}D or higher input, got {ndim}D input"
+            )
 
         for i, s in enumerate(reversed(self.normalized_shape)):
             if input_shape[ndim - i - 1] != s:
@@ -49,7 +54,6 @@ class LayerNorm(Module):
                 )
 
         # Calculate statistics over the normalized dimensions
-        stats_shape = input_shape[:-normalized_ndim] + (1,) * normalized_ndim
         reduction_axes = tuple(range(ndim - normalized_ndim, ndim))
 
         mean = np.mean(x.data, axis=reduction_axes, keepdims=True)
@@ -66,7 +70,9 @@ class LayerNorm(Module):
             bias_shape = (1,) * (ndim - normalized_ndim) + self.normalized_shape
 
             # Handle broadcasting for weight and bias
-            weight = np.broadcast_to(self.weight.data.reshape(weight_shape), x_norm.shape)
+            weight = np.broadcast_to(
+                self.weight.data.reshape(weight_shape), x_norm.shape
+            )
             bias = np.broadcast_to(self.bias.data.reshape(bias_shape), x_norm.shape)
 
             x_norm = x_norm * weight + bias

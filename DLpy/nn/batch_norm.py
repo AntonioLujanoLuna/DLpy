@@ -74,10 +74,12 @@ class BatchNorm1d(Module):
             running_mean = self.running_mean.data
             running_var = self.running_var.data
             running_mean = (
-                running_mean * (1 - exponential_average_factor) + mean * exponential_average_factor
+                running_mean * (1 - exponential_average_factor)
+                + mean * exponential_average_factor
             )
             running_var = (
-                running_var * (1 - exponential_average_factor) + var * exponential_average_factor
+                running_var * (1 - exponential_average_factor)
+                + var * exponential_average_factor
             )
             self.running_mean.data = running_mean
             self.running_var.data = running_var
@@ -117,5 +119,6 @@ class BatchNorm2d(BatchNorm1d):
 
         # Reshape back: (N*H*W,C) -> (N,C,H,W)
         return Tensor(
-            x_normed.data.reshape(N, H, W, C).transpose(0, 3, 1, 2), requires_grad=x.requires_grad
+            x_normed.data.reshape(N, H, W, C).transpose(0, 3, 1, 2),
+            requires_grad=x.requires_grad,
         )

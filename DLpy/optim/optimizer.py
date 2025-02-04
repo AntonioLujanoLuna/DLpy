@@ -3,7 +3,9 @@ from typing import Any, Dict, Iterator, List, Union, cast
 from ..core import Tensor
 
 # Define more precise type aliases
-OptState = Dict[int, Dict[str, Any]]  # State dictionary maps parameter IDs to their states
+OptState = Dict[
+    int, Dict[str, Any]
+]  # State dictionary maps parameter IDs to their states
 OptDefaults = Dict[str, Any]  # Default hyperparameters dictionary
 # StateDict needs to accurately represent our nested structure
 StateDict = Dict[

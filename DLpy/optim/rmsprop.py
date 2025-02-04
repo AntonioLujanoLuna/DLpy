@@ -115,11 +115,15 @@ class RMSprop(Optimizer):
             # Apply momentum if enabled
             if self.defaults["momentum"] > 0:
                 buf = state.get("momentum_buffer", np.zeros_like(grad))
-                buf = self.defaults["momentum"] * buf + grad / (np.sqrt(avg) + self.defaults["eps"])
+                buf = self.defaults["momentum"] * buf + grad / (
+                    np.sqrt(avg) + self.defaults["eps"]
+                )
                 state["momentum_buffer"] = buf
                 p.data -= self.defaults["lr"] * buf
             else:
-                p.data -= self.defaults["lr"] * grad / (np.sqrt(avg) + self.defaults["eps"])
+                p.data -= (
+                    self.defaults["lr"] * grad / (np.sqrt(avg) + self.defaults["eps"])
+                )
 
             # Save state
             state["square_avg"] = square_avg

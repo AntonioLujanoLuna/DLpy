@@ -123,4 +123,6 @@ class Divide(Function):
             grad_dict[id(numerator)] = grad_output / denominator.data
 
         if denominator.requires_grad:
-            grad_dict[id(denominator)] = -grad_output * numerator.data / (denominator.data**2)
+            grad_dict[id(denominator)] = (
+                -grad_output * numerator.data / (denominator.data**2)
+            )
