@@ -1034,7 +1034,9 @@ class Conv2dFunction(Function):
             return Tensor(output)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         """Backward pass of 2D convolution."""
         # Retrieve saved tensors and arguments
         saved_tensors = ctx.saved_tensors
@@ -1164,12 +1166,13 @@ class Conv2dFunction(Function):
         if x.requires_grad:
             if mode in [ConvMode.STANDARD, ConvMode.DEFORMABLE]:
                 if padding[0] > 0 or padding[1] > 0:
-                    grad_x = grad_x_padded[
-                        :,
-                        :,
-                        padding[0] : grad_x_padded.shape[2] - padding[0],
-                        padding[1] : grad_x_padded.shape[3] - padding[1],
-                    ]
+                    if grad_x_padded is not None:
+                        grad_x = grad_x_padded[
+                            :,
+                            :,
+                            padding[0] : grad_x_padded.shape[2] - padding[0],
+                            padding[1] : grad_x_padded.shape[3] - padding[1],
+                        ]
                 else:
                     grad_x = grad_x_padded
             grad_dict[id(x)] = grad_x
@@ -1224,9 +1227,10 @@ class Conv2dFunction(Function):
             )
 
             # Compute weight gradients
-            grad_weight[g * C_out_per_group : (g + 1) * C_out_per_group] = (
-                grad_out_col @ x_cols.T
-            ).reshape(C_out_per_group, C_in_per_group, kH, kW)
+            if grad_weight is not None:
+                grad_weight[g * C_out_per_group : (g + 1) * C_out_per_group] = (
+                    grad_out_col @ x_cols.T
+                ).reshape(C_out_per_group, C_in_per_group, kH, kW)
 
             # Compute input gradients
             w_reshaped = w_g.reshape(C_out_per_group, -1).T
@@ -1236,9 +1240,10 @@ class Conv2dFunction(Function):
             grad_cols = grad_cols.reshape(-1, N * H_out * W_out)
 
             # Convert columns back to image format
-            grad_x_padded[:, g * C_in_per_group : (g + 1) * C_in_per_group] += _col2im_dilated(
-                grad_cols, x_padded.shape, (kH, kW), stride, dilation
-            )
+            if grad_x_padded is not None:
+                grad_x_padded[:, g * C_in_per_group : (g + 1) * C_in_per_group] += _col2im_dilated(
+                    grad_cols, x_padded.shape, (kH, kW), stride, dilation
+                )
 
         # Compute bias gradients if needed
         if bias is not None and grad_bias is not None:
@@ -1285,13 +1290,14 @@ class Conv2dFunction(Function):
                 weight.shape[2:],
                 dilation,  # Use dilation as stride
                 stride,  # Use stride as dilation
-                ConvMode.STANDARD,
+                (0, 0),  # Change to tuple for padding parameter
             )
 
             # Compute gradient for input
-            grad_x[:, g * C_in_per_group : (g + 1) * C_in_per_group] += (
-                w_reshaped @ grad_cols
-            ).reshape(N, C_in_per_group, *x.shape[2:])
+            if grad_x is not None:
+                grad_x[:, g * C_in_per_group : (g + 1) * C_in_per_group] += (
+                    w_reshaped @ grad_cols
+                ).reshape(N, C_in_per_group, *x.shape[2:])
 
             # Compute gradient for weights
             x_original = x.data[:, g * C_in_per_group : (g + 1) * C_in_per_group]
@@ -1300,16 +1306,17 @@ class Conv2dFunction(Function):
                 weight.shape[2:],
                 stride,
                 dilation,
-                ConvMode.STANDARD,
+                (0, 0),
                 sampling_locations=None,
             )
             for n in range(N):
                 grad_out_n = grad_out_g[n].reshape(
                     C_out_per_group, -1
                 )  # Shape: (C_out_per_group, H_out * W_out)
-                grad_weight[g * C_out_per_group : (g + 1) * C_out_per_group] += (
-                    grad_out_n @ x_cols[:, n * H_out * W_out : (n + 1) * H_out * W_out].T
-                ).reshape(C_out_per_group, C_in_per_group, kH, kW)
+                if grad_weight is not None:
+                    grad_weight[g * C_out_per_group : (g + 1) * C_out_per_group] += (
+                        grad_out_n @ x_cols[:, n * H_out * W_out : (n + 1) * H_out * W_out].T
+                    ).reshape(C_out_per_group, C_in_per_group, kH, kW)
 
         # Compute gradient for bias
         if bias is not None:

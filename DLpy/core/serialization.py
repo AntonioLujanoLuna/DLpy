@@ -94,6 +94,9 @@ class ModelSaver:
         # Load state dict
         model.load_state_dict(state["state_dict"])
 
+        if not isinstance(model, Module):
+            raise TypeError(f"Loaded model must be an instance of Module, got {type(model)}")
+
         return model
 
     @staticmethod

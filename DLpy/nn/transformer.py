@@ -59,10 +59,10 @@ class MultiHeadAttention(Module):
         self.head_dim = embed_dim // num_heads
         self.scaling = self.head_dim**-0.5
 
-        self.w_q = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
-        self.w_k = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
-        self.w_v = Linear(embed_dim, embed_dim, bias=bias)  # (N, S, E) -> (N, S, E)
-        self.w_o = Linear(embed_dim, embed_dim, bias=bias)  # (N, L, E) -> (N, L, E)
+        self.w_q = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, L, E) -> (N, L, E)
+        self.w_k = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, S, E) -> (N, S, E)
+        self.w_v = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, S, E) -> (N, S, E)
+        self.w_o = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, L, E) -> (N, L, E)
 
         self.attention_dropout = Dropout(self.dropout)
 
@@ -257,7 +257,7 @@ class PositionalEncoding(Module):
             Output tensor of shape (batch_size, seq_len, d_model)
         """
         x = x + self.pe[:, : x.shape[1]]
-        return self.dropout(x)
+        return Tensor(self.dropout(x))
 
 
 class TransformerEncoder(Module):
@@ -513,7 +513,7 @@ class Transformer(Module):
         self.d_model = d_model
         self.nhead = nhead
 
-    def _reset_parameters(self):
+    def _reset_parameters(self) -> None:
         """Initialize parameters using a layer-dependent scale."""
         for p in self.parameters():
             if isinstance(p, Tensor) and p.data.ndim > 1:
@@ -551,4 +551,4 @@ class Transformer(Module):
         output = self.decoder(tgt, memory, tgt_mask, memory_mask)
         # Add a small epsilon to prevent exact zeros
         output = output + 1e-8
-        return output
+        return Tensor(output)
