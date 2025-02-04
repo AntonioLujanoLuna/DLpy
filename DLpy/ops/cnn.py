@@ -15,11 +15,11 @@ class ConvMode:
 
 
 def _validate_conv_params(
-    x_shape: tuple,
-    weight_shape: tuple,
-    stride: tuple,
-    padding: tuple,
-    dilation: tuple,
+    x_shape: Tuple[int, ...],
+    weight_shape: Tuple[int, ...],
+    stride: Tuple[int, int],
+    padding: Tuple[int, int],
+    dilation: Tuple[int, int],
     groups: int,
     mode: str = ConvMode.STANDARD,
     offset: Optional[Tensor] = None,
@@ -204,79 +204,12 @@ def _get_deformable_offsets(
     return sampling_locations
 
 
-def _bilinear_interpolate(
-    input: NDArray[Any], points: NDArray[Any], align_corners: bool = True
-) -> NDArray[Any]:
-    """
-    Performs bilinear interpolation on the input tensor at specified points.
-
-    Args:
-        input: Input tensor (N, C, H, W)
-        points: Points to sample (N, P, 2) in normalized coordinates [-1, 1]
-        align_corners: Whether to align corners in interpolation
-
-    Returns:
-        Interpolated values (N, C, P)
-    """
-    N, C, H, W = input.shape
-
-    # Ensure points is correct shape (N, P, 2)
-    if points.ndim == 4:
-        points = points.reshape(points.shape[0], -1, 2)
-
-    _, P, _ = points.shape
-
-    # Convert normalized coordinates to pixel coordinates
-    if align_corners:
-        x = (points[..., 0] + 1) * (W - 1) / 2
-        y = (points[..., 1] + 1) * (H - 1) / 2
-    else:
-        x = ((points[..., 0] + 1) * W - 1) / 2
-        y = ((points[..., 1] + 1) * H - 1) / 2
-
-    # Get corner indices
-    x0 = np.floor(x).astype(np.int32)
-    x1 = x0 + 1
-    y0 = np.floor(y).astype(np.int32)
-    y1 = y0 + 1
-
-    # Clip to image boundaries
-    x0 = np.clip(x0, 0, W - 1)
-    x1 = np.clip(x1, 0, W - 1)
-    y0 = np.clip(y0, 0, H - 1)
-    y1 = np.clip(y1, 0, H - 1)
-
-    # Calculate interpolation weights
-    wa = (x1 - x) * (y1 - y)
-    wb = (x1 - x) * (y - y0)
-    wc = (x - x0) * (y1 - y)
-    wd = (x - x0) * (y - y0)
-
-    # Reshape weights for broadcasting
-    wa = wa[..., None]
-    wb = wb[..., None]
-    wc = wc[..., None]
-    wd = wd[..., None]
-
-    # Gather corner values and compute weighted sum
-    output = np.zeros((N, C, P))
-    for n in range(N):
-        output[n] = (
-            wa[n] * input[n, :, y0[n], x0[n]]
-            + wb[n] * input[n, :, y1[n], x0[n]]
-            + wc[n] * input[n, :, y0[n], x1[n]]
-            + wd[n] * input[n, :, y1[n], x1[n]]
-        )
-
-    return output
-
-
 def _im2col_dilated(
     x: NDArray[Any],
-    kernel_size: Tuple[int, int],
-    stride: Tuple[int, int],
-    dilation: Tuple[int, int],
-    padding: Tuple[int, int],
+    kernel_size: Tuple[int, ...],
+    stride: Tuple[int, ...],
+    dilation: Tuple[int, ...],
+    padding: Tuple[int, ...],
     mode: str = ConvMode.STANDARD,
     sampling_locations: Optional[NDArray[Any]] = None,
 ) -> NDArray[Any]:
@@ -419,7 +352,7 @@ def _compute_conv_grad_input_padding(
     stride: int,
     padding: int,
     dilation: int,
-) -> Tuple[int, int]:
+) -> int:
     """Computes padding needed for gradient computation."""
     grad_input_padding = kernel_size - 1 - padding
     return grad_input_padding
@@ -1252,25 +1185,25 @@ class Conv2dFunction(Function):
 
     @staticmethod
     def _backward_standard(
-        grad_output,
-        grad_x_padded,
-        grad_weight,
-        grad_bias,
-        x_padded,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        groups,
-        N,
-        C_in_per_group,
-        C_out_per_group,
-        kH,
-        kW,
-        H_out,
-        W_out,
-    ):
+        grad_output: NDArray[Any],
+        grad_x_padded: Optional[NDArray[Any]],
+        grad_weight: Optional[NDArray[Any]],
+        grad_bias: Optional[NDArray[Any]],
+        x_padded: NDArray[Any],
+        weight: Tensor,
+        bias: Optional[Tensor],
+        stride: Tuple[int, int],
+        padding: Tuple[int, int],
+        dilation: Tuple[int, int],
+        groups: int,
+        N: int,
+        C_in_per_group: int,
+        C_out_per_group: int,
+        kH: int,
+        kW: int,
+        H_out: int,
+        W_out: int,
+    ) -> None:
         """Backward pass for standard convolution."""
         for g in range(groups):
             # Get weight and grad_output for current group
@@ -1313,25 +1246,25 @@ class Conv2dFunction(Function):
 
     @staticmethod
     def _backward_transposed(
-        grad_output_padded,
-        grad_x,
-        grad_weight,
-        grad_bias,
-        x,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        groups,
-        N,
-        C_in_per_group,
-        C_out_per_group,
-        kH,
-        kW,
-        H_out,
-        W_out,
-    ):
+        grad_output_padded: NDArray[Any],
+        grad_x: Optional[NDArray[Any]],
+        grad_weight: Optional[NDArray[Any]],
+        grad_bias: Optional[NDArray[Any]],
+        x: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        stride: Tuple[int, int],
+        padding: Tuple[int, int],
+        dilation: Tuple[int, int],
+        groups: int,
+        N: int,
+        C_in_per_group: int,
+        C_out_per_group: int,
+        kH: int,
+        kW: int,
+        H_out: int,
+        W_out: int,
+    ) -> None:
         """
         Backward pass for transposed convolution.
         """
@@ -1384,31 +1317,31 @@ class Conv2dFunction(Function):
 
     @staticmethod
     def _backward_deformable(
-        grad_output,
-        grad_x_padded,
-        grad_weight,
-        grad_bias,
-        grad_offset,
-        grad_mask,
-        x_padded,
-        weight,
-        bias,
-        offset_tensor,
-        mask,
-        stride,
-        padding,
-        dilation,
-        groups,
-        sampling_locations,
-        N,
-        C_in_per_group,
-        C_out_per_group,
-        kH,
-        kW,
-        H_out,
-        W_out,
-        align_corners=True,
-    ):
+        grad_output: NDArray[Any],
+        grad_x_padded: Optional[NDArray[Any]],
+        grad_weight: Optional[NDArray[Any]],
+        grad_bias: Optional[NDArray[Any]],
+        grad_offset: Optional[NDArray[Any]],
+        grad_mask: Optional[NDArray[Any]],
+        x_padded: NDArray[Any],
+        weight: Tensor,
+        bias: Optional[Tensor],
+        offset_tensor: Optional[Tensor],
+        mask: Optional[NDArray[Any]],
+        stride: Tuple[int, int],
+        padding: Tuple[int, int],
+        dilation: Tuple[int, int],
+        groups: int,
+        sampling_locations: Optional[NDArray[Any]],
+        N: int,
+        C_in_per_group: int,
+        C_out_per_group: int,
+        kH: int,
+        kW: int,
+        H_out: int,
+        W_out: int,
+        align_corners: bool = True,
+    ) -> None:
         """Backward pass for deformable convolution."""
 
         if sampling_locations is None and offset_tensor is not None:

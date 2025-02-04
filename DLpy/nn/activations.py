@@ -1,11 +1,9 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Function, Module, Tensor
-
-# Function implementations (for functional usage)
+from ..core import Context, Function, Module, Tensor
 
 
 class ReLUFunction(Function):
@@ -17,7 +15,7 @@ class ReLUFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]]) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -25,7 +23,9 @@ class ReLUFunction(Function):
         return Tensor(np.maximum(0, x.data))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         if x.requires_grad:
             grad = grad_output * (x.data > 0)
@@ -44,7 +44,9 @@ class LeakyReLUFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x, negative_slope: float = 0.01):
+    def forward(
+        ctx: Context, x: Union[Tensor, NDArray[Any]], negative_slope: float = 0.01
+    ) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -54,7 +56,9 @@ class LeakyReLUFunction(Function):
         return Tensor(np.where(x.data > 0, x.data, negative_slope * x.data))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         negative_slope = ctx.saved_arguments["negative_slope"]
 
@@ -75,7 +79,7 @@ class ELUFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x, alpha: float = 1.0):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]], alpha: float = 1.0) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -85,7 +89,9 @@ class ELUFunction(Function):
         return Tensor(np.where(x.data > 0, x.data, alpha * (np.exp(x.data) - 1)))
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         alpha = ctx.saved_arguments["alpha"]
 
@@ -106,7 +112,7 @@ class GELUFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]]) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -129,7 +135,9 @@ class GELUFunction(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         tanh_inner = ctx.saved_arguments["tanh_inner"]
 
@@ -160,7 +168,7 @@ class SigmoidFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]]) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -174,7 +182,9 @@ class SigmoidFunction(Function):
         return Tensor(sigmoid_x)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         sigmoid_x = ctx.saved_arguments["sigmoid_x"]
 
@@ -192,7 +202,7 @@ class TanhFunction(Function):
     """
 
     @staticmethod
-    def forward(ctx, x):
+    def forward(ctx: Context, x: Union[Tensor, NDArray[Any]]) -> Tensor:
         if not isinstance(x, Tensor):
             x = Tensor(x)
 
@@ -202,7 +212,9 @@ class TanhFunction(Function):
         return Tensor(tanh_x)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         (x,) = ctx.saved_tensors
         tanh_x = ctx.saved_arguments["tanh_x"]
 

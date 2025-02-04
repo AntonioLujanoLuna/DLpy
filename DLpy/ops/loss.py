@@ -1,9 +1,9 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Function, Tensor
+from ..core import Context, Function, Tensor
 
 
 class MSELoss(Function):
@@ -16,7 +16,12 @@ class MSELoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -44,7 +49,9 @@ class MSELoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
 
@@ -71,7 +78,7 @@ class CrossEntropyLoss(Function):
     """
 
     @staticmethod
-    def _log_softmax(x):
+    def _log_softmax(x: NDArray[Any]) -> NDArray[Any]:
         # Compute log(softmax(x)) in a numerically stable way
         max_x = np.max(x, axis=1, keepdims=True)
         exp_x = np.exp(x - max_x)
@@ -79,7 +86,12 @@ class CrossEntropyLoss(Function):
         return (x - max_x) - np.log(sum_exp_x)
 
     @staticmethod
-    def forward(ctx, predictions, targets, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -102,7 +114,9 @@ class CrossEntropyLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         log_softmax = ctx.saved_arguments["log_softmax"]
@@ -129,7 +143,13 @@ class BinaryCrossEntropyLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, reduction="mean", eps=1e-7):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        reduction: str = "mean",
+        eps: float = 1e-7,
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -161,7 +181,9 @@ class BinaryCrossEntropyLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         eps = ctx.saved_arguments["eps"]
@@ -191,7 +213,12 @@ class L1Loss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -219,7 +246,9 @@ class L1Loss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
 
@@ -247,7 +276,13 @@ class KLDivLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, reduction="mean", log_target=False):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        reduction: str = "mean",
+        log_target: bool = False,
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -276,7 +311,9 @@ class KLDivLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         reduction = ctx.saved_arguments["reduction"]
         log_target = ctx.saved_arguments["log_target"]
@@ -307,7 +344,14 @@ class CosineSimilarityLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, x1, x2, dim=1, eps=1e-8, reduction="mean"):
+    def forward(
+        ctx: Context,
+        x1: Union[Tensor, NDArray[Any]],
+        x2: Union[Tensor, NDArray[Any]],
+        dim: int = 1,
+        eps: float = 1e-8,
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(x1, Tensor):
             x1 = Tensor(x1)
         if not isinstance(x2, Tensor):
@@ -347,7 +391,9 @@ class CosineSimilarityLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         x1, x2 = ctx.saved_tensors
         ctx.saved_arguments["dim"]
         ctx.saved_arguments["eps"]
@@ -381,7 +427,13 @@ class HingeLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, margin=1.0, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        margin: float = 1.0,
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -407,7 +459,9 @@ class HingeLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         margin = ctx.saved_arguments["margin"]
         reduction = ctx.saved_arguments["reduction"]
@@ -437,7 +491,14 @@ class FocalLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, alpha=0.25, gamma=2.0, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        alpha: float = 0.25,
+        gamma: float = 2.0,
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -478,7 +539,9 @@ class FocalLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         ctx.saved_arguments["alpha"]
         gamma = ctx.saved_arguments["gamma"]
@@ -510,7 +573,13 @@ class HuberLoss(Function):
     """
 
     @staticmethod
-    def forward(ctx, predictions, targets, delta=1.0, reduction="mean"):
+    def forward(
+        ctx: Context,
+        predictions: Union[Tensor, NDArray[Any]],
+        targets: Union[Tensor, NDArray[Any]],
+        delta: float = 1.0,
+        reduction: str = "mean",
+    ) -> Tensor:
         if not isinstance(predictions, Tensor):
             predictions = Tensor(predictions)
         if not isinstance(targets, Tensor):
@@ -541,7 +610,9 @@ class HuberLoss(Function):
         return Tensor(result)
 
     @staticmethod
-    def backward(ctx, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]) -> None:
+    def backward(
+        ctx: Context, grad_output: NDArray[Any], grad_dict: Dict[int, NDArray[Any]]
+    ) -> None:
         predictions, targets = ctx.saved_tensors
         delta = ctx.saved_arguments["delta"]
         reduction = ctx.saved_arguments["reduction"]
