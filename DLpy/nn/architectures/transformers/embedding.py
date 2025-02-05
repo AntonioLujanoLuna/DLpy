@@ -1,15 +1,9 @@
-from typing import Any, Optional, Tuple
-
 import numpy as np
-from numpy.typing import NDArray
 
-from ..core import Module, Tensor
-from ..nn.activations import ReLU
-from ..nn.dropout import Dropout
-from ..nn.layer_norm import LayerNorm
-from ..nn.linear import Linear
-from ..nn.sequential import Sequential
-from ..utils import calculate_fan_in_fan_out
+from ....core import Module, Tensor
+from ...attention.utils import get_angles
+from ...base.dropout import Dropout
+
 
 class PositionalEncoding(Module):
     """
@@ -53,5 +47,6 @@ class PositionalEncoding(Module):
         """
         x = x + self.pe[:, : x.shape[1]]
         return Tensor(self.dropout(x))
+
 
 # TODO Other embedding types (learned positional, rotary, ALiBi)

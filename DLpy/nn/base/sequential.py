@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from typing import Iterator, List, Union, cast
 
-from ..core import Module, Tensor
+from ...core import Module, Tensor
 
 
 class Sequential(Module):

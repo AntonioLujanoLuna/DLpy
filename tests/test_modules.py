@@ -1,7 +1,7 @@
 import pytest
 from DLpy.core import Tensor, Module
 import numpy as np
-from DLpy.nn.linear import Linear  
+from DLpy.nn.base.linear import Linear  
 
 class TestModuleEdgeCases:
     """Tests for edge cases in Module functionality"""

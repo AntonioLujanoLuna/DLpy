@@ -2,8 +2,7 @@ import pytest
 import numpy as np
 from collections import OrderedDict
 from DLpy.core import Tensor, Module
-from DLpy.nn.linear import Linear
-from DLpy.nn.sequential import Sequential
+from DLpy.nn.base import Linear, Sequential
 
 
 class TestLinearLayer:

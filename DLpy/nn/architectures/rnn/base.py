@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from ..core import Module, Tensor
+from ....core import Module, Tensor
 
 
 class LSTM(Module):

@@ -1,6 +1,6 @@
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,63 +50,46 @@ class ModelSaver:
             else:
                 pickle.dump(state, f)
 
-@staticmethod
-def load_model(
-    path: Union[str, Path], custom_classes: Optional[Dict[str, type]] = None
-) -> Module:
-    """
-    Load complete model (architecture + parameters).
-    
-    Args:
-        path: Path to the saved model file
-        custom_classes: Dictionary mapping class names to class types for custom models
-        
-    Returns:
-        The loaded model instance
-        
-    Raises:
-        ValueError: If the model class cannot be found
-        TypeError: If the loaded model is not an instance of Module
-    """
-    path = Path(path)
-    with path.open("rb") as f:
-        state = pickle.load(f)
+    @staticmethod
+    def load_model(
+        path: Union[str, Path], custom_classes: Optional[Dict[str, type]] = None
+    ) -> Module:
+        path = Path(path)
+        with path.open("rb") as f:
+            state = pickle.load(f)
 
-    # Get model class - first try custom classes if provided
-    model_class = None
-    if custom_classes and state["model_class"] in custom_classes:
-        model_class = custom_classes[state["model_class"]]
+        # Get model class - try custom classes first
+        model_class: Optional[type] = None
+        if custom_classes and state["model_class"] in custom_classes:
+            model_class = custom_classes[state["model_class"]]
 
-    if model_class is None:
-        # Try to find the class in the nn module
-        import DLpy.nn as nn
-        model_class = getattr(nn, state["model_class"], None)
-
-        # If not found in nn module, check __main__ for interactive usage
+        # Try nn module next
         if model_class is None:
-            import sys
-            model_class = getattr(sys.modules["__main__"], state["model_class"], None)
+            import DLpy.nn as nn
 
-    if model_class is None:
-        raise ValueError(f"Unknown model class: {state['model_class']}")
+            model_class = cast(Optional[type], getattr(nn, state["model_class"], None))
 
-    # Create model instance
-    model = model_class()  # Call __init__ to ensure proper initialization
+            if model_class is None:
+                import sys
 
-    # Restore model state
-    for key, value in state["model_dict"].items():
-        if key in model.__dict__:
-            model.__dict__[key] = value
+                model_class = cast(
+                    Optional[type],
+                    getattr(sys.modules["__main__"], state["model_class"], None),
+                )
 
-    # Load state dict
-    model.load_state_dict(state["state_dict"])
+        if model_class is None:
+            raise ValueError(f"Unknown model class: {state['model_class']}")
 
-    if not isinstance(model, Module):
-        raise TypeError(
-            f"Loaded model must be an instance of Module, got {type(model)}"
-        )
+        # Create and restore model
+        model = cast(Module, model_class())
 
-    return model
+        for key, value in state["model_dict"].items():
+            if key in model.__dict__:
+                model.__dict__[key] = value
+
+        model.load_state_dict(state["state_dict"])
+
+        return model
 
     @staticmethod
     def save_state_dict(model: Module, path: Union[str, Path]) -> None:

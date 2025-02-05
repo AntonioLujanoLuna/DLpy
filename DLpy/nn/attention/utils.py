@@ -1,15 +1,8 @@
-﻿from typing import Any, Optional, Tuple
+﻿from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Module, Tensor
-from ..nn.activations import ReLU
-from ..nn.dropout import Dropout
-from ..nn.layer_norm import LayerNorm
-from ..nn.linear import Linear
-from ..nn.sequential import Sequential
-from ..utils import calculate_fan_in_fan_out
 
 def get_angles(pos: NDArray[Any], i: NDArray[Any], d_model: int) -> NDArray[Any]:
     """
@@ -28,5 +21,6 @@ def get_angles(pos: NDArray[Any], i: NDArray[Any], d_model: int) -> NDArray[Any]
 
     # Return position-dependent angles
     return pos[:, np.newaxis] * angle_rates[np.newaxis, :]
+
 
 # TODO Add: Attention score computation utilities, mask generation utilities

@@ -1,7 +1,7 @@
 from typing import Optional, Tuple, Union
 
-from ..core import Module, Tensor
-from ..ops.pooling import AvgPool2dFunction, MaxPool2dFunction
+from ...core import Module, Tensor
+from ...ops.pooling import AvgPool2dFunction, MaxPool2dFunction
 
 
 class MaxPool2d(Module):

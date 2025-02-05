@@ -2,8 +2,8 @@ from typing import Tuple, Union
 
 import numpy as np
 
-from ..core import Module, Tensor
-from ..ops.cnn import Conv2dFunction
+from ...core import Module, Tensor
+from ...ops.cnn import Conv2dFunction
 
 
 def _pair(x: Union[int, Tuple[int, int]]) -> Tuple[int, int]:

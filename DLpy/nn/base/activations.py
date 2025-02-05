@@ -3,7 +3,7 @@ from typing import Any, Dict, Union
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Context, Function, Module, Tensor
+from ...core import Context, Function, Module, Tensor
 
 
 class ReLUFunction(Function):

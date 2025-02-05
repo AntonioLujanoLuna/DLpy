@@ -1,6 +1,7 @@
 import numpy as np
 
-from ..core import Module, Tensor
+from ...core import Module, Tensor
+
 
 class GroupNorm(Module):
     """

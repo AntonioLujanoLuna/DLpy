@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
 from DLpy.core import Tensor
-from DLpy.nn.pooling import MaxPool2d, AvgPool2d
-from DLpy.nn.normalization import InstanceNorm2d, GroupNorm
+from DLpy.nn.base import MaxPool2d, AvgPool2d
+from DLpy.nn.norm import InstanceNorm2d, GroupNorm
 
 class TestPoolingLayers:
     """Tests for pooling layers"""

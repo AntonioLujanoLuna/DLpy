@@ -1,15 +1,9 @@
-﻿from typing import Any, Optional, Tuple
+﻿from typing import Optional, Tuple
 
-import numpy as np
-from numpy.typing import NDArray
+from ...core import Module, Tensor
+from ..base.dropout import Dropout
+from ..base.linear import Linear
 
-from ..core import Module, Tensor
-from ..nn.activations import ReLU
-from ..nn.dropout import Dropout
-from ..nn.layer_norm import LayerNorm
-from ..nn.linear import Linear
-from ..nn.sequential import Sequential
-from ..utils import calculate_fan_in_fan_out
 
 class MultiHeadAttention(Module):
     """
@@ -137,5 +131,6 @@ class MultiHeadAttention(Module):
         output = self.w_o(output)  # (batch_size, query_len, embed_dim)
 
         return output, attention_weights
+
 
 # TODO LinearAttention, FlashAttention

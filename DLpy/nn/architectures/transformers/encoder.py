@@ -1,15 +1,13 @@
-from typing import Any, Optional, Tuple
+from typing import Optional
 
-import numpy as np
-from numpy.typing import NDArray
+from ....core import Module, Tensor
+from ...attention import MultiHeadAttention
+from ...base.activations import ReLU
+from ...base.dropout import Dropout
+from ...base.linear import Linear
+from ...base.sequential import Sequential
+from ...norm.layer_norm import LayerNorm
 
-from ..core import Module, Tensor
-from ..nn.activations import ReLU
-from ..nn.dropout import Dropout
-from ..nn.layer_norm import LayerNorm
-from ..nn.linear import Linear
-from ..nn.sequential import Sequential
-from ..utils import calculate_fan_in_fan_out
 
 class TransformerEncoderLayer(Module):
     """
@@ -87,6 +85,7 @@ class TransformerEncoderLayer(Module):
 
         return x
 
+
 class TransformerEncoder(Module):
     """
     Transformer Encoder.
@@ -129,4 +128,3 @@ class TransformerEncoder(Module):
             output = self.norm(output)
 
         return output
-

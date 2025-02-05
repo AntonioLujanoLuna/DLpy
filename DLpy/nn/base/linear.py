@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Function, Module, Tensor
+from ...core import Function, Module, Tensor
 
 
 class Linear(Module):

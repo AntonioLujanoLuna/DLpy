@@ -1,9 +1,8 @@
 import pytest
 import numpy as np
 from DLpy.core import Tensor
-from DLpy.nn.activations import (
+from DLpy.nn.base.activations import (
     relu, leaky_relu, elu, gelu, sigmoid, tanh,
-    ReLU, LeakyReLU, ELU, GELU, Sigmoid, Tanh
 )
 
 class TestActivations:

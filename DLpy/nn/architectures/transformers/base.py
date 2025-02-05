@@ -1,15 +1,13 @@
-from typing import Any, Optional, Tuple
+from typing import Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
-from ..core import Module, Tensor
-from ..nn.activations import ReLU
-from ..nn.dropout import Dropout
-from ..nn.layer_norm import LayerNorm
-from ..nn.linear import Linear
-from ..nn.sequential import Sequential
-from ..utils import calculate_fan_in_fan_out
+from ....core import Module, Tensor
+from ....utils import calculate_fan_in_fan_out
+from ...norm.layer_norm import LayerNorm
+from ..transformers.decoder import TransformerDecoder, TransformerDecoderLayer
+from ..transformers.encoder import TransformerEncoder, TransformerEncoderLayer
+
 
 class Transformer(Module):
     """
@@ -105,6 +103,7 @@ class Transformer(Module):
         output = output + 1e-8
         return Tensor(output)
 
+
 def generate_square_subsequent_mask(sz: int) -> Tensor:
     """
     Generate a square mask for the sequence where subsequent positions are masked.
@@ -120,4 +119,3 @@ def generate_square_subsequent_mask(sz: int) -> Tensor:
     # Fill upper triangle with -inf (excluding diagonal)
     mask[np.triu(np.ones((sz, sz), dtype=bool), k=1)] = -np.inf
     return Tensor(mask)
-

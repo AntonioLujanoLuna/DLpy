@@ -3,7 +3,7 @@ from typing import Any, Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core import Module, Tensor
+from ...core import Module, Tensor
 
 
 class Dropout(Module):

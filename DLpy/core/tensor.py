@@ -252,12 +252,12 @@ class Tensor:
         return Softmax.apply(self, dim)
 
     def sigmoid(self) -> "Tensor":
-        from ..nn.activations import SigmoidFunction
+        from ..nn.base.activations import SigmoidFunction
 
         return SigmoidFunction.apply(self)
 
     def tanh(self) -> "Tensor":
-        from ..nn.activations import TanhFunction
+        from ..nn.base.activations import TanhFunction
 
         return TanhFunction.apply(self)
 

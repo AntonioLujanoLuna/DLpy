@@ -54,8 +54,8 @@ class TestModelSaver:
         assert save_path.exists()
         
         # Load model
-        loaded_model = ModelSaver.load_model(save_path)
-        
+        loaded_model = ModelSaver.load_model(save_path, 
+            custom_classes={"SimpleModel": SimpleModel})        
         # Verify model structure
         assert isinstance(loaded_model, SimpleModel)
         assert hasattr(loaded_model, 'fc1')
