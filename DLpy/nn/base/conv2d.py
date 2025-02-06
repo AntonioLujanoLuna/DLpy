@@ -27,7 +27,7 @@ class Conv2d(Module):
         dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
         groups (int, optional): Number of blocked connections from input channels to
             output channels. Default: 1
-        bias (bool, optional): If True, adds a learnable bias to the output.
+        has_bias (bool, optional): If True, adds a learnable bias to the output.
             Default: True
 
     Shape:
@@ -49,7 +49,7 @@ class Conv2d(Module):
         padding: Union[int, Tuple[int, int]] = 0,
         dilation: Union[int, Tuple[int, int]] = 1,
         groups: int = 1,
-        bias: bool = True,
+        has_bias: bool = True,
     ):
         super().__init__()
 
@@ -76,7 +76,7 @@ class Conv2d(Module):
         )
         self.register_parameter("weight", weight)
 
-        if bias:
+        if has_bias:
             # Initialize bias to zero
             bias_data = np.zeros(out_channels)
             self.register_parameter("bias", Tensor(bias_data, requires_grad=True))

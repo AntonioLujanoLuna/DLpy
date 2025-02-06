@@ -99,6 +99,7 @@ tests/test_data.py
 tests/test_decompositions.py
 tests/test_dropout.py
 tests/test_function.py
+tests/test_gnn.py
 tests/test_loss.py
 tests/test_modules.py
 tests/test_nn.py

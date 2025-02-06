@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 from numbers import Number
 from typing import (
     Any,
     Callable,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -380,3 +383,52 @@ class Tensor:
         if self.grad is not None:
             new_tensor.grad = self.grad.copy()
         return new_tensor
+
+    def __iter__(self) -> Iterator[Tensor]:
+        """
+        Makes the Tensor iterable along its first dimension.
+
+        When you iterate over a tensor with shape (n, m), you get n tensors
+        of shape (m,). For a 1D tensor of shape (n,), you get n scalar tensors.
+
+        Returns:
+            An iterator that yields tensors from the first dimension.
+
+        Examples:
+            >>> t = Tensor([[1, 2], [3, 4]])
+            >>> for row in t:
+            ...     print(row)  # Prints tensors of shape (2,)
+            Tensor([1, 2])
+            Tensor([3, 4])
+        """
+        # Special case for 0-dimensional tensors (scalars)
+        if self.data.ndim == 0:
+            yield self
+            return
+
+        # Iterate over the first dimension, yielding a new tensor for each slice
+        for i in range(self.data.shape[0]):
+            # Create a new tensor for each slice
+            # Note: requires_grad is preserved for the slices
+            yield Tensor(self.data[i], requires_grad=self.requires_grad)
+
+    def __reversed__(self) -> Iterator[Tensor]:
+        """
+        Enables reverse iteration over the tensor's first dimension.
+
+        Returns:
+            An iterator yielding tensors in reverse order along the first dimension.
+
+        Examples:
+            >>> t = Tensor([[1, 2], [3, 4]])
+            >>> for row in reversed(t):
+            ...     print(row)
+            Tensor([3, 4])
+            Tensor([1, 2])
+        """
+        if self.data.ndim == 0:
+            yield self
+            return
+
+        for i in range(self.data.shape[0] - 1, -1, -1):
+            yield Tensor(self.data[i], requires_grad=self.requires_grad)

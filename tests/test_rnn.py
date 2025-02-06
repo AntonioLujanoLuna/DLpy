@@ -19,7 +19,7 @@ class TestLSTMCell:
         assert cell.bias_hh.shape == (4 * hidden_size,)
         
         # Test initialization without bias
-        cell_no_bias = LSTMCell(input_size, hidden_size, bias=False)
+        cell_no_bias = LSTMCell(input_size, hidden_size, has_bias=False)
         assert cell_no_bias.bias_ih is None
         assert cell_no_bias.bias_hh is None
         
@@ -78,7 +78,7 @@ class TestGRUCell:
         assert cell.bias_hh.shape == (3 * hidden_size,)
         
         # Test initialization without bias
-        cell_no_bias = GRUCell(input_size, hidden_size, bias=False)
+        cell_no_bias = GRUCell(input_size, hidden_size, has_bias=False)
         assert cell_no_bias.bias_ih is None
         assert cell_no_bias.bias_hh is None
         

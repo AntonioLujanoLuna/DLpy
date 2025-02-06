@@ -3,6 +3,8 @@ from typing import Any, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
+from ..core import Tensor
+
 
 def calculate_fan_in_fan_out(tensor: NDArray[Any]) -> Tuple[int, int]:
     """
@@ -38,3 +40,13 @@ def calculate_fan_in_fan_out(tensor: NDArray[Any]) -> Tuple[int, int]:
         )
 
     return fan_in, fan_out
+
+
+def glorot_init(tensor: Tensor) -> None:
+    """Initialize parameters using Glorot initialization."""
+    if tensor is None:
+        return
+
+    fan_in, fan_out = tensor.shape
+    std = np.sqrt(2.0 / (fan_in + fan_out))
+    tensor.data = np.random.normal(0, std, tensor.shape)

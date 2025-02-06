@@ -20,7 +20,11 @@ class MultiHeadAttention(Module):
     """
 
     def __init__(
-        self, embed_dim: int, num_heads: int, dropout: float = 0.0, bias: bool = True
+        self,
+        embed_dim: int,
+        num_heads: int,
+        dropout: float = 0.0,
+        has_bias: bool = True,
     ):
         super().__init__()
 
@@ -36,10 +40,18 @@ class MultiHeadAttention(Module):
         self.head_dim = embed_dim // num_heads
         self.scaling = self.head_dim**-0.5
 
-        self.w_q = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, L, E) -> (N, L, E)
-        self.w_k = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, S, E) -> (N, S, E)
-        self.w_v = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, S, E) -> (N, S, E)
-        self.w_o = Linear(embed_dim, embed_dim, has_bias=bias)  # (N, L, E) -> (N, L, E)
+        self.w_q = Linear(
+            embed_dim, embed_dim, has_bias=has_bias
+        )  # (N, L, E) -> (N, L, E)
+        self.w_k = Linear(
+            embed_dim, embed_dim, has_bias=has_bias
+        )  # (N, S, E) -> (N, S, E)
+        self.w_v = Linear(
+            embed_dim, embed_dim, has_bias=has_bias
+        )  # (N, S, E) -> (N, S, E)
+        self.w_o = Linear(
+            embed_dim, embed_dim, has_bias=has_bias
+        )  # (N, L, E) -> (N, L, E)
 
         self.attention_dropout = Dropout(self.dropout)
 

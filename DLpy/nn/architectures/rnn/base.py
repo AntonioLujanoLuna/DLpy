@@ -15,7 +15,7 @@ class LSTM(Module):
         input_size: Number of features in input
         hidden_size: Number of features in hidden state
         num_layers: Number of recurrent layers
-        bias: If False, doesn't learn bias weights
+        has_bias: If False, doesn't learn bias weights
         batch_first: If True, input shape is (batch, seq, feature)
         dropout: Dropout probability between layers (0 means no dropout)
         bidirectional: If True, becomes bidirectional LSTM
@@ -37,7 +37,7 @@ class LSTM(Module):
         input_size: int,
         hidden_size: int,
         num_layers: int = 1,
-        bias: bool = True,
+        has_bias: bool = True,
         batch_first: bool = False,
         dropout: float = 0.0,
         bidirectional: bool = False,
@@ -50,7 +50,7 @@ class LSTM(Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.bias = bias
+        self.has_bias = has_bias
         self.batch_first = batch_first
         self.dropout = dropout
         self.bidirectional = bidirectional
@@ -64,7 +64,7 @@ class LSTM(Module):
                 layer_input_size = (
                     input_size if layer == 0 else hidden_size * num_directions
                 )
-                cell = LSTMCell(layer_input_size, hidden_size, bias)
+                cell = LSTMCell(layer_input_size, hidden_size, has_bias)
                 name = f"cell_{layer}_{direction}"
                 setattr(self, name, cell)
                 self.cell_list.append(cell)
@@ -181,7 +181,7 @@ class GRU(Module):
         input_size: Number of features in input
         hidden_size: Number of features in hidden state
         num_layers: Number of recurrent layers
-        bias: If False, doesn't learn bias weights
+        has_bias: If False, doesn't learn bias weights
         batch_first: If True, input shape is (batch, seq, feature)
         dropout: Dropout probability between layers (0 means no dropout)
         bidirectional: If True, becomes bidirectional GRU
@@ -201,7 +201,7 @@ class GRU(Module):
         input_size: int,
         hidden_size: int,
         num_layers: int = 1,
-        bias: bool = True,
+        has_bias: bool = True,
         batch_first: bool = False,
         dropout: float = 0.0,
         bidirectional: bool = False,
@@ -214,7 +214,7 @@ class GRU(Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.bias = bias
+        self.has_bias = has_bias
         self.batch_first = batch_first
         self.dropout = dropout
         self.bidirectional = bidirectional
@@ -228,7 +228,7 @@ class GRU(Module):
                 layer_input_size = (
                     input_size if layer == 0 else hidden_size * num_directions
                 )
-                cell = GRUCell(layer_input_size, hidden_size, bias)
+                cell = GRUCell(layer_input_size, hidden_size, has_bias)
                 name = f"cell_{layer}_{direction}"
                 setattr(self, name, cell)
                 self.cell_list.append(cell)
@@ -324,10 +324,10 @@ class LSTMCell(Module):
     Args:
         input_size: Number of features in input
         hidden_size: Number of features in hidden state
-        bias: If False, doesn't learn bias weights
+        has_bias: If False, doesn't learn bias weights
     """
 
-    def __init__(self, input_size: int, hidden_size: int, bias: bool = True):
+    def __init__(self, input_size: int, hidden_size: int, has_bias: bool = True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -342,7 +342,7 @@ class LSTMCell(Module):
             requires_grad=True,
         )
 
-        if bias:
+        if has_bias:
             self.bias_ih = Tensor(np.zeros(4 * hidden_size), requires_grad=True)
             self.bias_hh = Tensor(np.zeros(4 * hidden_size), requires_grad=True)
         else:
@@ -394,10 +394,10 @@ class GRUCell(Module):
     Args:
         input_size: Number of features in input
         hidden_size: Number of features in hidden state
-        bias: If False, doesn't learn bias weights
+        has_bias: If False, doesn't learn bias weights
     """
 
-    def __init__(self, input_size: int, hidden_size: int, bias: bool = True):
+    def __init__(self, input_size: int, hidden_size: int, has_bias: bool = True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -412,7 +412,7 @@ class GRUCell(Module):
             requires_grad=True,
         )
 
-        if bias:
+        if has_bias:
             self.bias_ih = Tensor(np.zeros(3 * hidden_size), requires_grad=True)
             self.bias_hh = Tensor(np.zeros(3 * hidden_size), requires_grad=True)
         else:
