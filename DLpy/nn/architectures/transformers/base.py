@@ -1,11 +1,15 @@
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 
 from ....core import Module, Tensor
 from ....utils import calculate_fan_in_fan_out
 from ...norm.layer_norm import LayerNorm
-from ..transformers.decoder import TransformerDecoder, TransformerDecoderLayer
+from ..transformers.decoder import (
+    AdvancedTransformerDecoder,
+    TransformerDecoder,
+    TransformerDecoderLayer,
+)
 from ..transformers.encoder import TransformerEncoder, TransformerEncoderLayer
 
 
@@ -53,8 +57,8 @@ class Transformer(Module):
             d_model, nhead, dim_feedforward, dropout, activation, layer_norm_eps
         )
         decoder_norm = LayerNorm([d_model], eps=layer_norm_eps)
-        self.decoder = TransformerDecoder(
-            decoder_layer, num_decoder_layers, decoder_norm
+        self.decoder: Union[TransformerDecoder, AdvancedTransformerDecoder] = (
+            TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm)
         )
 
         # Initialize parameters

@@ -5,11 +5,16 @@ Contains various attention implementations and utilities.
 """
 
 from .multihead import MultiHeadAttention
-from .utils import get_angles
+from .additive import AdditiveAttention
+from .linear import LinearAttention
+from .sparse import SparseAttention
 
-# from .linear import *  # When implemented
+from .utils import get_angles
 
 __all__ = [
     "MultiHeadAttention",
+    "AdditiveAttention",
+    "LinearAttention",
+    "SparseAttention",
     "get_angles",
 ]

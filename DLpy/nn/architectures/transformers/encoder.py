@@ -72,7 +72,7 @@ class TransformerEncoderLayer(Module):
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         # Self attention block
-        attn_output, _ = self.self_attn(x, x, x, mask)
+        attn_output, _, _ = self.self_attn(x, x, x, mask)
         attn_output = self.attn_dropout(
             attn_output
         )  # Apply dropout to attention output

@@ -41,20 +41,19 @@ class TestMultiHeadAttention:
         seq_len = 10
         embed_dim = 512
         num_heads = 8
-        
+
         mha = MultiHeadAttention(embed_dim, num_heads)
-        
+
         # Create input tensors
         query = Tensor(np.random.randn(batch_size, seq_len, embed_dim))
         key = Tensor(np.random.randn(batch_size, seq_len, embed_dim))
         value = Tensor(np.random.randn(batch_size, seq_len, embed_dim))
+
+        output, attention, _ = mha(query, key, value)  # Unpack all three values
         
-        output, attention = mha(query, key, value)
-        
-        # Check output shapes
         assert output.shape == (batch_size, seq_len, embed_dim)
         assert attention.shape == (batch_size, num_heads, seq_len, seq_len)
-        
+
     def test_attention_mask(self):
         """Test attention masking."""
         batch_size = 2
@@ -73,15 +72,11 @@ class TestMultiHeadAttention:
         mask = np.triu(np.ones((batch_size, num_heads, seq_len, seq_len)), k=1) * -1e9
         mask = Tensor(mask)
 
-        output, attention = mha(query, key, value, mask)
+        output, attention, _ = mha(query, key, value, mask)  # Unpack all three values
 
-        # Check that masked positions have very low attention weights
-        # For queries 0, 1, 2, the last key should be masked
-        for q in range(seq_len - 1):
-            assert np.all(attention.data[:, :, q, -1] < 0.1), f"Attention for query {q} to last key is not masked"
-
-        # For the last query, the attention to the last key should not be masked (should be non-zero)
-        assert np.all(attention.data[:, :, -1, -1] > 0.0), "Attention for the last query to last key should not be masked"
+        # Check that masked positions have near-zero attention
+        upper_triangular = np.triu(np.ones((seq_len, seq_len)), k=1).astype(bool)
+        assert np.allclose(attention.data[:, :, upper_triangular], 0, atol=1e-6)
 
     def test_attention_gradients(self):
         """Test gradient computation through attention."""
@@ -89,19 +84,18 @@ class TestMultiHeadAttention:
         seq_len = 3
         embed_dim = 6
         num_heads = 2
-        
+
         mha = MultiHeadAttention(embed_dim, num_heads)
-        
+
         # Create input tensors with gradients
         query = Tensor(np.random.randn(batch_size, seq_len, embed_dim), requires_grad=True)
         key = Tensor(np.random.randn(batch_size, seq_len, embed_dim), requires_grad=True)
         value = Tensor(np.random.randn(batch_size, seq_len, embed_dim), requires_grad=True)
-        
-        output, _ = mha(query, key, value)
+
+        output, _, _ = mha(query, key, value)  # Unpack all three values
         loss = output.sum()
         loss.backward()
-        
-        # Check that gradients were computed
+
         assert query.grad is not None
         assert key.grad is not None
         assert value.grad is not None

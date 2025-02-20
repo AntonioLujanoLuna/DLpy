@@ -1,5 +1,7 @@
 ﻿from typing import Optional, Tuple
 
+import numpy as np
+
 from ...core import Module, Tensor
 from ..base.dropout import Dropout
 from ..base.linear import Linear
@@ -7,16 +9,13 @@ from ..base.linear import Linear
 
 class MultiHeadAttention(Module):
     """
-    Multi-head attention mechanism.
-
-    This module splits the input into multiple heads, applies scaled dot-product
-    attention independently on each head, and then concatenates the results.
+    Multi-head attention mechanism with optional KV caching for autoregressive decoding.
 
     Args:
-        embed_dim (int): Total dimension of the model
-        num_heads (int): Number of parallel attention heads
-        dropout (float): Dropout probability (optional)
-        bias (bool): If True, use bias in linear layers
+        embed_dim (int): Total dimension of the model.
+        num_heads (int): Number of parallel attention heads.
+        dropout (float): Dropout probability.
+        has_bias (bool): If True, use bias in linear layers.
     """
 
     def __init__(
@@ -27,42 +26,52 @@ class MultiHeadAttention(Module):
         has_bias: bool = True,
     ):
         super().__init__()
-
         if embed_dim % num_heads != 0:
             raise ValueError(
-                f"Embedding dimension {embed_dim} not divisible "
-                f"by num_heads {num_heads}"
+                f"Embedding dimension {embed_dim} not divisible by num_heads {num_heads}"
             )
-
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.dropout = dropout
         self.head_dim = embed_dim // num_heads
         self.scaling = self.head_dim**-0.5
 
-        self.w_q = Linear(
-            embed_dim, embed_dim, has_bias=has_bias
-        )  # (N, L, E) -> (N, L, E)
-        self.w_k = Linear(
-            embed_dim, embed_dim, has_bias=has_bias
-        )  # (N, S, E) -> (N, S, E)
-        self.w_v = Linear(
-            embed_dim, embed_dim, has_bias=has_bias
-        )  # (N, S, E) -> (N, S, E)
-        self.w_o = Linear(
-            embed_dim, embed_dim, has_bias=has_bias
-        )  # (N, L, E) -> (N, L, E)
+        self.w_q = Linear(embed_dim, embed_dim, has_bias=has_bias)
+        self.w_k = Linear(embed_dim, embed_dim, has_bias=has_bias)
+        self.w_v = Linear(embed_dim, embed_dim, has_bias=has_bias)
+        self.w_o = Linear(embed_dim, embed_dim, has_bias=has_bias)
 
         self.attention_dropout = Dropout(self.dropout)
 
     def _reshape_for_heads(self, x: Tensor) -> Tensor:
-        """Reshapes input for parallel head processing."""
+        """
+        Reshapes input tensor for parallel head processing.
+
+        Args:
+            x (Tensor): Input tensor of shape (batch_size, seq_len, embed_dim)
+
+        Returns:
+            Tensor of shape (batch_size, num_heads, seq_len, head_dim)
+        """
         batch_size, seq_len, _ = x.shape
-        # First reshape to separate head dimensions
         x = x.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
-        # Then transpose dimensions to (batch_size, num_heads, seq_len, head_dim)
-        x = x.transpose(0, 2, 1, 3)  # Note: passing axes as a tuple
+        x = x.transpose(0, 2, 1, 3)
         return x
+
+    def _concat_cache(self, past: Tensor, current: Tensor) -> Tensor:
+        """
+        Concatenates cached and current tensors along the sequence dimension.
+
+        Args:
+            past (Tensor): Cached tensor of shape (batch_size, num_heads, cached_len, head_dim)
+            current (Tensor): New tensor of shape (batch_size, num_heads, cur_len, head_dim)
+
+        Returns:
+            Tensor: Concatenated tensor of shape (batch_size, num_heads, cached_len + cur_len, head_dim)
+        """
+        # Assuming Tensor.data holds the underlying NumPy array.
+        concatenated = np.concatenate((past.data, current.data), axis=2)
+        return Tensor(concatenated)
 
     def forward(
         self,
@@ -70,61 +79,65 @@ class MultiHeadAttention(Module):
         key: Tensor,
         value: Tensor,
         attention_mask: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+        past_key: Optional[Tensor] = None,
+        past_value: Optional[Tensor] = None,
+        use_cache: bool = False,
+    ) -> Tuple[Tensor, Tensor, Optional[Tuple[Tensor, Tensor]]]:
         """
-        Forward pass of multi-head attention.
+        Forward pass of multi-head attention with optional KV caching.
 
         Args:
-            query: Query tensor of shape (batch_size, query_len, embed_dim)
-            key: Key tensor of shape (batch_size, key_len, embed_dim)
-            value: Value tensor of shape (batch_size, key_len, embed_dim)
-            attention_mask: Optional mask tensor of shape (batch_size, num_heads,
-                query_len, key_len)
+            query (Tensor): Query tensor of shape (batch_size, query_len, embed_dim)
+            key (Tensor): Key tensor of shape (batch_size, key_len, embed_dim)
+            value (Tensor): Value tensor of shape (batch_size, key_len, embed_dim)
+            attention_mask (Optional[Tensor]): Mask tensor of shape (batch_size, num_heads, query_len, key_len_total)
+            past_key (Optional[Tensor]): Cached key tensor of shape (batch_size, num_heads, cached_len, head_dim)
+            past_value (Optional[Tensor]): Cached value tensor of shape (batch_size, num_heads, cached_len, head_dim)
+            use_cache (bool): Flag to indicate whether to return updated KV cache.
 
         Returns:
-            Tuple of:
+            Tuple containing:
                 - Output tensor of shape (batch_size, query_len, embed_dim)
-                - Attention weights of shape (batch_size, num_heads, query_len, key_len)
+                - Attention weights of shape (batch_size, num_heads, query_len, key_len_total)
+                - Updated KV cache tuple (updated_key, updated_value) if use_cache is True, else None.
         """
-        batch_size, query_len, _ = query.shape
-        _, key_len, _ = key.shape
-
-        # Linear projections for Q, K, V
+        # Compute linear projections
         q = self.w_q(query)  # (batch_size, query_len, embed_dim)
         k = self.w_k(key)  # (batch_size, key_len, embed_dim)
         v = self.w_v(value)  # (batch_size, key_len, embed_dim)
 
-        # Reshape for multi-head attention
+        # Reshape for multiple heads
         q = self._reshape_for_heads(q)  # (batch_size, num_heads, query_len, head_dim)
         k = self._reshape_for_heads(k)  # (batch_size, num_heads, key_len, head_dim)
         v = self._reshape_for_heads(v)  # (batch_size, num_heads, key_len, head_dim)
 
         # Scale query
-        q = q * self.scaling  # Scale by sqrt(head_dim)
+        q = q * self.scaling
+
+        # If cached keys/values are provided, concatenate them with current keys/values
+        if past_key is not None and past_value is not None:
+            k = self._concat_cache(past_key, k)
+            v = self._concat_cache(past_value, v)
 
         # Compute attention scores
-        # Transpose key for matrix multiplication
-        k_t = k.transpose(0, 1, 3, 2)  # (batch_size, num_heads, head_dim, key_len)
-        attention_scores = q @ k_t  # (batch_size, num_heads, query_len, key_len)
+        k_t = k.transpose(
+            0, 1, 3, 2
+        )  # (batch_size, num_heads, head_dim, key_len_total)
+        attention_scores = q @ k_t  # (batch_size, num_heads, query_len, key_len_total)
 
-        # Attention mask handling
+        # Apply attention mask if provided
         if attention_mask is not None:
-            # Apply mask first - this ensures masked positions stay masked
             attention_scores = attention_scores + attention_mask
 
-        # Apply numerical stabilization after masking
-        # This prevents overflow while maintaining masked positions
+        # Numerical stabilization
         attention_scores = attention_scores - attention_scores.max(
             axis=-1, keepdims=True
         )
-
-        # Clip values for additional numerical stability
         attention_scores = attention_scores.clip(-1e30, 1e30)
 
-        # Apply softmax to get attention weights
+        # Compute softmax to obtain attention weights
         attention_weights = attention_scores.softmax(dim=-1)
 
-        # Apply dropout during training
         if self.training:
             attention_weights = self.attention_dropout(attention_weights)
 
@@ -132,17 +145,12 @@ class MultiHeadAttention(Module):
         output = attention_weights @ v  # (batch_size, num_heads, query_len, head_dim)
 
         # Reshape back to original dimensions
-        # First transpose to get heads dimension next to head_dim
-        output = output.transpose(
-            0, 2, 1, 3
-        )  # (batch_size, query_len, num_heads, head_dim)
-        # Then combine heads with head_dim to get back to embed_dim
+        output = output.transpose(0, 2, 1, 3)
+        batch_size, query_len, _, _ = output.shape
         output = output.reshape(batch_size, query_len, self.embed_dim)
 
         # Final linear projection
-        output = self.w_o(output)  # (batch_size, query_len, embed_dim)
+        output = self.w_o(output)
 
-        return output, attention_weights
-
-
-# TODO LinearAttention, FlashAttention
+        updated_cache = (k, v) if use_cache else None
+        return output, attention_weights, updated_cache
